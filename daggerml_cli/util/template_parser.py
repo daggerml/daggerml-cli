@@ -1,15 +1,6 @@
 import yaml
 import json
 
-def with_open(file, mode, f):
-    fh = open(file, mode)
-    try:
-        return f(fh)
-    except Exception as e:
-        print(e)
-    finally:
-        fh.close()
-
 def map_vals(f, xs):
     ret = {}
     for k in xs.keys():
@@ -44,7 +35,7 @@ class Parser:
     def key_to_method(self, key):
         try:
             return getattr(self, self.key_to_method_name(key))
-        except Exception:
+        except AttributeError:
             pass
 
     def eval_tag_fn(self, xs):
@@ -67,10 +58,12 @@ class Parser:
             return xs
 
     def read_json(self, template_file):
-        return with_open(template_file, "r", lambda x: json.loads(x))
+        with open(template_file, "r") as f:
+            return json.loads(f)
 
     def read_yaml(self, template_file):
-        return with_open(template_file, "r", lambda x: yaml.load(x, Loader=self.loader))
+        with open(template_file, "r") as f:
+            return yaml.load(f, Loader=self.loader)
 
     def parse(self, template_file):
         if template_file.endswith(".yml"):
