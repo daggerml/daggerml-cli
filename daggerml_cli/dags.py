@@ -10,15 +10,15 @@ def print_json(x):
 
 @app.command()
 def create_dag(
-        template_file: str = typer.Option(
-            ...,
-            help="The DAG template file, JSON or YAML format."
-            ),
-        dag_name: str = typer.Option(
-            ...,
-            help="The name of the created DAG. Must be unique."
-            )
-        ):
+    template_file: str = typer.Option(
+        ...,
+        help="The DAG template file, JSON or YAML format."
+    ),
+    dag_name: str = typer.Option(
+        ...,
+        help="The name of the created DAG. Must be unique."
+    )
+):
     """
     Creates a DAG.
     """

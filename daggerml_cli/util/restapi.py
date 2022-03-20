@@ -1,12 +1,10 @@
 import requests
 import os
-
-zone = os.getenv('ZONE') or 'prod'
-region = "us-west-2"
-host = f"restapi.{zone}-{region}.daggerml.com/asdf"
-endpoint = f"https://{host}"
+from daggerml_cli.util.config import config
 
 def api(data):
+    host = f"restapi.{config['zone']}-{config['region']}.daggerml.com/"
+    endpoint = f"https://{host}"
     resp = requests.post(endpoint, json=data)
     return resp.json()
 

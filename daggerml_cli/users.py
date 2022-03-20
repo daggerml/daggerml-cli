@@ -5,8 +5,8 @@ app = typer.Typer()
 
 @app.command()
 def get_credentials(
-        username: str = typer.Option(..., help="Your DaggerML username.", envvar="USER")
-        ):
+    username: str = typer.Option(..., help="Your DaggerML username.", envvar="USER")
+):
     """
     Authenticate user and print API credentials to stdout.
     """
