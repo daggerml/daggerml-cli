@@ -2,7 +2,7 @@ import typer
 import pkg_resources
 import daggerml_cli.users as users
 import daggerml_cli.dags as dags
-from daggerml_cli.util.config import config
+import daggerml_cli.util.config as config
 from typing import Optional
 
 app = typer.Typer()
@@ -45,7 +45,8 @@ def main(
     """
     DaggerML command line tool.
     """
-    config.update({'region': region, 'zone': zone})
+    config.region = region
+    config.zone = zone
 
 if __name__ == "__main__":
     app()
