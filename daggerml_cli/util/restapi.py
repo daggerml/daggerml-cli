@@ -1,6 +1,7 @@
 import requests
+import os
 
-zone = "micha"
+zone = os.getenv('ZONE') or 'prod'
 region = "us-west-2"
 host = f"restapi.{zone}-{region}.daggerml.com/asdf"
 endpoint = f"https://{host}"
