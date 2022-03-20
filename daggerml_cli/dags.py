@@ -32,11 +32,11 @@ def get_nodes():
     print_json(restapi.get_view("node_view"))
 
 @app.command()
-def get_handlers():
+def get_funcs():
     """
-    Prints handlers to stdout.
+    Prints funcs to stdout.
     """
-    print_json(restapi.get_view("handler_view"))
+    print_json(restapi.get_view("func_view"))
 
 @app.command()
 def get_executors():
