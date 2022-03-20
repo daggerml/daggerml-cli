@@ -3,8 +3,7 @@ import os
 import daggerml_cli.util.config as config
 
 def api(data):
-    host = f"restapi.{config.zone}-{config.region}.daggerml.com/"
-    endpoint = f"https://{host}"
+    endpoint = f"https://restapi.{config.zone}-{config.region}.daggerml.com/"
     resp = requests.post(endpoint, json=data)
     return resp.json()
 
