@@ -9,7 +9,7 @@ readme = "README.md"
 daggerml = "daggerml_cli.main:app"
 
 [tool.poetry.dependencies]
-python = "^3.9"
+python = "^3.8"
 typer = {extras = ["all"], version = "^0.4.0"}
 requests = "^2.27.1"
 PyYAML = "^6.0"
