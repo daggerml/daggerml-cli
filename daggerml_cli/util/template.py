@@ -53,10 +53,10 @@ class Ns(edn.TaggedElement):
         })
     def __init__(self, form={}):
         self.form = form
-    def ref(self, name):
-        return Ref.new(self, name)
     def __str__(self):
         return f"#ns {edn.dumps(self.form)}"
+    def ref(self, name):
+        return Ref.new(self, name)
 
 @edn.tag('ref')
 class Ref(edn.TaggedElement):
@@ -120,7 +120,10 @@ class Import(edn.TaggedElement):
 class Dag(edn.TaggedElement):
     @classmethod
     def new(cls, template_file, ns):
-        dag = cls([])
+        dag = cls({
+            Keyword('params'): [],
+            Keyword('exprs'): [],
+        })
         dag.analyze_file(template_file, ns)
         return dag
 
@@ -192,10 +195,10 @@ class Dag(edn.TaggedElement):
         }
         self.ns = ns
         self.aliases = {}
-        self.form = []
+        self.form[Keyword('exprs')] = []
         for expr in parse_edn(template_file):
             xs = self.analyze(expr) or []
-            self.form += (x for x in xs if not isinstance(x, Empty))
+            self.form[Keyword('exprs')] += (x for x in xs if not isinstance(x, Empty))
 
 def parse(template_file):
     dag = Dag.new(template_file, Ns.new(Symbol('foo.bar.baz/v0.1.0')))
