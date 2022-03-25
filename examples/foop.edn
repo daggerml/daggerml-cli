@@ -1,0 +1,15 @@
+#import {:from com.daggerml.core :version "v0.1.0" :as dml}
+#import {:from com.micha.experiment-barp :version "my-tag-01" :as barp}
+
+(def xyz-docker-image
+  (dml/docker-image tarball))
+
+(def xyz-train-fn
+  (dml/docker-function
+    xyz-docker-image
+    (dml/data train-spec)))
+
+(dml/docker-function
+  xyz-docker-image
+  (dml/data predict-spec)
+  barp/omg)
