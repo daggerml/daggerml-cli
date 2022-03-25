@@ -45,9 +45,9 @@ class Empty:
 
 @edn.tag('ns')
 class Ns(edn.TaggedElement):
-    @staticmethod
-    def new(sym):
-        return Ns({
+    @classmethod
+    def new(cls, sym):
+        return cls({
             Keyword('name'): sym_ns(sym),
             Keyword('version'): sym_name(sym),
         })
@@ -60,11 +60,11 @@ class Ns(edn.TaggedElement):
 
 @edn.tag('ref')
 class Ref(edn.TaggedElement):
-    @staticmethod
-    def new(ns, name):
+    @classmethod
+    def new(cls, ns, name):
         if isinstance(name, Symbol):
             name = name.name
-        return Ref({
+        return cls({
             Keyword('ns'): ns,
             Keyword('name'): name,
         })
@@ -75,9 +75,9 @@ class Ref(edn.TaggedElement):
 
 @edn.tag('node')
 class Node(edn.TaggedElement):
-    @staticmethod
-    def new(func, args, ns):
-        return Node({
+    @classmethod
+    def new(cls, func, args, ns):
+        return cls({
             Keyword('var'): Ref.new(ns, gensym()),
             Keyword('func'): func,
             Keyword('args'): args,
@@ -90,9 +90,9 @@ class Node(edn.TaggedElement):
 
 @edn.tag('def')
 class Def(edn.TaggedElement):
-    @staticmethod
-    def new(var, val):
-        return Def({
+    @classmethod
+    def new(cls, var, val):
+        return cls({
             Keyword('var'): var,
             Keyword('val'): val,
         })
@@ -103,9 +103,9 @@ class Def(edn.TaggedElement):
 
 @edn.tag('import')
 class Import(edn.TaggedElement):
-    @staticmethod
-    def new(ns, alias):
-        return Import({
+    @classmethod
+    def new(cls, ns, alias):
+        return cls({
             Keyword('ns'): ns,
             Keyword('as'): alias,
         })
@@ -118,10 +118,10 @@ class Import(edn.TaggedElement):
 
 @edn.tag('dag')
 class Dag(edn.TaggedElement):
-    @staticmethod
-    def new(template_file, ns):
-        dag = Dag([])
-        dag.parse(template_file, ns)
+    @classmethod
+    def new(cls, template_file, ns):
+        dag = cls([])
+        dag.analyze_file(template_file, ns)
         return dag
 
     def __init__(self, form):
@@ -129,20 +129,6 @@ class Dag(edn.TaggedElement):
 
     def __str__(self):
         return f"#dag {edn.dumps(self.form)}"
-
-    def parse(self, template_file, ns):
-        self.specials = {
-            Symbol('arg'): self.special_dummy,
-            Symbol('dag'): self.special_dummy,
-            Symbol('def'): self.special_def,
-            Symbol('import'): self.special_import,
-        }
-        self.ns = ns
-        self.aliases = {}
-        self.form = []
-        for expr in parse_edn(template_file):
-            xs = self.analyze(expr) or []
-            self.form += (x for x in xs if not isinstance(x, Empty))
 
     def resolve_sym(self, sym):
         s = sym_split(sym)
@@ -198,6 +184,20 @@ class Dag(edn.TaggedElement):
         #print('EXPR', edn.dumps(expr))
         #print('ANAL', edn.dumps(ret))
         return ret
+
+    def analyze_file(self, template_file, ns):
+        self.specials = {
+            Symbol('arg'): self.special_dummy,
+            Symbol('dag'): self.special_dummy,
+            Symbol('def'): self.special_def,
+            Symbol('import'): self.special_import,
+        }
+        self.ns = ns
+        self.aliases = {}
+        self.form = []
+        for expr in parse_edn(template_file):
+            xs = self.analyze(expr) or []
+            self.form += (x for x in xs if not isinstance(x, Empty))
 
 def parse(template_file):
     dag = Dag.new(template_file, Ns.new(Symbol('foo.bar.baz/v0.1.0')))
