@@ -12,9 +12,12 @@ from edn_format import (
 
 edn_indent = 0
 
-def parse_edn(file):
+def parse_file(file):
     with open(file, "r") as f:
         return edn.loads_all(f.read())
+
+def wrap_do(exprs):
+    return (Symbol('do'),) + tuple(exprs)
 
 def assoc(xs, k, v):
     xs = dict(xs)
@@ -27,7 +30,7 @@ def dissoc(xs, k):
         del xs[k]
     return xs
 
-def gensym(prefix='node'):
+def gensym(prefix):
     return f"{prefix}-{uuid4().hex}"
 
 def sym_split(sym):
@@ -61,6 +64,8 @@ class Ns(edn.TaggedElement):
         return self.form[Keyword('version')]
     def ref(self, name):
         return Ref.new(self, name)
+    def sym(self):
+        return Symbol(f"{self.name()}/{self.version()}")
 
 @edn.tag('ref')
 class Ref(edn.TaggedElement):
@@ -88,7 +93,7 @@ class Node(edn.TaggedElement):
     @classmethod
     def new(cls, func, args, ns):
         return cls({
-            Keyword('var'): Ref.new(ns, gensym()),
+            Keyword('var'): Ref.new(ns, gensym('n')),
             Keyword('func'): func,
             Keyword('args'): args,
         })
@@ -124,59 +129,111 @@ class Def(edn.TaggedElement):
     def ref(self):
         return self.var()
 
-@edn.tag('import')
-class Import(edn.TaggedElement):
+@edn.tag('literal')
+class Literal(edn.TaggedElement):
     @classmethod
-    def new(cls, ns, alias):
+    def new(cls, val, ns):
         return cls({
-            Keyword('ns'): ns,
-            Keyword('alias'): alias,
+            Keyword('var'): Ref.new(ns, gensym('l')),
+            Keyword('val'): val,
         })
     def __init__(self, form):
         self.form = form
     def __str__(self):
-        return f"#import {edn.dumps(self.form)}"
-    def ns(self):
-        return self.form[Keyword('ns')]
-    def alias(self):
-        return self.form[Keyword('alias')]
+        return f"#literal {edn.dumps(self.form)}"
+    def var(self):
+        return self.form[Keyword('var')]
+    def val(self):
+        return self.form[Keyword('val')]
+    def ref(self):
+        return self.var()
+
+@edn.tag('quote')
+class Quote(edn.TaggedElement):
+    @classmethod
+    def new(cls, form):
+        return cls(form)
+    def __init__(self, form):
+        self.form = form
+    def __str__(self):
+        return f"#quote {edn.dumps(self.form)}"
 
 @edn.tag('dag')
 class Dag(edn.TaggedElement):
     @classmethod
-    def new(cls, template_file, ref):
-        dag = cls({
-            Keyword('params'): [],
-            Keyword('exprs'): [],
-        })
-        dag.analyze_file(template_file, ref)
-        return dag
+    def new(cls, expr, args):
+        dag = cls([])
+        return cls(dag.analyze(expr, args))
 
     def __init__(self, form):
         self.form = form
         self.specials = {
-            Symbol('arg'): self.special_dummy,
-            Symbol('dag'): self.special_dummy,
+            Symbol('arg'): self.special_arg,
+            Symbol('dag'): self.special_dag,
             Symbol('def'): self.special_def,
+            Symbol('do'): self.special_do,
             Symbol('import'): self.special_import,
+            Symbol('ns'): self.special_ns,
         }
         self.ref = None
         self.ns = None
+        self.args = {}
         self.aliases = {}
 
     def __str__(self):
         return f"#dag {edn.dumps(self.form)}"
 
-    def params(self):
-        return self.form[Keyword('params')]
+    ###########################################################################
+
+    def args(self):
+        return self.form[Keyword('args')]
 
     def exprs(self):
         return self.form[Keyword('exprs')]
+
+    ###########################################################################
 
     def resolve_sym(self, sym):
         s = sym_split(sym)
         ns = self.aliases[s[0]] if s[0] else self.ns
         return ns.ref(s[1])
+
+    ###########################################################################
+
+    def emit_ns(self):
+        return [(Symbol('ns'), self.ns.sym())]
+
+    def emit_imports(self):
+        ret = []
+        for k, v in self.aliases.items():
+            ret += [(Symbol('import'), v.sym(), Symbol(k))]
+        return ret
+
+    def emit_prelude(self):
+        return self.emit_ns() + self.emit_imports()
+
+    def emit_dag(self, exprs):
+        return wrap_do(self.emit_prelude() + list(exprs))
+
+    ###########################################################################
+
+    def special_arg(self, x):
+        exprs = self.analyze(self.args[x[1]] if x[1] in self.args else x[2])
+        return (exprs + [Def.new(self.ns.ref(x[1].name), exprs[-1].ref())])
+
+    def special_dag(self, x):
+        return [Literal.new(Quote.new(self.emit_dag(x[1:])), self.ns)]
+
+    def special_def(self, x):
+        name = x[1]
+        ns = self.analyze(x[2])
+        return ns + [Def.new(self.ns.ref(name.name), ns[-1].ref())]
+
+    def special_do(self, x):
+        ret = []
+        for y in x[1:]:
+            ret += (self.analyze(y) or [])
+        return ret
 
     def special_dummy(self, x):
         return [(Symbol(f"SPECIAL::{x[0].name}"), *x[1:])]
@@ -185,22 +242,11 @@ class Dag(edn.TaggedElement):
         self.aliases[x[2].name] = Ns.new(x[1])
         return [Empty()]
 
-    def special_def(self, x):
-        name = x[1]
-        ns = self.analyze(x[2])
-        return ns + [Def.new(self.ns.ref(name.name), ns[-1].ref())]
+    def special_ns(self, x):
+        self.ns = Ns.new(x[1])
+        return [Empty()]
 
-    def analyze_special(self, x):
-        if isinstance(x, (ImmutableList,tuple)) and len(x) and x[0] in self.specials:
-            return self.specials[x[0]](x)
-
-    def analyze_self_evaluating(self, x):
-        if isinstance(x, (Keyword, str)):
-            return [x]
-
-    def analyze_reference(self, x):
-        if isinstance(x, Symbol):
-            return [self.resolve_sym(x)]
+    ###########################################################################
 
     def analyze_func_application(self, x):
         if isinstance(x, (tuple, list)) and len(x) and isinstance(x[0], Symbol):
@@ -212,30 +258,41 @@ class Dag(edn.TaggedElement):
                 args += [ns[-1].ref()]
             return nodes + [Node.new(self.resolve_sym(x[0]), args, self.ns)]
 
-    def analyze(self, expr):
+    def analyze_literal(self, x):
+        if isinstance(x, str):
+            return [Literal.new(x, self.ns)]
+
+    def analyze_reference(self, x):
+        if isinstance(x, Symbol):
+            return [self.resolve_sym(x)]
+
+    def analyze_self_evaluating(self, x):
+        if isinstance(x, Keyword):
+            return [x]
+
+    def analyze_special(self, x):
+        if isinstance(x, (ImmutableList,tuple)) and len(x) and x[0] in self.specials:
+            return self.specials[x[0]](x)
+
+    ###########################################################################
+
+    def analyze(self, expr, args=None):
+        if args:
+            self.args = args
         ret = (
             self.analyze_special(expr) or
             self.analyze_self_evaluating(expr) or
             self.analyze_reference(expr) or
+            self.analyze_literal(expr) or
             self.analyze_func_application(expr) or
             list(expr)
         )
+        ret = list(x for x in ret if not isinstance(x, Empty))
         return ret
 
-    def analyze_file(self, template_file, ref):
-        self.ns = ref.ns()
-        self.aliases = {}
-        self.form[Keyword('exprs')] = []
-        exprs = self.form[Keyword('exprs')]
-        for expr in parse_edn(template_file):
-            xs = self.analyze(expr) or []
-            exprs += (x for x in xs if not isinstance(x, Empty))
-        exprs += [Def.new(ref, exprs[-1].ref())]
-
-def parse(template_file):
-    dag = Dag.new(
-        template_file,
-        Ref.new(Ns.new(Symbol('foo.bar.baz/v0.1.0')), "output")
-    )
+def parse(template_file, args):
+    exprs = wrap_do(parse_file(template_file))
+    args = edn.loads(args)
+    dag = Dag.new(exprs, args)
     print(edn.dumps(dag))
     return None
