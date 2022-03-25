@@ -10,6 +10,8 @@ from edn_format import (
     EDNDecodeError
 )
 
+edn_indent = 0
+
 def parse_edn(file):
     with open(file, "r") as f:
         return edn.loads_all(f.read())
@@ -28,79 +30,140 @@ def dissoc(xs, k):
 def gensym(prefix='ref'):
     return f"{prefix}-{uuid4().hex}"
 
-class Ref(edn.TaggedElement):
-    def __init__(self, namespace, name):
-        self.namespace = namespace
-        self.name = name
-    def __str__(self):
-        ns = dissoc(self.namespace.form, Keyword('as'))
-        ns = assoc(ns, Keyword('name'), self.name)
-        return f"#ref {edn.dumps(ns)}"
+def sym_split(sym):
+    parts = sym.name.split('/')
+    return [parts[0], '/'.join(parts[1:])] if len(parts) > 1 else [None, parts[0]]
 
-@edn.tag('import')
-class Namespace(edn.TaggedElement):
+def sym_ns(sym):
+    return sym_split(sym)[0]
+
+def sym_name(sym):
+    return sym_split(sym)[1]
+
+class Empty:
+    pass
+
+@edn.tag('ns')
+class Ns(edn.TaggedElement):
+    @staticmethod
+    def new(sym):
+        return Ns({
+            Keyword('name'): sym_ns(sym),
+            Keyword('version'): sym_name(sym),
+        })
     def __init__(self, form={}):
         self.form = form
-        self.alias = form.get(Keyword('as'))
     def ref(self, name):
-        return Ref(self, name)
+        return Ref.new(self, name)
     def __str__(self):
-        return f"#import {edn.dumps(self.form)}"
+        return f"#ns {edn.dumps(self.form)}"
 
-class Node(edn.TaggedElement):
-    def __init__(self, func, args):
-        self.form = {
-            Keyword('name'): gensym(),
-            Keyword('func'): func,
-            Keyword('args'): args,
-        }
-    def __str__(self):
-        return f"#node {edn.dumps(self.form)}"
-    def ref(self, ns):
-        return Ref(ns, self.form[Keyword('name')])
-
-class Def(edn.TaggedElement):
-    def __init__(self, ns, name, ref):
-        self.form = {
+@edn.tag('ref')
+class Ref(edn.TaggedElement):
+    @staticmethod
+    def new(ns, name):
+        if isinstance(name, Symbol):
+            name = name.name
+        return Ref({
             Keyword('ns'): ns,
             Keyword('name'): name,
-            Keyword('ref'): ref,
-        }
+        })
+    def __init__(self, form):
+        self.form = form
+    def __str__(self):
+        return f"#ref {edn.dumps(self.form)}"
+
+@edn.tag('node')
+class Node(edn.TaggedElement):
+    @staticmethod
+    def new(func, args, ns):
+        return Node({
+            Keyword('var'): Ref.new(ns, gensym()),
+            Keyword('func'): func,
+            Keyword('args'): args,
+        })
+    def __init__(self, form):
+        self.form = form
+        self.ref = form[Keyword('var')]
+    def __str__(self):
+        return f"#node {edn.dumps(self.form)}"
+
+@edn.tag('def')
+class Def(edn.TaggedElement):
+    @staticmethod
+    def new(var, val):
+        return Def({
+            Keyword('var'): var,
+            Keyword('val'): val,
+        })
+    def __init__(self, form):
+        self.form = form
     def __str__(self):
         return f"#def {edn.dumps(self.form)}"
 
-class Dag:
-    def __init__(self, template_file, ns):
+@edn.tag('import')
+class Import(edn.TaggedElement):
+    @staticmethod
+    def new(ns, alias):
+        return Import({
+            Keyword('ns'): ns,
+            Keyword('as'): alias,
+        })
+    def __init__(self, form):
+        self.form = form
+        self.ns = form[Keyword('ns')]
+        self.alias = form[Keyword('as')]
+    def __str__(self):
+        return f"#import {edn.dumps(self.form)}"
+
+@edn.tag('dag')
+class Dag(edn.TaggedElement):
+    @staticmethod
+    def new(template_file, ns):
+        dag = Dag([])
+        dag.parse(template_file, ns)
+        return dag
+
+    def __init__(self, form):
+        self.form = form
+
+    def __str__(self):
+        return f"#dag {edn.dumps(self.form)}"
+
+    def parse(self, template_file, ns):
         self.specials = {
             Symbol('arg'): self.special_dummy,
             Symbol('dag'): self.special_dummy,
-            Symbol('def'): self.special_def
+            Symbol('def'): self.special_def,
+            Symbol('import'): self.special_import,
         }
         self.ns = ns
         self.aliases = {}
-        self.exprs = []
+        self.form = []
         for expr in parse_edn(template_file):
-            if isinstance(expr, Namespace):
-                self.aliases[expr.alias.name] = expr
-            else:
-                self.exprs += (self.analyze(expr) or [])
+            xs = self.analyze(expr) or []
+            self.form += (x for x in xs if not isinstance(x, Empty))
 
     def resolve_sym(self, sym):
-        parts = sym.name.split('/')
-        ns = self.aliases[parts[0]] if len(parts) == 2 else self.ns
-        return ns.ref(parts[-1])
+        s = sym_split(sym)
+        ns = self.aliases[s[0]] if s[0] else self.ns
+        return ns.ref(s[1])
 
     def resolve_arg(self, arg):
-        return arg if isinstance(arg, Ref) else arg.ref(self.ns)
+        return arg if isinstance(arg, Ref) else arg.ref
 
     def special_dummy(self, x):
         return [(Symbol(f"SPECIAL::{x[0].name}"), *x[1:])]
+
+    def special_import(self, x):
+        self.aliases[x[2].name] = Ns.new(x[1])
+        return [Empty()]
 
     def special_def(self, x):
         name = x[1]
         ns = self.analyze(x[2])
         ref = self.resolve_arg(ns[-1])
-        return ns + [Def(self.ns, name, ref)]
+        return ns + [Def.new(self.ns.ref(name.name), ref)]
 
     def analyze_special(self, x):
         if isinstance(x, (ImmutableList,tuple)) and len(x) and x[0] in self.specials:
@@ -122,7 +185,7 @@ class Dag:
                 ns = self.analyze(arg)
                 nodes += [n for n in ns if isinstance(n, Node)]
                 args += [self.resolve_arg(ns[-1])]
-            return nodes + [Node(self.resolve_sym(x[0]), args)]
+            return nodes + [Node.new(self.resolve_sym(x[0]), args, self.ns)]
 
     def analyze(self, expr):
         ret = (
@@ -137,15 +200,6 @@ class Dag:
         return ret
 
 def parse(template_file):
-    dag = Dag(
-        template_file,
-        Namespace({
-            Keyword('from'): 'foo.bar.baz',
-            Keyword('version'): 'v0.1.0',
-            Keyword('as'): None
-        })
-    )
-    for expr in dag.exprs:
-        print(edn.dumps(expr))
-
+    dag = Dag.new(template_file, Ns.new(Symbol('foo.bar.baz/v0.1.0')))
+    print(edn.dumps(dag))
     return None

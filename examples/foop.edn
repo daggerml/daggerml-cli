@@ -1,5 +1,5 @@
-#import {:from com.daggerml.core :version "v0.1.0" :as dml}
-#import {:from com.micha.experiment-barp :version "my-tag-01" :as barp}
+(import com.daggerml.core/v0.1.0 dml)
+(import com.micha.experiment-barp/my-tag-01 barp)
 
 (def xyz-docker-image
   (dml/docker-image tarball))
