@@ -145,6 +145,7 @@ def parse(template_file):
             Keyword('as'): None
         })
     )
-    print(edn.dumps(dag.exprs, indent=2))
+    for expr in dag.exprs:
+        print(edn.dumps(expr))
 
     return None
