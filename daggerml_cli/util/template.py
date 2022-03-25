@@ -181,8 +181,6 @@ class Dag(edn.TaggedElement):
             self.analyze_func_application(expr) or
             list(expr)
         )
-        #print('EXPR', edn.dumps(expr))
-        #print('ANAL', edn.dumps(ret))
         return ret
 
     def analyze_file(self, template_file, ns):
