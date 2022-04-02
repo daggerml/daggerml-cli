@@ -1,7 +1,7 @@
-(ns foo.bar.baz/v1.2.3)
+(ns foo.bar.baz:v1.2.3)
 
-(import com.daggerml.core/v0.1.0 dml)
-(import com.micha.experiment-barp/my-tag-01 barp)
+(import com.daggerml.core:v0.1.0 dml)
+(import com.micha.experiment-barp:my-tag-01 barp)
 
 (arg tarball "s3://bucket/image.tar.gz")
 (arg train-spec "s3://bucket/train.spec")

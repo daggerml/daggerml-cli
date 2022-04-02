@@ -14,10 +14,6 @@ def create_dag(
         ...,
         help="The DAG template file, JSON or YAML format."
     ),
-    #dag_name: str = typer.Option(
-    #    ...,
-    #    help="The name of the created DAG. Must be unique."
-    #),
     args: Optional[str] = typer.Option(
         '{}',
         help="A map of arguments to pass to the DAG, EDN format."
