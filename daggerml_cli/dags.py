@@ -1,12 +1,8 @@
-import json
 import typer
-from typing import List, Optional
-from daggerml_cli.util import restapi, template
+from typing import Optional
+from daggerml_cli.util.restapi import print_api
 
 app = typer.Typer()
-
-def print_json(x):
-    typer.echo(json.dumps(x, indent=2))
 
 @app.command()
 def create_dag(
@@ -22,42 +18,27 @@ def create_dag(
     """
     Creates a DAG.
     """
-    print_json(template.parse(template_file, args))
+    with open(template_file, 'r') as f:
+        print_api({'op': 'eval_dag', 'body': f.read(), 'args': '{}'})
 
 @app.command()
-def get_nodes():
+def list_dags():
     """
-    Prints nodes to stdout.
+    Prints a list of DAG names to stdout.
     """
-    print_json(restapi.get_view("node_view"))
+    print_api({'op': 'list_dags'})
 
 @app.command()
-def get_funcs():
+def describe_dag(
+    dag_id: str = typer.Option(
+        ...,
+        help="The DAG ID (namespace)."
+    ),
+):
     """
-    Prints funcs to stdout.
+    Prints DAG info to stdout.
     """
-    print_json(restapi.get_view("func_view"))
-
-@app.command()
-def get_executors():
-    """
-    Prints executors to stdout.
-    """
-    print_json(restapi.get_view("executor_view"))
-
-@app.command()
-def get_dags():
-    """
-    Prints dags to stdout.
-    """
-    print_json(restapi.get_view("dag_view"))
-
-@app.command()
-def get_queue():
-    """
-    Prints the node work queue to stdout.
-    """
-    print_json(restapi.get_view("node_queue"))
+    print_api({'op': 'describe_dag', 'dag_id': dag_id})
 
 if __name__ == "__main__":
     app()
