@@ -1,4 +1,4 @@
-from daggerml_cli import __version__
+from daggerml import __version__
 
 
 def test_version():

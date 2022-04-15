@@ -1,28 +1,29 @@
+#!/usr/bin/env python3
 import typer
-import pkg_resources
-import daggerml_cli.users as users
-import daggerml_cli.dags as dags
-import daggerml_cli.util.config as config
 from typing import Optional
+from daggerml import users, dags, util, __version__
+
 
 app = typer.Typer()
 
 app.add_typer(
-    users.app,
+    users._app,
     name="users",
     help="Commands related to users and authentication."
 )
 
 app.add_typer(
-    dags.app,
+    dags._app,
     name="dags",
     help="Commands for creating, updating, and inspecting DAGs."
 )
 
+
 def print_version(x):
     if x:
-        typer.echo(pkg_resources.get_distribution("daggerml-cli").version)
+        typer.echo(f'daggerml-sdk version: {__version__}')
         raise typer.Exit(0)
+
 
 @app.callback()
 def main(
@@ -34,19 +35,17 @@ def main(
         help="Print daggerml version and exit."
     ),
     region: str = typer.Option(
-        'us-west-2',
+        util.REGION,
         help="The AWS region in which to execute."
     ),
     zone: str = typer.Option(
-        'prod',
+        util.ZONE,
         help="The zone in which to execute."
     )
 ):
     """
     DaggerML command line tool.
     """
-    config.region = region
-    config.zone = zone
-
-if __name__ == "__main__":
-    app()
+    util.REGION = region
+    util.ZONE = zone
+    return
