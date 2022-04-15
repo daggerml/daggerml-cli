@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import typer
 from typing import Optional
-from daggerml import users, dags, util, __version__
+from daggerml import users, data, dags, util, __version__
 
 
 app = typer.Typer()
@@ -10,6 +10,12 @@ app.add_typer(
     users._app,
     name="users",
     help="Commands related to users and authentication."
+)
+
+app.add_typer(
+    data._app,
+    name="data",
+    help="Commands related to data and datasets."
 )
 
 app.add_typer(
