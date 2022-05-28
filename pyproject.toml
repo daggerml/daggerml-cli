@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "daggerml"
-version = "0.1.0"
+version = "0.1.1"
 description = ""
 authors = ["Micha Niskin <micha.niskin@gmail.com>"]
 readme = "README.md"

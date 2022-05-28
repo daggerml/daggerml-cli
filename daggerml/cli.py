@@ -42,11 +42,11 @@ def main(
     ),
     region: str = typer.Option(
         util.REGION,
-        help="The AWS region in which to execute."
+        help="The AWS region in which to execute. Defaults to DML_REGION environment variable."
     ),
     zone: str = typer.Option(
         util.ZONE,
-        help="The zone in which to execute."
+        help="The zone in which to execute. Defaults to DML_ZONE environment variable."
     )
 ):
     """
