@@ -1,4 +1,5 @@
 import unittest
+from tabulate import tabulate
 from tempfile import TemporaryDirectory
 from daggerml_cli.db import Db, DEFAULT
 from daggerml_cli.util import unpackb
@@ -15,11 +16,7 @@ class TestDb(unittest.TestCase):
         self.tmpdir_ctx = self.tmpdir = None
 
     def dump(self, db):
-        print('\n=============== DB DUMP ===============')
-        with db.tx() as tx:
-            for (k, v) in iter(tx.cursor()):
-                print(f'{k.decode()}\t\t{unpackb(v)}')
-        print('=============== DB DUMP ===============')
+        print(tabulate(db.dump(), headers=['key', 'value'], tablefmt='fancy_grid'))
 
     def print_log(self, db, branch=None, dag=None):
         dag_at = f'{dag}@' if dag is not None else ''
@@ -57,4 +54,5 @@ class TestDb(unittest.TestCase):
         self.print_log(db, DEFAULT, 'd1')
         self.print_log(db, 'foop', 'd1')
 
+        print()
         self.dump(db)

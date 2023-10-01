@@ -30,13 +30,19 @@ class Db:
     def tx(self, write=False):
         return self.env.begin(write=write)
 
+    def dump(self):
+        rows = []
+        with self.tx() as tx:
+            for (k, v) in iter(tx.cursor()):
+                rows.append([k.decode(), unpackb(v)])
+        return rows
+
     def exists_branch(self, tx, name, index=False):
         type = 'index' if index else 'branch'
         return self.exists_obj(tx, f'{type}/{name}')
 
     def get_branch(self, tx, name, index=False):
         type = 'index' if index else 'branch'
-        k = f'{type}/{name}'
         return self.get_obj(tx, f'{type}/{name}')
 
     def put_branch(self, tx, name, commit_key, index=False):

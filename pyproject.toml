@@ -28,6 +28,7 @@ dependencies = [
   "click",
   "lmdb",
   "msgpack",
+  "tabulate",
 ]
 
 [project.urls]
