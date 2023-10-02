@@ -1,11 +1,10 @@
 import unittest
 from tabulate import tabulate
 from tempfile import TemporaryDirectory
-from daggerml_cli.db import Db, DEFAULT
-from daggerml_cli.util import unpackb
+from daggerml_cli.repo import Repo, DEFAULT
 
 
-class TestDb(unittest.TestCase):
+class TestRepo(unittest.TestCase):
 
     def setUp(self):
         self.tmpdir_ctx = TemporaryDirectory()
@@ -25,7 +24,7 @@ class TestDb(unittest.TestCase):
     def test_create_dag(self):
         print()
 
-        db = Db(self.tmpdir)
+        db = Repo(self.tmpdir)
 
         self.print_log(db)
 

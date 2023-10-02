@@ -6,11 +6,11 @@ from uuid import uuid4
 DEFAULT = 'main'
 
 
-class Db:
+class Repo:
 
     @classmethod
     def new(cls, b64state):
-        return cls(**unpackb64(b64state))
+        return cls(*unpackb64(b64state))
 
     def __init__(self, path, branch=DEFAULT, index=None, dag=None):
         self.env = dbenv(path)
@@ -20,12 +20,7 @@ class Db:
         self.dag = dag
 
     def state(self):
-        return packb64({
-            'path': self.path,
-            'branch': self.head,
-            'index': self.index,
-            'dag': self.dag,
-        })
+        return packb64([self.path, self.head, self.index, self.dag])
 
     def tx(self, write=False):
         return self.env.begin(write=write)
