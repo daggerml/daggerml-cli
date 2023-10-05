@@ -1,12 +1,19 @@
 import lmdb
 import msgpack
 from base64 import b64encode, b64decode
+from datetime import datetime, timezone
 from functools import cache
 
 
 @cache
 def dbenv(path):
-    return lmdb.open(path)
+    dbs = ['index', 'head', 'commit', 'tree', 'dag', 'node', 'fnapp', 'datum']
+    env = lmdb.open(path, max_dbs=len(dbs)+1)
+    return env, {k: env.open_db(f'db/{k}'.encode()) for k in dbs}
+
+
+def now():
+    return datetime.now(timezone.utc).isoformat()
 
 
 def sort_dict(x):

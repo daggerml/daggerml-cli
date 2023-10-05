@@ -1,5 +1,4 @@
 import unittest
-from tabulate import tabulate
 from tempfile import TemporaryDirectory
 from daggerml_cli.repo import Repo, DEFAULT
 
@@ -13,9 +12,6 @@ class TestRepo(unittest.TestCase):
     def tearDown(self):
         self.tmpdir_ctx.__exit__(None, None, None)
         self.tmpdir_ctx = self.tmpdir = None
-
-    def dump(self, db):
-        print(tabulate(db.dump(), headers=['key', 'value'], tablefmt='fancy_grid'))
 
     def print_log(self, db, branch=None, dag=None):
         dag_at = f'{dag}@' if dag is not None else ''
@@ -54,4 +50,6 @@ class TestRepo(unittest.TestCase):
         self.print_log(db, 'foop', 'd1')
 
         print()
-        self.dump(db)
+        db.dump(True)
+
+        print(db.dump_commit(db.head))

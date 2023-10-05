@@ -1,5 +1,6 @@
-from daggerml_cli.util import packb, unpackb, packb64, unpackb64, sort_dict, dbenv
+from daggerml_cli.util import packb, unpackb, packb64, unpackb64, sort_dict, dbenv, now
 from hashlib import md5
+from tabulate import tabulate
 from uuid import uuid4
 
 
@@ -13,7 +14,7 @@ class Repo:
         return cls(*unpackb64(b64state))
 
     def __init__(self, path, branch=DEFAULT, index=None, dag=None):
-        self.env = dbenv(path)
+        self.env, self.db = dbenv(path)
         self.path = path
         self.head = branch
         self.index = index
@@ -23,33 +24,45 @@ class Repo:
         return packb64([self.path, self.head, self.index, self.dag])
 
     def tx(self, write=False):
-        return self.env.begin(write=write)
+        return self.env.begin(write=write, buffers=True)
 
-    def dump(self):
+    def dump(self, prn=False):
+        headers = ['type', 'key', 'value']
         rows = []
         with self.tx() as tx:
-            for (k, v) in iter(tx.cursor()):
-                rows.append([k.decode(), unpackb(v)])
-        return rows
+            for type, db in self.db.items():
+                for (k, v) in iter(tx.cursor(db=db)):
+                    rows.append([type, bytes(k).decode(), unpackb(v)])
+        return print(tabulate(rows, headers=headers, tablefmt='fancy_grid')) if prn else rows
+
+    def dump_commit(self, head):
+        with self.tx() as tx:
+            result = {'commit': None, 'tree': {}, 'dag': {}, 'node': {}, 'fnapp': {}, 'datum': {}}
+            commit = result['commit'] = self.get_branch(tx, head)
+            tree_key = self.get_commit(tx, commit)[1]
+            tree = result['tree'] = self.get_tree(tx, tree_key)
+            for k, v in tree.items():
+                dag = result['dag'][v] = self.get_dag(tx, v)
+                for n in [*dag[0], dag[1]]:
+                    node = result['node'][n] = self.get_node(tx, n) if n else None
+                    result['datum'][node[1]] = self.get_datum(tx, node[1]) if node[1] else None
+            return result
 
     def exists_branch(self, tx, name, index=False):
-        type = 'index' if index else 'branch'
-        return self.exists_obj(tx, f'{type}/{name}')
+        type = 'index' if index else 'head'
+        return self.exists_obj(tx, type, name)
 
     def get_branch(self, tx, name, index=False):
-        type = 'index' if index else 'branch'
-        return self.get_obj(tx, f'{type}/{name}')
+        type = 'index' if index else 'head'
+        return self.get_obj(tx, type, name)
 
     def put_branch(self, tx, name, commit_key, index=False):
-        type = 'index' if index else 'branch'
-        key = f'{type}/{name}'
-        tx.put(key.encode(), packb(commit_key))
-        return key
+        type = 'index' if index else 'head'
+        tx.put(name.encode(), packb(commit_key), db=self.db[type])
 
     def del_branch(self, tx, name, index=False):
-        type = 'index' if index else 'branch'
-        key = f'{type}/{name}'
-        tx.delete(key.encode())
+        type = 'index' if index else 'head'
+        tx.delete(name.encode(), db=self.db[type])
 
     def exists_index(self, tx, name):
         return self.exists_branch(tx, name, index=True)
@@ -58,39 +71,41 @@ class Repo:
         return self.get_branch(tx, name, index=True)
 
     def put_index(self, tx, name, commit_key):
-        return self.put_branch(tx, name, commit_key, index=True)
+        self.put_branch(tx, name, commit_key, index=True)
 
     def del_index(self, tx, name):
         return self.del_branch(tx, name, index=True)
 
-    def exists_obj(self, tx, key):
+    def exists_obj(self, tx, type, key):
         if key is not None:
-            return tx.get(key.encode()) is not None
+            return tx.get(key.encode(), db=self.db[type]) is not None
 
-    def get_obj(self, tx, key):
+    def get_obj(self, tx, type, key):
         if key is not None:
-            return unpackb(tx.get(key.encode()))
+            return unpackb(tx.get(key.encode(), db=self.db[type]))
 
     def put_obj(self, tx, type, obj):
         data = packb(obj)
         hash = md5(data).hexdigest()
-        key = f'{type}/{hash}'
-        keyb = key.encode()
-        if tx.get(keyb) is None:
-            tx.put(keyb, data)
-        return key
+        keyb = hash.encode()
+        if tx.get(keyb, db=self.db[type]) is None:
+            tx.put(keyb, data, db=self.db[type])
+        return hash
 
-    def get_dags(self, tx, key):
-        return self.get_obj(tx, key) or {}
+    def get_tree(self, tx, key):
+        return self.get_obj(tx, 'tree', key) or {}
 
-    def put_dags(self, tx, dags):
-        return self.put_obj(tx, 'dags', sort_dict(dags))
+    def put_tree(self, tx, tree):
+        return self.put_obj(tx, 'tree', sort_dict(tree))
 
     def get_commit(self, tx, key):
-        return self.get_obj(tx, key) or [None, None]
+        return self.get_obj(tx, 'commit', key) or [None, None, None]
 
-    def put_commit(self, tx, parent_key, dags_key):
-        return self.put_obj(tx, 'commit', [parent_key, dags_key])
+    def put_commit(self, tx, parent_key, tree_key):
+        return self.put_obj(tx, 'commit', [parent_key, tree_key, now()])
+
+    def get_datum(self, tx, key):
+        return self.get_obj(tx, 'datum', key)
 
     def put_datum(self, tx, value):
         t = type(value)
@@ -105,22 +120,25 @@ class Repo:
         return self.put_obj(tx, 'datum', data)
 
     def get_dag(self, tx, key):
-        return self.get_obj(tx, key) or [[], None]
+        return self.get_obj(tx, 'dag', key) or [[], None]
 
     def put_dag(self, tx, node_keys, result_node_key):
         return self.put_obj(tx, 'dag', [sorted(node_keys), result_node_key])
 
+    def get_node(self, tx, key):
+        return self.get_obj(tx, 'node', key)
+
     def put_node(self, tx, dag_name, type, data):
         commit_key = self.get_index(tx, self.index)
-        parent_commit_key, dags_key = self.get_commit(tx, commit_key)
-        dags = self.get_dags(tx, dags_key)
-        nodes, _ = self.get_dag(tx, dags[dag_name])
+        parent_commit_key, tree_key, *_ = self.get_commit(tx, commit_key)
+        tree = self.get_tree(tx, tree_key)
+        nodes, _ = self.get_dag(tx, tree[dag_name])
         node_key = self.put_obj(tx, 'node', [type, data])
         nodes.append(node_key)
         new_dag_key = self.put_dag(tx, nodes, None)
-        dags[dag_name] = new_dag_key
-        new_dags_key = self.put_dags(tx, dags)
-        index_commit_key = self.put_commit(tx, parent_commit_key, new_dags_key)
+        tree[dag_name] = new_dag_key
+        new_tree_key = self.put_tree(tx, tree)
+        index_commit_key = self.put_commit(tx, parent_commit_key, new_tree_key)
         self.put_index(tx, self.index, index_commit_key)
         return node_key
 
@@ -134,9 +152,9 @@ class Repo:
             commit_key = self.get_branch(tx, branch or self.head)
             while commit_key:
                 ck = commit_key
-                commit_key, dags_key = self.get_commit(tx, commit_key)
+                commit_key, tree_key, *_ = self.get_commit(tx, commit_key)
                 if dag:
-                    dag_key = self.get_dags(tx, dags_key).get(dag)
+                    dag_key = self.get_tree(tx, tree_key).get(dag)
                     if dag_key:
                         if len(commits) and dag_key == commits[-1][1]:
                             commits.pop()
@@ -159,11 +177,11 @@ class Repo:
         index_name = uuid4().hex
         with self.tx(True) as tx:
             head_commit_key = self.get_branch(tx, self.head)
-            _, dags_key = self.get_commit(tx, head_commit_key)
-            dags = self.get_dags(tx, dags_key)
-            dags[dag_name] = None
-            new_dags_key = self.put_dags(tx, dags)
-            index_commit_key = self.put_commit(tx, head_commit_key, new_dags_key)
+            _, tree_key, *_ = self.get_commit(tx, head_commit_key)
+            tree = self.get_tree(tx, tree_key)
+            tree[dag_name] = None
+            new_tree_key = self.put_tree(tx, tree)
+            index_commit_key = self.put_commit(tx, head_commit_key, new_tree_key)
             self.put_index(tx, index_name, index_commit_key)
         self.dag = dag_name
         self.index = index_name
@@ -172,16 +190,16 @@ class Repo:
     def commit(self, result_node_key):
         with self.tx(True) as tx:
             commit_key = self.get_index(tx, self.index)
-            parent_commit_key, dags_key = self.get_commit(tx, commit_key)
-            dags = self.get_dags(tx, dags_key)
-            nodes, _ = self.get_dag(tx, dags[self.dag])
+            parent_commit_key, tree_key, *_ = self.get_commit(tx, commit_key)
+            tree = self.get_tree(tx, tree_key)
+            nodes, _ = self.get_dag(tx, tree[self.dag])
             new_dag_key = self.put_dag(tx, nodes, result_node_key)
             head_commit_key = self.get_branch(tx, self.head)
-            head_parent_key, head_dags_key = self.get_commit(tx, head_commit_key)
-            head_dags = self.get_dags(tx, head_dags_key)
-            head_dags[self.dag] = new_dag_key
-            new_dags_key = self.put_dags(tx, head_dags)
-            new_commit_key = self.put_commit(tx, head_commit_key, new_dags_key)
+            head_parent_key, head_tree_key, *_ = self.get_commit(tx, head_commit_key)
+            head_tree = self.get_tree(tx, head_tree_key)
+            head_tree[self.dag] = new_dag_key
+            new_tree_key = self.put_tree(tx, head_tree)
+            new_commit_key = self.put_commit(tx, head_commit_key, new_tree_key)
             self.put_branch(tx, self.head, new_commit_key)
             self.del_index(tx, self.index)
         self.dag = None
