@@ -1,6 +1,5 @@
 from daggerml_cli.util import packb, unpackb, packb64, unpackb64, sort_dict, dbenv, now
 from hashlib import md5
-from tabulate import tabulate
 from uuid import uuid4
 
 
@@ -26,55 +25,21 @@ class Repo:
     def tx(self, write=False):
         return self.env.begin(write=write, buffers=True)
 
-    def dump(self, prn=False):
-        headers = ['type', 'key', 'value']
+    def dump_db(self, tx):
         rows = []
-        with self.tx() as tx:
-            for type, db in self.db.items():
-                for (k, v) in iter(tx.cursor(db=db)):
-                    rows.append([type, bytes(k).decode(), unpackb(v)])
-        return print(tabulate(rows, headers=headers, tablefmt='fancy_grid')) if prn else rows
+        for type, db in self.db.items():
+            for (k, v) in iter(tx.cursor(db=db)):
+                rows.append([type, bytes(k).decode(), unpackb(v)])
+        return rows
 
-    def dump_dag(self, head=None, name=None, dag_key=None, result=None):
-        result = result or {'dag': {}, 'node': {}, 'fnapp': {}, 'datum': {}}
-        with self.tx() as tx:
-            if dag_key is None:
-                commit_key = self.get_branch(tx, head)
-                tree_key = self.get_commit(tx, commit_key)[1]
-                dag_key = self.get_tree(tx, tree_key)[name]
-            dag = result['dag'][dag_key] = self.get_dag(tx, dag_key)
-            for n in [*dag[0], dag[1]]:
-                node = result['node'][n] = self.get_node(tx, n) if n else None
-                result['datum'][node[1]] = self.get_datum(tx, node[1]) if node[1] else None
+    def empty_dump_result(self):
+        return {k: {} for k in self.db.keys()}
+
+    def dump_repo(self, tx, result):
+        for db in ['index', 'head']:
+            for (k, v) in iter(tx.cursor(db=self.db[db])):
+                self.dump_branch(tx, bytes(k).decode(), result, (db == 'index'))
         return result
-
-    def dump_commit(self, head=None, commit_key=None, result=None, parents=False):
-        with self.tx() as tx:
-            result = result or {'commit': {}, 'tree': {}, 'dag': {}, 'node': {}, 'fnapp': {}, 'datum': {}}
-            commit_key = commit_key or self.get_branch(tx, head)
-            commit = result['commit'][commit_key] = self.get_commit(tx, commit_key)
-            tree = result['tree'][commit[1]] = self.get_tree(tx, commit[1])
-            for k, v in tree.items():
-                self.dump_dag(dag_key=v, result=result)
-            self.dump_commit(head, commit[0], result, parents) if commit[0] and parents else None
-            return result
-
-    def dump_repo(self):
-        result = {'head': {}, 'commit': {}, 'tree': {}, 'dag': {}, 'node': {}, 'fnapp': {}, 'datum': {}}
-        with self.tx() as tx:
-            for (k, v) in iter(tx.cursor(db=self.db['head'])):
-                k = bytes(k).decode()
-                result['head'][k] = self.get_branch(tx, k)
-                self.dump_commit(k, result=result, parents=True)
-        return result
-
-    def gc(self):
-        with self.tx(True) as tx:
-            dump = self.dump_repo()
-            for db in dump.keys():
-                for (k, v) in iter(tx.cursor(db=self.db[db])):
-                    if not bytes(k).decode() in dump[db]:
-                        tx.delete(k, db=self.db[db])
 
     def exists_branch(self, tx, name, index=False):
         type = 'index' if index else 'head'
@@ -91,6 +56,12 @@ class Repo:
     def del_branch(self, tx, name, index=False):
         type = 'index' if index else 'head'
         tx.delete(name.encode(), db=self.db[type])
+
+    def dump_branch(self, tx, branch_key, result, index=False):
+        db = 'index' if index else 'head'
+        commit_key = result[db][branch_key] = self.get_branch(tx, branch_key, index=(index))
+        self.dump_commit(tx, commit_key, result)
+        return result
 
     def exists_index(self, tx, name):
         return self.exists_branch(tx, name, index=True)
@@ -126,11 +97,22 @@ class Repo:
     def put_tree(self, tx, tree):
         return self.put_obj(tx, 'tree', sort_dict(tree))
 
+    def dump_tree(self, tx, tree_key, result):
+        tree = result['tree'][tree_key] = self.get_tree(tx, tree_key)
+        [self.dump_dag(tx, v, result) for v in tree.values()]
+        return result
+
     def get_commit(self, tx, key):
         return self.get_obj(tx, 'commit', key) or [None, None, None]
 
     def put_commit(self, tx, parent_key, tree_key):
         return self.put_obj(tx, 'commit', [parent_key, tree_key, now()])
+
+    def dump_commit(self, tx, commit_key, result):
+        commit = result['commit'][commit_key] = self.get_commit(tx, commit_key)
+        self.dump_tree(tx, commit[1], result)
+        self.dump_commit(tx, commit[0], result) if commit[0] else None
+        return result
 
     def get_datum(self, tx, key):
         return self.get_obj(tx, 'datum', key)
@@ -147,11 +129,21 @@ class Repo:
             raise ValueError(f'unknown type: {t}')
         return self.put_obj(tx, 'datum', data)
 
+    def dump_datum(self, tx, datum_key, result):
+        result['datum'][datum_key] = self.get_datum(tx, datum_key)
+        return result
+
     def get_dag(self, tx, key):
         return self.get_obj(tx, 'dag', key) or [[], None]
 
     def put_dag(self, tx, node_keys, result_node_key):
         return self.put_obj(tx, 'dag', [sorted(node_keys), result_node_key])
+
+    def dump_dag(self, tx, dag_key, result):
+        dag = result['dag'][dag_key] = self.get_dag(tx, dag_key)
+        for n in filter(lambda x: x, [*dag[0], dag[1]]):
+            self.dump_node(tx, n, result)
+        return result
 
     def get_node(self, tx, key):
         return self.get_obj(tx, 'node', key)
@@ -170,26 +162,29 @@ class Repo:
         self.put_index(tx, self.index, index_commit_key)
         return node_key
 
+    def dump_node(self, tx, node_key, result):
+        node = result['node'][node_key] = self.get_node(tx, node_key)
+        self.dump_datum(tx, node[1], result)
+        return result
+
     ############################################################################
     # PUBLIC API ###############################################################
     ############################################################################
 
-    def log(self, branch=None, dag=None):
-        commits = []
+    def dump(self, what):
         with self.tx() as tx:
-            commit_key = self.get_branch(tx, branch or self.head)
-            while commit_key:
-                ck = commit_key
-                commit_key, tree_key, *_ = self.get_commit(tx, commit_key)
-                if dag:
-                    dag_key = self.get_tree(tx, tree_key).get(dag)
-                    if dag_key:
-                        if len(commits) and dag_key == commits[-1][1]:
-                            commits.pop()
-                        commits.append([ck, dag_key])
-                else:
-                    commits.append(ck)
-        return commits
+            if what == 'repo':
+                return self.dump_repo(tx, self.empty_dump_result())
+            elif what == 'db':
+                return self.dump_db(tx)
+
+    def gc(self):
+        with self.tx(True) as tx:
+            dump = self.dump_repo(tx, self.empty_dump_result())
+            for db in dump.keys():
+                for (k, v) in iter(tx.cursor(db=self.db[db])):
+                    if not bytes(k).decode() in dump[db]:
+                        tx.delete(k, db=self.db[db])
 
     def checkout(self, branch=DEFAULT, create=False):
         assert self.index is None, 'can not switch branches with a dirty index'
