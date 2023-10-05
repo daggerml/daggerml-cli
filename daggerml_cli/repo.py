@@ -48,7 +48,7 @@ class Repo:
                 result['datum'][node[1]] = self.get_datum(tx, node[1]) if node[1] else None
         return result
 
-    def dump_commit(self, head, commit_key=None, result=None, parents=False):
+    def dump_commit(self, head=None, commit_key=None, result=None, parents=False):
         with self.tx() as tx:
             result = result or {'commit': {}, 'tree': {}, 'dag': {}, 'node': {}, 'fnapp': {}, 'datum': {}}
             commit_key = commit_key or self.get_branch(tx, head)
@@ -58,6 +58,23 @@ class Repo:
                 self.dump_dag(dag_key=v, result=result)
             self.dump_commit(head, commit[0], result, parents) if commit[0] and parents else None
             return result
+
+    def dump_repo(self):
+        result = {'head': {}, 'commit': {}, 'tree': {}, 'dag': {}, 'node': {}, 'fnapp': {}, 'datum': {}}
+        with self.tx() as tx:
+            for (k, v) in iter(tx.cursor(db=self.db['head'])):
+                k = bytes(k).decode()
+                result['head'][k] = self.get_branch(tx, k)
+                self.dump_commit(k, result=result, parents=True)
+        return result
+
+    def gc(self):
+        with self.tx(True) as tx:
+            dump = self.dump_repo()
+            for db in dump.keys():
+                for (k, v) in iter(tx.cursor(db=self.db[db])):
+                    if not bytes(k).decode() in dump[db]:
+                        tx.delete(k, db=self.db[db])
 
     def exists_branch(self, tx, name, index=False):
         type = 'index' if index else 'head'

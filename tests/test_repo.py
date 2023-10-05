@@ -55,3 +55,9 @@ class TestRepo(unittest.TestCase):
 
         pp(db.dump_dag(db.head, 'd0'))
         pp(db.dump_commit(db.head, parents=True))
+        pp(db.dump_repo())
+
+        db.gc()
+
+        print()
+        db.dump(True)
