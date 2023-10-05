@@ -35,6 +35,18 @@ class Repo:
                     rows.append([type, bytes(k).decode(), unpackb(v)])
         return print(tabulate(rows, headers=headers, tablefmt='fancy_grid')) if prn else rows
 
+    def dump_dag(self, head, name):
+        result = {'node': {}, 'fnapp': {}, 'datum': {}}
+        with self.tx() as tx:
+            commit_key = self.get_branch(tx, head)
+            tree_key = self.get_commit(tx, commit_key)[1]
+            dag_key = self.get_tree(tx, tree_key)[name]
+            dag = self.get_dag(tx, dag_key)
+            for n in [*dag[0], dag[1]]:
+                node = result['node'][n] = self.get_node(tx, n) if n else None
+                result['datum'][node[1]] = self.get_datum(tx, node[1]) if node[1] else None
+        return {key: result}
+
     def dump_commit(self, head):
         with self.tx() as tx:
             result = {'commit': None, 'tree': {}, 'dag': {}, 'node': {}, 'fnapp': {}, 'datum': {}}
@@ -42,6 +54,7 @@ class Repo:
             tree_key = self.get_commit(tx, commit)[1]
             tree = result['tree'] = self.get_tree(tx, tree_key)
             for k, v in tree.items():
+                d = self.dump_dag(v
                 dag = result['dag'][v] = self.get_dag(tx, v)
                 for n in [*dag[0], dag[1]]:
                     node = result['node'][n] = self.get_node(tx, n) if n else None

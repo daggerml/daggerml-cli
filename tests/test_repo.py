@@ -52,4 +52,4 @@ class TestRepo(unittest.TestCase):
         print()
         db.dump(True)
 
-        print(db.dump_commit(db.head))
+        print(db.dump_dag(db.head, 'd0'))
