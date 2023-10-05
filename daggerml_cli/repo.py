@@ -35,17 +35,29 @@ class Repo:
                     rows.append([type, bytes(k).decode(), unpackb(v)])
         return print(tabulate(rows, headers=headers, tablefmt='fancy_grid')) if prn else rows
 
-    def dump_dag(self, head, name):
-        result = {'node': {}, 'fnapp': {}, 'datum': {}}
+    def dump_dag(self, head=None, name=None, dag_key=None, result=None):
+        result = result or {'dag': {}, 'node': {}, 'fnapp': {}, 'datum': {}}
         with self.tx() as tx:
-            commit_key = self.get_branch(tx, head)
-            tree_key = self.get_commit(tx, commit_key)[1]
-            dag_key = self.get_tree(tx, tree_key)[name]
-            dag = self.get_dag(tx, dag_key)
+            if dag_key is None:
+                commit_key = self.get_branch(tx, head)
+                tree_key = self.get_commit(tx, commit_key)[1]
+                dag_key = self.get_tree(tx, tree_key)[name]
+            dag = result['dag'][dag_key] = self.get_dag(tx, dag_key)
             for n in [*dag[0], dag[1]]:
                 node = result['node'][n] = self.get_node(tx, n) if n else None
                 result['datum'][node[1]] = self.get_datum(tx, node[1]) if node[1] else None
         return result
+
+    def dump_commit(self, head, commit_key=None, result=None, parents=False):
+        with self.tx() as tx:
+            result = result or {'commit': {}, 'tree': {}, 'dag': {}, 'node': {}, 'fnapp': {}, 'datum': {}}
+            commit_key = commit_key or self.get_branch(tx, head)
+            commit = result['commit'][commit_key] = self.get_commit(tx, commit_key)
+            tree = result['tree'][commit[1]] = self.get_tree(tx, commit[1])
+            for k, v in tree.items():
+                self.dump_dag(dag_key=v, result=result)
+            self.dump_commit(head, commit[0], result, parents) if commit[0] and parents else None
+            return result
 
     def exists_branch(self, tx, name, index=False):
         type = 'index' if index else 'head'

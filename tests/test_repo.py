@@ -1,6 +1,7 @@
 import unittest
-from tempfile import TemporaryDirectory
 from daggerml_cli.repo import Repo, DEFAULT
+from pprint import pp
+from tempfile import TemporaryDirectory
 
 
 class TestRepo(unittest.TestCase):
@@ -52,4 +53,5 @@ class TestRepo(unittest.TestCase):
         print()
         db.dump(True)
 
-        print(db.dump_dag(db.head, 'd0'))
+        pp(db.dump_dag(db.head, 'd0'))
+        pp(db.dump_commit(db.head, parents=True))
