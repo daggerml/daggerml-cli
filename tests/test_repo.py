@@ -1,5 +1,5 @@
 import unittest
-from daggerml_cli.repo import Repo, DEFAULT
+from daggerml_cli.repo import Repo, Resource
 from pprint import pp
 from tabulate import tabulate
 from tempfile import TemporaryDirectory
@@ -27,7 +27,8 @@ class TestRepo(unittest.TestCase):
         db.begin('d0')
         n0 = db.put_literal_node([1, 2, 3])
         n1 = db.put_literal_node({'foo': 42, 'bar': ['baz', 'baf']})
-        db.commit(n1)
+        n2 = db.put_literal_node(Resource({'a': 1}))
+        db.commit(n2)
         assert n0 and n1
 
         db.begin('d1').commit(db.put_literal_node(88))

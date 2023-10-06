@@ -1,9 +1,16 @@
-from daggerml_cli.util import packb, unpackb, packb64, unpackb64, sort_dict, dbenv, now
+from daggerml_cli.db import dbenv
+from daggerml_cli.pack import packb, unpackb, packb64, unpackb64, pack_type
+from daggerml_cli.util import sort_dict, now
 from hashlib import md5
 from uuid import uuid4
 
 
 DEFAULT = 'main'
+
+
+@pack_type(1)
+class Resource:
+    data: dict
 
 
 class Repo:
@@ -118,19 +125,24 @@ class Repo:
         return self.get_obj(tx, 'datum', key)
 
     def put_datum(self, tx, value):
-        t = type(value)
-        if t in [type(None), str, bool, int, float]:
+        if isinstance(value, (type(None), str, bool, int, float, Resource)):
             data = value
-        elif t in [list, tuple]:
+        elif isinstance(value, (list, tuple)):
             data = [self.put_datum(tx, x) for x in value]
-        elif t in [dict]:
+        elif isinstance(value, dict):
             data = sort_dict({k: self.put_datum(tx, v) for k, v in value.items()})
         else:
-            raise ValueError(f'unknown type: {t}')
+            raise ValueError(f'unknown type: {type(value)}')
         return self.put_obj(tx, 'datum', data)
 
     def dump_datum(self, tx, datum_key, result):
-        result['datum'][datum_key] = self.get_datum(tx, datum_key)
+        datum = result['datum'][datum_key] = self.get_datum(tx, datum_key)
+        if type(datum) == list:
+            for k in datum:
+                result['datum'][k] = self.get_datum(tx, k)
+        elif type(datum) == dict:
+            for k in datum.values():
+                result['datum'][k] = self.get_datum(tx, k)
         return result
 
     def get_dag(self, tx, key):
@@ -181,10 +193,9 @@ class Repo:
     def gc(self):
         with self.tx(True) as tx:
             dump = self.dump_repo(tx, self.empty_dump_result())
-            for db in dump.keys():
-                for (k, v) in iter(tx.cursor(db=self.db[db])):
-                    if not bytes(k).decode() in dump[db]:
-                        tx.delete(k, db=self.db[db])
+            for db, k, _ in self.dump_db(tx):
+                if k not in dump[db]:
+                    tx.delete(k.encode(), db=self.db[db])
 
     def checkout(self, branch=DEFAULT, create=False):
         assert self.index is None, 'can not switch branches with a dirty index'
