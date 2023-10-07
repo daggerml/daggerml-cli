@@ -1,6 +1,6 @@
 from daggerml_cli.db import dbenv
 from daggerml_cli.pack import packb, unpackb, packb64, unpackb64, packb_type
-from daggerml_cli.util import now, conj
+from daggerml_cli.util import now
 from dataclasses import dataclass, fields
 from hashlib import md5
 from uuid import uuid4
