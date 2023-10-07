@@ -172,8 +172,9 @@ class Repo:
             self(self.index, Index(self(Commit(commit.parent, self(tree)))))
             return node
 
-    def commit(self, node, error=None):
+    def commit(self, node):
         with self.tx(True):
+            node, error = (node, None) if isinstance(node, str) else (None, node)
             index = self(self.index)
             head = self(self.head)
             dag = self(Dag(self(self(self(index.commit).tree).dags[self.dag]).nodes, node, error))
