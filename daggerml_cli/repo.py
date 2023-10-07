@@ -172,11 +172,11 @@ class Repo:
             self(self.index, Index(self(Commit(commit.parent, self(tree)))))
             return node
 
-    def commit(self, node):
+    def commit(self, node, error=None):
         with self.tx(True):
             index = self(self.index)
             head = self(self.head)
-            dag = self(Dag(self(self(self(index.commit).tree).dags[self.dag]).nodes, node))
+            dag = self(Dag(self(self(self(index.commit).tree).dags[self.dag]).nodes, node, error))
             dags = self(self(head.commit).tree).dags if head else {}
             dags[self.dag] = dag
             self(self.head, Head(self(Commit(head.commit if head else None, self(Tree(dags))))))
