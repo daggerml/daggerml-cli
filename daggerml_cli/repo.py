@@ -133,7 +133,8 @@ class Repo:
                     [self.walk(k, result) for k in f]
                 elif isinstance(f, dict):
                     [self.walk(k, result) for k in f.values()]
-            self.walk(f'meta/{key}', result) if hasattr(d, 'meta') else None
+                if field_name == 'meta':
+                    self.walk(f'meta/{key}', result)
             result.add(key)
         return result
 
