@@ -168,12 +168,12 @@ class Repo:
                     k = bytes(k).decode()
                     self.delete(k) if k not in live_objs else None
 
-    def begin(self, dag, meta=None):
+    def begin(self, dag):
         with self.tx(True):
             head = self(self.head) or Head(None)
             commit = self(head.commit) or Commit(None, None, now())
             tree = self(commit.tree) or Tree({})
-            tree.dags[dag] = self(Dag(set(), None, None, meta=meta))
+            tree.dags[dag] = self(Dag(set(), None, None))
             self.index = self(Index(self(Commit(commit.parent, self(tree), now()))))
             self.dag = dag
 
