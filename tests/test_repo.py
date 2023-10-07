@@ -31,7 +31,13 @@ class TestRepo(unittest.TestCase):
         db.put_node('literal', db.put_datum([1, 2, 3]))
         db.put_node('literal', db.put_datum([1, 2, 3]))
         db.commit(db.put_node('literal', db.put_datum(Resource({'hello': 'world'}))))
-        db = Repo.new(db.state)
+
+        db = Repo(self.tmpdir)
+        db.begin('d0')
+        db.commit(db.put_node('literal', db.put_datum(75)))
 
         db.gc()
         dump(db)
+
+        with db.tx():
+            pp(db.walk('dag/60e558d76bcbaaf82e347d04d41636d6'))
