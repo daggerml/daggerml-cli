@@ -1,7 +1,7 @@
 import msgpack
 from base64 import b64encode, b64decode
 from daggerml_cli.util import fullname, sort_dict_recursively
-from dataclasses import dataclass, fields
+from dataclasses import dataclass, fields, _MISSING_TYPE
 from msgpack import ExtType
 
 
@@ -23,7 +23,7 @@ def packb(x):
     def default(obj):
         code = EXT_CODE.get(fullname(obj))
         if code:
-            data = [getattr(obj, x.name) for x in fields(obj)]
+            data = [getattr(obj, x.name) for x in fields(obj) if isinstance(x.default, _MISSING_TYPE)]
         elif isinstance(obj, set):
             code = 1
             data = sorted(list(obj))
