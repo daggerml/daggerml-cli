@@ -1,7 +1,7 @@
-from daggerml_cli.db import dbenv
+from daggerml_cli.db import dbenv, db_type
 from daggerml_cli.pack import packb, unpackb, packb64, unpackb64, packb_type
-from daggerml_cli.util import now
-from dataclasses import dataclass, fields
+from daggerml_cli.util import now, walk_type, uuid_type, walk_fields, is_uuid
+from dataclasses import dataclass, field, fields
 from hashlib import md5
 from uuid import uuid4
 
@@ -12,69 +12,71 @@ DEFAULT = 'head/main'
 @packb_type
 class Resource:
     data: dict
-    meta: str = None
-    uuid: bool = False
 
 
+@db_type
 @packb_type
-class Meta:
-    value: str
-    meta: str = None
-    uuid: bool = False
+@walk_type('commit')
+class Index:
+    commit: str
 
 
+@db_type
+@uuid_type
 @packb_type
-class Datum:
-    value: type(None) | str | bool | int | float | Resource | list | dict | set
-    meta: str = None
-    uuid: bool = False
+@walk_type('commit')
+class Head:
+    commit: str
 
 
+@db_type
 @packb_type
-class Node:
-    type: str
-    value: str
-    meta: str = None
-    uuid: bool = True
-
-
-@packb_type
-class Dag:
-    nodes: set
-    result: str
-    error: dict
-    meta: str = None
-    uuid: bool = False
-
-
-@packb_type
-class Tree:
-    dags: dict
-    meta: str = None
-    uuid: bool = False
-
-
-@packb_type
+@walk_type('parent', 'tree', 'meta')
 class Commit:
     parent: str
     tree: str
     timestamp: str
     meta: str = None
-    uuid: bool = False
 
 
+@db_type
 @packb_type
-class Head:
-    commit: str
-    meta: str = None
-    uuid: bool = True
+@walk_type('dags')
+class Tree:
+    dags: dict
 
 
+@db_type
 @packb_type
-class Index:
-    commit: str
+@walk_type('nodes', 'result')
+class Dag:
+    nodes: set
+    result: str
+    error: dict
+
+
+@db_type
+@uuid_type
+@packb_type
+@walk_type('value', 'meta')
+class Node:
+    type: str
+    value: str
     meta: str = None
-    uuid: bool = False
+
+
+@db_type
+@packb_type
+@walk_type(lambda x: ['value'] if isinstance(x, (list, dict, set)) else [])
+class Datum:
+    value: type(None) | str | bool | int | float | Resource | list | dict | set
+
+
+@db_type
+@packb_type
+@walk_type('value')
+class Meta:
+    value: str
 
 
 @dataclass
@@ -92,21 +94,21 @@ class Repo:
         if isinstance(key, str) and obj is None:
             db = key.split('/')[0]
             obj = unpackb(self._tx.get(key.encode(), db=self.db[db]))
-            if obj:
+            if obj and hasattr(obj, 'meta'):
                 obj.meta = self(f'meta/{key}')
             return obj
         key, obj = (key, obj) if obj else (obj, key)
         if obj is not None:
             db = obj.__class__.__name__.lower()
             data = packb(obj)
-            key2 = key or f'{db}/{uuid4().hex if obj.uuid else md5(data).hexdigest()}'
+            key2 = key or f'{db}/{uuid4().hex if is_uuid(obj) else md5(data).hexdigest()}'
             comp = None
-            if key is None and not obj.uuid:
+            if key is None and not is_uuid(obj):
                 comp = self._tx.get(key2.encode(), db=self.db[db])
                 assert comp is None or comp == data
             if key is None or comp is None:
                 self._tx.put(key2.encode(), data, db=self.db[db])
-                self(f'meta/{key2}', obj.meta) if obj.meta else None
+                self(f'meta/{key2}', obj.meta) if hasattr(obj, 'meta') and obj.meta else None
             return key2
 
     def delete(self, key):
@@ -122,26 +124,16 @@ class Repo:
 
     def walk(self, key, result=set()):
         if key:
-            type = key.split('/')[0]
             d = self(key)
-            if type == 'meta':
-                self.walk(d.value, result)
-            elif type == 'datum':
-                if isinstance(d.value, (list, set)):
-                    [self.walk(k, result) for k in d.value]
-                elif isinstance(d.value, dict):
-                    [self.walk(k, result) for k in d.value.values()]
-            elif type == 'node':
-                self.walk(d.value, result)
-            elif type == 'dag':
-                [self.walk(k, result) for k in d.nodes.union({d.result})]
-            elif type == 'tree':
-                [self.walk(k, result) for k in d.dags.values()]
-            elif type == 'commit':
-                [self.walk(k, result) for k in [d.parent, d.tree]]
-            elif type in ['head', 'index']:
-                self.walk(d.commit, result)
-            self.walk(f'meta/{key}', result) if d.meta else None
+            for field_name in walk_fields(d):
+                f = getattr(d, field_name)
+                if isinstance(f, str):
+                    self.walk(f, result)
+                elif isinstance(f, (list, set)):
+                    [self.walk(k, result) for k in f]
+                elif isinstance(f, dict):
+                    [self.walk(k, result) for k in f.values()]
+            self.walk(f'meta/{key}', result) if hasattr(d, 'meta') else None
             result.add(key)
         return result
 

@@ -1,6 +1,30 @@
 from datetime import datetime, timezone
 
 
+def walk_type(*fields):
+    def decorator(cls):
+        cls.walk = fields if isinstance(fields[0], str) else fields[0]
+        return cls
+    return decorator
+
+
+def walk_fields(obj):
+    if hasattr(obj.__class__, 'walk'):
+        if isinstance(obj.__class__.walk, type(lambda: None)):
+            return obj.__class__.walk(obj)
+        return obj.__class__.walk
+    return []
+
+
+def uuid_type(cls):
+    cls.uuid = True
+    return cls
+
+
+def is_uuid(obj):
+    return hasattr(obj.__class__, 'uuid')
+
+
 def fullname(obj):
     if type(obj) != type:
         return fullname(type(obj))
