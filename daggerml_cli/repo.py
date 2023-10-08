@@ -50,7 +50,7 @@ class Ref:
         return Repo.curr.get(self)
 
 
-@repo_type
+@repo_type(hash=[])
 class Index:
     commit: Ref
 
@@ -100,11 +100,14 @@ class Repo:
     dag: str = None
 
     def __post_init__(self):
-        self.env, self.db = dbenv(self.path)
+        self.env, self.dbs = dbenv(self.path)
         self._tx = None
 
     def __call__(self, key, obj=None):
         return self.put(key, obj)
+
+    def db(self, type):
+        return self.dbs[type] if type else None
 
     def tx(self, write=False):
         tx = self._tx = self.env.begin(write=write, buffers=True)
@@ -116,7 +119,7 @@ class Repo:
 
     def get(self, key):
         if key and key.to:
-            obj = unpackb(self._tx.get(key.to.encode(), db=self.db[key.type]))
+            obj = unpackb(self._tx.get(key.to.encode(), db=self.db(key.type)))
             return obj
 
     def put(self, key, obj=None):
@@ -128,18 +131,18 @@ class Repo:
             key2 = key.to or f'{db}/{self.hash(obj)}'
             comp = None
             if key.to is None:
-                comp = self._tx.get(key2.encode(), db=self.db[db])
+                comp = self._tx.get(key2.encode(), db=self.db(db))
                 assert comp is None or comp == data
             if key is None or comp is None:
-                self._tx.put(key2.encode(), data, db=self.db[db])
+                self._tx.put(key2.encode(), data, db=self.db(db))
             return Ref(key2)
         return Ref(None)
 
     def delete(self, key):
-        self._tx.delete(key.to.encode(), db=self.db[key.type])
+        self._tx.delete(key.to.encode(), db=self.db(key.type))
 
     def cursor(self, db):
-        return iter(self._tx.cursor(db=self.db[db]))
+        return iter(self._tx.cursor(db=self.db(db)))
 
     def walk(self, key, result=None):
         result = set() if result is None else result
@@ -172,10 +175,23 @@ class Repo:
             for db in ['head', 'index']:
                 for (k, _) in self.cursor(db):
                     self.walk(Ref(bytes(k).decode()), live_objs)
-            for db in self.db.keys():
+            for db in self.dbs.keys():
                 for (k, _) in self.cursor(db):
                     k = bytes(k).decode()
                     self.delete(Ref(k)) if k not in live_objs else None
+
+    def create_branch(self, branch, commit=None):
+        with self.tx(True):
+            commit = self.head() if commit is None else commit
+            assert branch.type == 'head'
+            assert branch() is None
+            return self(branch, self.head())
+
+    def checkout(self, ref):
+        with self.tx():
+            assert ref.type in ['head']
+            assert ref()
+            self.head = ref
 
     def begin(self, dag, meta=None):
         with self.tx(True):

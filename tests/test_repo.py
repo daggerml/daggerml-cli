@@ -8,7 +8,7 @@ from tempfile import TemporaryDirectory
 def dump(repo, rows=None):
     rows = [] if rows is None else rows
     with repo.tx():
-        for db in repo.db.keys():
+        for db in repo.dbs.keys():
             for (k, v) in repo.cursor(db):
                 k = bytes(k).decode()
                 rows.append([len(rows) + 1, k, repo.get(Ref(k))])
@@ -32,9 +32,11 @@ class TestRepo(unittest.TestCase):
         n0 = db.put_node('literal', x0, meta=x0)
         db.commit(n0)
 
-        # db = Repo(self.tmpdir)
-        # db.begin('d0')
-        # db.commit(db.put_node('literal', db.put_datum(75)))
+        db.create_branch(Ref('head/foop'))
+        db.checkout(Ref('head/foop'))
+
+        db.begin('d1')
+        db.commit(db.put_node('literal', db.put_datum(75)))
 
         db.gc()
         dump(db)
