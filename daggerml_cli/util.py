@@ -11,11 +11,6 @@ def now():
     return datetime.now(timezone.utc).isoformat()
 
 
-def conj(x, y):
-    x.append(y)
-    return x
-
-
 def sort_dict(x):
     return {k: x[k] for k in sorted(x.keys())} if isinstance(x, dict) else x
 

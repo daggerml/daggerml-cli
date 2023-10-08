@@ -1,7 +1,7 @@
 from daggerml_cli.db import dbenv, db_type
 from daggerml_cli.pack import packb, unpackb, packb64, unpackb64, register
 from daggerml_cli.util import now
-from dataclasses import dataclass, fields, is_dataclass, _MISSING_TYPE
+from dataclasses import dataclass, fields, is_dataclass
 from hashlib import md5
 from uuid import uuid4
 
