@@ -38,6 +38,9 @@ class TestRepo(unittest.TestCase):
         db.begin('d1')
         db.commit(db.put_node('literal', db.put_datum(75)))
 
+        db.begin('d2')
+        db.commit(db.put_node('literal', db.put_datum(99)))
+
         db.gc()
         dump(db)
 

@@ -62,7 +62,7 @@ class Head:
 
 @repo_type
 class Commit:
-    parent: Ref
+    parents: set[Ref]
     tree: Ref
     timestamp: str
 
@@ -104,7 +104,7 @@ class Repo:
         self._tx = None
         with self.tx(True):
             if not self.get(Ref('/init')):
-                self(self.head, Head(self(Commit(Ref(None), self(Tree({})), now()))))
+                self(self.head, Head(self(Commit([Ref(None)], self(Tree({})), now()))))
                 self(Ref('/init'), True)
         self.checkout(self.head)
 
@@ -185,12 +185,14 @@ class Repo:
                     k = bytes(k).decode()
                     self.delete(Ref(k)) if k not in live_objs else None
 
-    def create_branch(self, branch, commit=None):
+    def create_branch(self, branch, ref=None):
         with self.tx(True):
-            commit = self.head() if commit is None else commit
+            ref = self.head if ref is None else ref
+            assert ref.type in ['head', 'commit']
+            ref = self(Head(ref)) if ref.type == 'commit' else ref
             assert branch.type == 'head'
             assert branch() is None
-            return self(branch, self.head())
+            return self(branch, ref())
 
     def checkout(self, ref):
         with self.tx():
@@ -198,13 +200,16 @@ class Repo:
             assert ref(), f'no such ref: {ref.to}'
             self.head = ref
 
+    def merge(self, theirs, ours):
+        pass
+
     def begin(self, dag, meta=None):
         with self.tx(True):
             head = self.head() or Head(Ref(None))
-            commit = head.commit() or Commit(Ref(None), Ref(None), now())
+            commit = head.commit() or Commit([Ref(None)], Ref(None), now())
             tree = commit.tree() or Tree({})
             tree.dags[dag] = self(Dag(set(), Ref(None), None, meta=meta))
-            self.index = self(Index(self(Commit(commit.parent, self(tree), now()))))
+            self.index = self(Index(self(Commit(commit.parents, self(tree), now()))))
             self.dag = dag
 
     def put_datum(self, value):
@@ -229,7 +234,7 @@ class Repo:
             node = self(Node(type, datum, meta=meta))
             dag.nodes.add(node)
             tree.dags[self.dag] = self(dag)
-            self(self.index, Index(self(Commit(commit.parent, self(tree), now()))))
+            self(self.index, Index(self(Commit(commit.parents, self(tree), now()))))
             return node
 
     def commit(self, res_or_err):
@@ -242,7 +247,7 @@ class Repo:
             dag.error = error
             dags = head.commit().tree().dags if head else {}
             dags[self.dag] = self(dag)
-            self(self.head, Head(self(Commit(head.commit if head else Ref(None), self(Tree(dags)), now()))))
+            self(self.head, Head(self(Commit([head.commit] if head else [Ref(None)], self(Tree(dags)), now()))))
             self.delete(self.index)
             self.index = Ref(None)
             self.dag = None
