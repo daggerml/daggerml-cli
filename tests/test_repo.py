@@ -1,17 +1,17 @@
 import unittest
-from daggerml_cli.pack import unpackb
-from daggerml_cli.repo import Repo, Resource, Meta
+from daggerml_cli.repo import Repo, Resource, Ref
 from pprint import pp
 from tabulate import tabulate
 from tempfile import TemporaryDirectory
 
 
-def dump(repo, rows=[]):
+def dump(repo, rows=None):
+    rows = [] if rows is None else rows
     with repo.tx():
         for db in repo.db.keys():
             for (k, v) in repo.cursor(db):
                 k = bytes(k).decode()
-                rows.append([len(rows) + 1, db, k, repo(k)])
+                rows.append([len(rows) + 1, k, repo.get(Ref(k))])
     print(f'\n{tabulate(rows, tablefmt="simple_grid")}')
 
 
@@ -27,16 +27,14 @@ class TestRepo(unittest.TestCase):
 
     def test_create_dag(self):
         db = Repo(self.tmpdir)
-        db.begin('d0')
-        db = Repo.new(db.state)
-        db.put_node('literal', db.put_datum([1, 2, 3]))
-        db.put_node('literal', db.put_datum([1, 2, 3]))
-        m0 = Meta(db.put_node('literal', db.put_datum({"foo": ["bar", "baz"]})))
-        db.commit(db.put_node('literal', db.put_datum(Resource({'hello': 'world'}))), meta=m0)
+        db.begin('d0', meta={'foo': 'bar'})
+        x0 = db.put_datum({'foo': ['bar', [1, 2, 3]]})
+        n0 = db.put_node('literal', x0, meta=x0)
+        db.commit(n0)
 
-        db = Repo(self.tmpdir)
-        db.begin('d0')
-        db.commit(db.put_node('literal', db.put_datum(75)))
+        # db = Repo(self.tmpdir)
+        # db.begin('d0')
+        # db.commit(db.put_node('literal', db.put_datum(75)))
 
         db.gc()
         dump(db)

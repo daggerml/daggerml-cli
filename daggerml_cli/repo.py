@@ -1,7 +1,7 @@
 from daggerml_cli.db import dbenv, db_type
-from daggerml_cli.pack import packb, unpackb, packb64, unpackb64, packb_type
-from daggerml_cli.util import now, walk_type, uuid_type, walk_fields, is_uuid
-from dataclasses import dataclass, field, fields
+from daggerml_cli.pack import packb, unpackb, packb64, unpackb64, register
+from daggerml_cli.util import now
+from dataclasses import dataclass, fields, is_dataclass, _MISSING_TYPE
 from hashlib import md5
 from uuid import uuid4
 
@@ -9,81 +9,99 @@ from uuid import uuid4
 DEFAULT = 'head/main'
 
 
+register(set, lambda x, h: sorted(list(x)), lambda x: [tuple(x)])
+
+
+def packb_type(cls=None, **kwargs):
+    tohash = kwargs.pop('hash', None)
+    nohash = kwargs.pop('nohash', [])
+
+    def packfn(x, hash):
+        f = [y.name for y in fields(x)]
+        if hash:
+            f = [y for y in f if y not in nohash]
+            f = [y for y in f if y in tohash] if tohash else f
+            if not len(f):
+                return uuid4().hex
+        return [getattr(x, y) for y in f]
+
+    def decorator(cls):
+        register(cls, packfn, lambda x: x)
+        return dataclass(**kwargs)(cls)
+    return decorator(cls) if cls else decorator
+
+
 @packb_type
 class Resource:
     data: dict
 
 
+@packb_type(frozen=True)
+class Ref:
+    to: str
+
+    @property
+    def type(self):
+        return self.to.split('/')[0] if self.to else None
+
+    def __call__(self):
+        return Repo.curr.get(self)
+
+
 @db_type
 @packb_type
-@walk_type('commit')
 class Index:
-    commit: str
+    commit: Ref
 
 
 @db_type
-@uuid_type
-@packb_type
-@walk_type('commit')
+@packb_type(hash=[])
 class Head:
-    commit: str
+    commit: Ref
 
 
 @db_type
 @packb_type
-@walk_type('parent', 'tree', 'meta')
 class Commit:
-    parent: str
-    tree: str
+    parent: Ref
+    tree: Ref
     timestamp: str
-    meta: str = None
 
 
 @db_type
 @packb_type
-@walk_type('dags')
 class Tree:
     dags: dict
 
 
 @db_type
-@packb_type
-@walk_type('nodes', 'result')
+@packb_type(nohash=['meta'])
 class Dag:
     nodes: set
-    result: str
-    error: dict
+    result: Ref
+    error: dict | None
+    meta: dict | None = None
 
 
 @db_type
-@uuid_type
-@packb_type
-@walk_type('value', 'meta')
+@packb_type(hash=[])
 class Node:
     type: str
-    value: str
-    meta: str = None
+    value: Ref
+    meta: Ref = Ref(None)
 
 
 @db_type
 @packb_type
-@walk_type(lambda x: ['value'] if isinstance(x, (list, dict, set)) else [])
 class Datum:
     value: type(None) | str | bool | int | float | Resource | list | dict | set
-
-
-@db_type
-@packb_type
-@walk_type('value')
-class Meta:
-    value: str
 
 
 @dataclass
 class Repo:
     path: str
-    head: str = DEFAULT
-    index: str = None
+    head: Ref = Ref(DEFAULT)
+    index: Ref = Ref(None)
     dag: str = None
 
     def __post_init__(self):
@@ -91,51 +109,54 @@ class Repo:
         self._tx = None
 
     def __call__(self, key, obj=None):
-        if isinstance(key, str) and obj is None:
-            db = key.split('/')[0]
-            obj = unpackb(self._tx.get(key.encode(), db=self.db[db]))
-            if obj and hasattr(obj, 'meta'):
-                obj.meta = self(f'meta/{key}')
+        return self.put(key, obj)
+
+    def tx(self, write=False):
+        tx = self._tx = self.env.begin(write=write, buffers=True)
+        Repo.curr = self
+        return tx
+
+    def hash(self, obj):
+        return md5(packb(obj, True)).hexdigest()
+
+    def get(self, key):
+        if key and key.to:
+            obj = unpackb(self._tx.get(key.to.encode(), db=self.db[key.type]))
             return obj
+
+    def put(self, key, obj=None):
         key, obj = (key, obj) if obj else (obj, key)
+        key = Ref(None) if key is None else key
         if obj is not None:
-            db = obj.__class__.__name__.lower()
+            db = key.type if key.to else obj.__class__.__name__.lower()
             data = packb(obj)
-            key2 = key or f'{db}/{uuid4().hex if is_uuid(obj) else md5(data).hexdigest()}'
+            key2 = key.to or f'{db}/{self.hash(obj)}'
             comp = None
-            if key is None and not is_uuid(obj):
+            if key.to is None:
                 comp = self._tx.get(key2.encode(), db=self.db[db])
                 assert comp is None or comp == data
             if key is None or comp is None:
                 self._tx.put(key2.encode(), data, db=self.db[db])
-                self(f'meta/{key2}', obj.meta) if hasattr(obj, 'meta') and obj.meta else None
-            return key2
+            return Ref(key2)
+        return Ref(None)
 
     def delete(self, key):
-        db = key.split('/')[0]
-        self._tx.delete(key.encode(), db=self.db[db])
-
-    def tx(self, write=False):
-        tx = self._tx = self.env.begin(write=write, buffers=True)
-        return tx
+        self._tx.delete(key.to.encode(), db=self.db[key.type])
 
     def cursor(self, db):
         return iter(self._tx.cursor(db=self.db[db]))
 
-    def walk(self, key, result=set()):
-        if key:
-            d = self(key)
-            for field_name in walk_fields(d):
-                f = getattr(d, field_name)
-                if isinstance(f, str):
-                    self.walk(f, result)
-                elif isinstance(f, (list, set)):
-                    [self.walk(k, result) for k in f]
-                elif isinstance(f, dict):
-                    [self.walk(k, result) for k in f.values()]
-                if field_name == 'meta':
-                    self.walk(f'meta/{key}', result)
-            result.add(key)
+    def walk(self, key, result=None):
+        result = set() if result is None else result
+        if isinstance(key, Ref):
+            result.add(key.to)
+            self.walk(key(), result)
+        elif isinstance(key, (list, set)):
+            [self.walk(x, result) for x in key]
+        elif isinstance(key, dict):
+            self.walk(list(key.values()), result)
+        elif is_dataclass(key):
+            [self.walk(getattr(key, x.name), result) for x in fields(key)]
         return result
 
     ############################################################################
@@ -155,18 +176,18 @@ class Repo:
             live_objs = set()
             for db in ['head', 'index']:
                 for (k, _) in self.cursor(db):
-                    self.walk(bytes(k).decode(), live_objs)
+                    self.walk(Ref(bytes(k).decode()), live_objs)
             for db in self.db.keys():
                 for (k, _) in self.cursor(db):
                     k = bytes(k).decode()
-                    self.delete(k) if k not in live_objs else None
+                    self.delete(Ref(k)) if k not in live_objs else None
 
-    def begin(self, dag):
+    def begin(self, dag, meta=None):
         with self.tx(True):
-            head = self(self.head) or Head(None)
-            commit = self(head.commit) or Commit(None, None, now())
-            tree = self(commit.tree) or Tree({})
-            tree.dags[dag] = self(Dag(set(), None, None))
+            head = self.head() or Head(Ref(None))
+            commit = head.commit() or Commit(Ref(None), Ref(None), now())
+            tree = commit.tree() or Tree({})
+            tree.dags[dag] = self(Dag(set(), Ref(None), None, meta=meta))
             self.index = self(Index(self(Commit(commit.parent, self(tree), now()))))
             self.dag = dag
 
@@ -186,23 +207,26 @@ class Repo:
 
     def put_node(self, type, datum, meta=None):
         with self.tx(True):
-            commit = self(self(self.index).commit)
-            tree = self(commit.tree)
-            dag = self(tree.dags[self.dag])
+            commit = self.index().commit()
+            tree = commit.tree()
+            dag = tree.dags[self.dag]()
             node = self(Node(type, datum, meta=meta))
             dag.nodes.add(node)
             tree.dags[self.dag] = self(dag)
             self(self.index, Index(self(Commit(commit.parent, self(tree), now()))))
             return node
 
-    def commit(self, node, meta=None):
+    def commit(self, res_or_err):
         with self.tx(True):
-            node, error = (node, None) if isinstance(node, str) else (None, node)
-            index = self(self.index)
-            head = self(self.head)
-            dag = self(Dag(self(self(self(index.commit).tree).dags[self.dag]).nodes, node, error))
-            dags = self(self(head.commit).tree).dags if head else {}
-            dags[self.dag] = dag
-            self(self.head, Head(self(Commit(head.commit if head else None, self(Tree(dags)), now(), meta=meta))))
+            result, error = (res_or_err, None) if isinstance(res_or_err, Ref) else (None, res_or_err)
+            index = self.index()
+            head = self.head()
+            dag = index.commit().tree().dags[self.dag]()
+            dag.result = result
+            dag.error = error
+            dags = head.commit().tree().dags if head else {}
+            dags[self.dag] = self(dag)
+            self(self.head, Head(self(Commit(head.commit if head else Ref(None), self(Tree(dags)), now()))))
             self.delete(self.index)
-            self.dag = self.index = None
+            self.index = Ref(None)
+            self.dag = None

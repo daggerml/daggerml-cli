@@ -13,6 +13,5 @@ def dbenv(path):
 
 
 def db_type(cls):
-    global DB_TYPES
     DB_TYPES.append(cls.__name__.lower())
     return cls
