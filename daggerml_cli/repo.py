@@ -104,8 +104,9 @@ class Repo:
         self._tx = None
         with self.tx(True):
             if not self.get(Ref('/init')):
-                self.create_branch(self.head)
-                self.put(Ref('/init'), True)
+                self(self.head, Head(self(Commit(Ref(None), self(Tree({})), now()))))
+                self(Ref('/init'), True)
+        self.checkout(self.head)
 
     def __call__(self, key, obj=None):
         return self.put(key, obj)
@@ -193,8 +194,8 @@ class Repo:
 
     def checkout(self, ref):
         with self.tx():
-            assert ref.type in ['head']
-            assert ref()
+            assert ref.type in ['head'], f'unknown ref type: {ref.type}'
+            assert ref(), f'no such ref: {ref.to}'
             self.head = ref
 
     def begin(self, dag, meta=None):

@@ -27,19 +27,21 @@ class TestRepo(unittest.TestCase):
 
     def test_create_dag(self):
         db = Repo(self.tmpdir)
-        # db.begin('d0', meta={'foop': 'barp'})
-        # x0 = db.put_datum({'foo': ['bar', [1, 2, 3]]})
-        # n0 = db.put_node('literal', x0, meta=x0)
-        # db.commit(n0)
+        db.begin('d0', meta={'foop': 'barp'})
+        x0 = db.put_datum({'foo': ['bar', [1, 2, 3]]})
+        n0 = db.put_node('literal', x0, meta=x0)
+        db.commit(n0)
 
-        # db.create_branch(Ref('head/foop'))
-        # db.checkout(Ref('head/foop'))
+        db.create_branch(Ref('head/foop'))
+        db.checkout(Ref('head/foop'))
 
-        # db.begin('d1')
-        # db.commit(db.put_node('literal', db.put_datum(75)))
+        db.begin('d1')
+        db.commit(db.put_node('literal', db.put_datum(75)))
 
         db.gc()
         dump(db)
+
+        db = Repo(self.tmpdir, head=Ref('head/main'))
 
         # with db.tx():
         #     pp(db.walk('dag/60e558d76bcbaaf82e347d04d41636d6'))
