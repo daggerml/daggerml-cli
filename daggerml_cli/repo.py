@@ -12,9 +12,10 @@ DEFAULT = 'head/main'
 register(set, lambda x, h: sorted(list(x)), lambda x: [tuple(x)])
 
 
-def packb_type(cls=None, **kwargs):
+def repo_type(cls=None, **kwargs):
     tohash = kwargs.pop('hash', None)
     nohash = kwargs.pop('nohash', [])
+    dbtype = kwargs.pop('db', True)
 
     def packfn(x, hash):
         f = [y.name for y in fields(x)]
@@ -27,16 +28,17 @@ def packb_type(cls=None, **kwargs):
 
     def decorator(cls):
         register(cls, packfn, lambda x: x)
-        return dataclass(**kwargs)(cls)
+        return dataclass(**kwargs)(db_type(cls) if dbtype else cls)
+
     return decorator(cls) if cls else decorator
 
 
-@packb_type
+@repo_type(db=False)
 class Resource:
     data: dict
 
 
-@packb_type(frozen=True)
+@repo_type(frozen=True)
 class Ref:
     to: str
 
@@ -48,34 +50,29 @@ class Ref:
         return Repo.curr.get(self)
 
 
-@db_type
-@packb_type
+@repo_type
 class Index:
     commit: Ref
 
 
-@db_type
-@packb_type(hash=[])
+@repo_type(hash=[])
 class Head:
     commit: Ref
 
 
-@db_type
-@packb_type
+@repo_type
 class Commit:
     parent: Ref
     tree: Ref
     timestamp: str
 
 
-@db_type
-@packb_type
+@repo_type
 class Tree:
     dags: dict
 
 
-@db_type
-@packb_type(nohash=['meta'])
+@repo_type
 class Dag:
     nodes: set
     result: Ref
@@ -83,16 +80,14 @@ class Dag:
     meta: dict | None = None
 
 
-@db_type
-@packb_type(hash=[])
+@repo_type(hash=[])
 class Node:
     type: str
     value: Ref
     meta: Ref = Ref(None)
 
 
-@db_type
-@packb_type
+@repo_type
 class Datum:
     value: type(None) | str | bool | int | float | Resource | list | dict | set
 
