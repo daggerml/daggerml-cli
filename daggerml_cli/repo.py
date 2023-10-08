@@ -102,6 +102,10 @@ class Repo:
     def __post_init__(self):
         self.env, self.dbs = dbenv(self.path)
         self._tx = None
+        with self.tx(True):
+            if not self.get(Ref('/init')):
+                self.create_branch(self.head)
+                self.put(Ref('/init'), True)
 
     def __call__(self, key, obj=None):
         return self.put(key, obj)
