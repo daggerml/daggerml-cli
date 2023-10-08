@@ -99,6 +99,14 @@ class Repo:
     index: Ref = Ref(None)
     dag: str = None
 
+    @classmethod
+    def new(cls, b64state):
+        return cls(*unpackb64(b64state))
+
+    @property
+    def state(self):
+        return packb64([getattr(self, x.name) for x in fields(self)])
+
     def __post_init__(self):
         self.env, self.dbs = dbenv(self.path)
         self._tx = None
@@ -106,7 +114,7 @@ class Repo:
             if not self.get(Ref('/init')):
                 self(self.head, Head(self(Commit([Ref(None)], self(Tree({})), now()))))
                 self(Ref('/init'), True)
-        self.checkout(self.head)
+            self.checkout(self.head)
 
     def __call__(self, key, obj=None):
         return self.put(key, obj)
@@ -162,92 +170,105 @@ class Repo:
             [self.walk(getattr(key, x.name), result) for x in fields(key)]
         return result
 
-    ############################################################################
-    # PUBLIC API ###############################################################
-    ############################################################################
+    def objects(self):
+        result = set()
+        for db in self.dbs.keys():
+            for (k, _) in self.cursor(db):
+                result.add(bytes(k).decode())
+        return result
 
-    @classmethod
-    def new(cls, b64state):
-        return cls(*unpackb64(b64state))
+    def reachable_objects(self):
+        result = set()
+        for db in ['head', 'index']:
+            for (k, _) in self.cursor(db):
+                self.walk(Ref(bytes(k).decode()), result)
+        return result
 
-    @property
-    def state(self):
-        return packb64([getattr(self, x.name) for x in fields(self)])
+    def unreachable_objects(self):
+        return self.objects().difference(self.reachable_objects())
 
     def gc(self):
-        with self.tx(True):
-            live_objs = set()
-            for db in ['head', 'index']:
-                for (k, _) in self.cursor(db):
-                    self.walk(Ref(bytes(k).decode()), live_objs)
-            for db in self.dbs.keys():
-                for (k, _) in self.cursor(db):
-                    k = bytes(k).decode()
-                    self.delete(Ref(k)) if k not in live_objs else None
+        [self.delete(Ref(k)) for k in self.unreachable_objects()]
 
-    def create_branch(self, branch, ref=None):
-        with self.tx(True):
-            ref = self.head if ref is None else ref
-            assert ref.type in ['head', 'commit']
-            ref = self(Head(ref)) if ref.type == 'commit' else ref
-            assert branch.type == 'head'
-            assert branch() is None
-            return self(branch, ref())
+    def ancestors(self, xs, result=None):
+        xs = xs if isinstance(xs, list) else [xs]
+        result = [] if result is None else result
+        ys = []
+        for x in [x for x in xs if x is not None]:
+            y = x()
+            if y:
+                result.append(x)
+                ys += y.parents
+        return self.ancestors(ys, result) if len(ys) else result
+
+    def common_ancestor(self, a, b):
+        aa = self.ancestors(a)
+        ab = self.ancestors(b)
+        sa = set(tuple(aa))
+        sb = set(tuple(ab))
+
+        for x in aa:
+            if sa.issubset(sb):
+                return x
+            sa.remove(x)
+
+    def create_branch(self, branch, ref):
+        assert branch.type == 'head'
+        assert branch() is None
+        assert ref.type in ['head', 'commit']
+        ref = self(Head(ref)) if ref.type == 'commit' else ref
+        return self(branch, ref())
 
     def checkout(self, ref):
-        with self.tx():
-            assert ref.type in ['head'], f'unknown ref type: {ref.type}'
-            assert ref(), f'no such ref: {ref.to}'
-            self.head = ref
+        assert ref.type in ['head'], f'unknown ref type: {ref.type}'
+        assert ref(), f'no such ref: {ref.to}'
+        self.head = ref
 
-    def merge(self, theirs, ours):
-        pass
+    def merge(self, a, b):
+        c = self.common_ancestor(a, b)
+        print(c)
 
     def begin(self, dag, meta=None):
-        with self.tx(True):
-            head = self.head() or Head(Ref(None))
-            commit = head.commit() or Commit([Ref(None)], Ref(None), now())
-            tree = commit.tree() or Tree({})
-            tree.dags[dag] = self(Dag(set(), Ref(None), None, meta=meta))
-            self.index = self(Index(self(Commit(commit.parents, self(tree), now()))))
-            self.dag = dag
+        head = self.head() or Head(Ref(None))
+        commit = head.commit() or Commit([Ref(None)], Ref(None), now())
+        tree = commit.tree() or Tree({})
+        tree.dags[dag] = self(Dag(set(), Ref(None), None, meta=meta))
+        self.index = self(Index(self(Commit(commit.parents, self(tree), now()))))
+        self.dag = dag
 
     def put_datum(self, value):
-        with self.tx(True):
-            def put(value):
-                if isinstance(value, (type(None), str, bool, int, float, Resource)):
-                    return self(Datum(value))
-                elif isinstance(value, list):
-                    return self(Datum([put(x) for x in value]))
-                elif isinstance(value, set):
-                    return self(Datum({put(x) for x in value}))
-                elif isinstance(value, dict):
-                    return self(Datum({k: put(v) for k, v in value.items()}))
-                raise TypeError(f'unknown type: {type(value)}')
-            return put(value)
+        def put(value):
+            if isinstance(value, (type(None), str, bool, int, float, Resource)):
+                return self(Datum(value))
+            elif isinstance(value, list):
+                return self(Datum([put(x) for x in value]))
+            elif isinstance(value, set):
+                return self(Datum({put(x) for x in value}))
+            elif isinstance(value, dict):
+                return self(Datum({k: put(v) for k, v in value.items()}))
+            raise TypeError(f'unknown type: {type(value)}')
+        return put(value)
 
     def put_node(self, type, datum, meta=None):
-        with self.tx(True):
-            commit = self.index().commit()
-            tree = commit.tree()
-            dag = tree.dags[self.dag]()
-            node = self(Node(type, datum, meta=meta))
-            dag.nodes.add(node)
-            tree.dags[self.dag] = self(dag)
-            self(self.index, Index(self(Commit(commit.parents, self(tree), now()))))
-            return node
+        commit = self.index().commit()
+        tree = commit.tree()
+        dag = tree.dags[self.dag]()
+        node = self(Node(type, datum, meta=meta))
+        dag.nodes.add(node)
+        tree.dags[self.dag] = self(dag)
+        self(self.index, Index(self(Commit(commit.parents, self(tree), now()))))
+        return node
 
     def commit(self, res_or_err):
-        with self.tx(True):
-            result, error = (res_or_err, None) if isinstance(res_or_err, Ref) else (None, res_or_err)
-            index = self.index()
-            head = self.head()
-            dag = index.commit().tree().dags[self.dag]()
-            dag.result = result
-            dag.error = error
-            dags = head.commit().tree().dags if head else {}
-            dags[self.dag] = self(dag)
-            self(self.head, Head(self(Commit([head.commit] if head else [Ref(None)], self(Tree(dags)), now()))))
-            self.delete(self.index)
-            self.index = Ref(None)
-            self.dag = None
+        result, error = (res_or_err, None) if isinstance(res_or_err, Ref) else (None, res_or_err)
+        index = self.index()
+        head = self.head()
+        dag = index.commit().tree().dags[self.dag]()
+        dag.result = result
+        dag.error = error
+        dags = head.commit().tree().dags if head else {}
+        dags[self.dag] = self(dag)
+        self(self.head, Head(self(Commit([head.commit] if head else [Ref(None)], self(Tree(dags)), now()))))
+        self.delete(self.index)
+        self.index = Ref(None)
+        self.dag = None
