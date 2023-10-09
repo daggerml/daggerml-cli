@@ -64,7 +64,6 @@ class Head:
 class Commit:
     parents: set[Ref]
     tree: Ref
-    timestamp: str
 
 
 @repo_type
@@ -112,7 +111,7 @@ class Repo:
         self._tx = None
         with self.tx(True):
             if not self.get(Ref('/init')):
-                self(self.head, Head(self(Commit([Ref(None)], self(Tree({})), now()))))
+                self(self.head, Head(self(Commit([Ref(None)], self(Tree({}))))))
                 self(Ref('/init'), True)
             self.checkout(self.head)
 
@@ -227,12 +226,13 @@ class Repo:
 
     def patch(self, tree, *diffs):
         diff = {'add': {}, 'rem': {}}
+        tree = tree()
         for d in diffs:
             diff['add'].update(d['add'])
             diff['rem'].update(d['rem'])
         [tree.dags.pop(k, None) for k in diff['rem'].keys()]
         tree.dags.update(diff['add'])
-        return tree
+        return self(tree)
 
     def merge(self, c1, c2):
         c0 = self.common_ancestor(c1, c2)
@@ -244,8 +244,8 @@ class Repo:
             return c2
         d1 = self.diff(c0().tree, c1().tree)
         d2 = self.diff(c0().tree, c2().tree)
-        tree = self.patch(c1().tree(), d1, d2)
-        return self(Commit([c1, c2], self(tree), now()))
+        tree = self.patch(c1().tree, d1, d2)
+        return self(Commit([c1, c2], tree))
 
     def rebase(self, c1, c2):
         c0 = self.common_ancestor(c1, c2)
@@ -254,20 +254,24 @@ class Repo:
         if c0 == c2:
             return c1
 
-        def replay(base, commit):
+        def replay(commit):
             if commit == c0:
-                return base
+                return c1
             p = commit().parents
             if len(p) == 1:
                 p, = p
-                x = replay(base, p)
-                d = self.diff(p().tree, commit().tree)
-                t = self.patch(x().tree(), d)
-                return self(Commit([x], self(t), now()))
+                x = replay(p)
+                diff = self.diff(p().tree, commit().tree)
+                tree = self.patch(x().tree, diff)
+                return self(Commit([x], tree))
             assert len(p) == 2
-            a, b = (replay(base, x) for x in p)
+            a, b = (replay(x) for x in p)
             return self.merge(a, b)
-        return replay(c1, c2)
+
+        return replay(c2)
+
+    def squash(self, commit):
+        pass
 
     def create_branch(self, branch, ref):
         assert branch.type == 'head'
@@ -286,10 +290,10 @@ class Repo:
 
     def begin(self, dag, meta=None):
         head = self.head() or Head(Ref(None))
-        commit = head.commit() or Commit([Ref(None)], Ref(None), now())
+        commit = head.commit() or Commit([Ref(None)], Ref(None))
         tree = commit.tree() or Tree({})
         tree.dags[dag] = self(Dag(set(), Ref(None), None, meta=meta))
-        self.index = self(Index(self(Commit(commit.parents, self(tree), now()))))
+        self.index = self(Index(self(Commit(commit.parents, self(tree)))))
         self.dag = dag
 
     def put_datum(self, value):
@@ -312,7 +316,7 @@ class Repo:
         node = self(Node(type, datum, meta=meta))
         dag.nodes.add(node)
         tree.dags[self.dag] = self(dag)
-        self(self.index, Index(self(Commit(commit.parents, self(tree), now()))))
+        self(self.index, Index(self(Commit(commit.parents, self(tree)))))
         return node
 
     def commit(self, res_or_err):
@@ -324,7 +328,7 @@ class Repo:
         dag.error = error
         dags = head.commit().tree().dags if head else {}
         dags[self.dag] = self(dag)
-        self(self.head, Head(self(Commit([head.commit] if head else [Ref(None)], self(Tree(dags)), now()))))
+        self(self.head, Head(self(Commit([head.commit] if head else [Ref(None)], self(Tree(dags))))))
         self.delete(self.index)
         self.index = Ref(None)
         self.dag = None
@@ -341,7 +345,7 @@ class Repo:
 
         # dags = head.commit().tree().dags if head else {}
         # dags[self.dag] = self(dag)
-        # self(self.head, Head(self(Commit([head.commit] if head else [Ref(None)], self(Tree(dags)), now()))))
+        # self(self.head, Head(self(Commit([head.commit] if head else [Ref(None)], self(Tree(dags))))))
         # self.delete(self.index)
         # self.index = Ref(None)
         # self.dag = None
