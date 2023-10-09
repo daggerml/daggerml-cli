@@ -66,6 +66,10 @@ class Head:
 class Commit:
     parents: set[Ref]
     tree: Ref
+    timestamp: str = None
+
+    def __post_init__(self):
+        self.timestamp = now()
 
 
 @repo_type
