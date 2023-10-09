@@ -249,6 +249,17 @@ class Repo:
 
     def rebase(self, c1, c2):
         c0 = self.common_ancestor(c1, c2)
+        if c0 == c1:
+            return c2
+        if c0 == c2:
+            return c1
+        commits = self.ancestors(c2)
+        commits = commits[commits.index(c0):]  # includes c0
+        for from_, to_ in zip(commits[:-1], commits[1:]):
+            diff = self.diff(from_().tree, to_().tree)
+            tree = self.patch(c1().tree(), diff)
+            c1 = self(Commit([c1], self(tree), now()))
+        return c1
 
     def create_branch(self, branch, ref):
         assert branch.type == 'head'

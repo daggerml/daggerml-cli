@@ -55,10 +55,12 @@ class TestRepo(unittest.TestCase):
 
             a = Ref('head/main')().commit
             b = Ref('head/foop')().commit
+
+            c0 = db.rebase(a, b)
             m0 = db.merge(a, b)
 
             print()
-            pp([db.head, a, b, m0])
+            pp([db.head, a, b, m0, c0])
 
             db.checkout(db.set_head(db.head, Head(m0)))
 
