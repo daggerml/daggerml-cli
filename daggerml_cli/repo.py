@@ -97,6 +97,16 @@ class Datum:
 
 
 @dataclass
+class Ctx:
+    ref: Ref
+    head: Head
+    commit: Commit
+    tree: Tree
+    dags: dict
+    dag: Dag
+
+
+@dataclass
 class Repo:
     path: str
     head: Ref = Ref(DEFAULT)
@@ -130,6 +140,14 @@ class Repo:
         tx = self._tx = self.env.begin(write=write, buffers=True)
         Repo.curr = self
         return tx
+
+    def ctx(self, ref, dag=None):
+        head = ref()
+        commit = head.commit() if head else None
+        tree = commit.tree() if commit else None
+        dags = tree.dags if tree else None
+        dag = dags[dag]() if dags and dag in dags else None
+        return Ctx(ref, head, commit, tree, dags, dag)
 
     def hash(self, obj):
         return md5(packb(obj, True)).hexdigest()
@@ -300,11 +318,9 @@ class Repo:
         self.head = ref
 
     def begin(self, dag):
-        head = self.head()
-        commit = head.commit()
-        tree = commit.tree()
-        tree.dags[dag] = self(Dag(set(), Ref(None), None))
-        self.index = self(Index(self(Commit({head.commit}, self(tree)))))
+        ctx = self.ctx(self.head, dag)
+        ctx.dags[dag] = self(Dag(set(), Ref(None), None))
+        self.index = self(Index(self(Commit({ctx.head.commit}, self(ctx.tree)))))
         self.dag = dag
 
     def put_datum(self, value):
@@ -321,26 +337,21 @@ class Repo:
         return put(value)
 
     def put_node(self, type, expr, datum):
-        commit = self.index().commit()
-        tree = commit.tree()
-        dag = tree.dags[self.dag]()
+        ctx = self.ctx(self.index, self.dag)
         node = self(Node(type, expr, datum))
-        dag.nodes.add(node)
-        tree.dags[self.dag] = self(dag)
-        commit.tree = self(tree)
-        self.index = self(self.index, Index(self(commit)))
+        ctx.dag.nodes.add(node)
+        ctx.dags[self.dag] = self(ctx.dag)
+        ctx.commit.tree = self(ctx.tree)
+        self.index = self(self.index, Index(self(ctx.commit)))
         return node
 
     def commit(self, res_or_err):
         result, error = (res_or_err, None) if isinstance(res_or_err, Ref) else (None, res_or_err)
-        index = self.index()
-        commit = index.commit()
-        tree = commit.tree()
-        dag = tree.dags[self.dag]()
-        dag.result = result
-        dag.error = error
-        tree.dags[self.dag] = self(dag)
-        commit = self.rebase(self.head().commit, self(Commit(commit.parents, self(tree))))
+        ctx = self.ctx(self.index, self.dag)
+        ctx.dag.result = result
+        ctx.dag.error = error
+        ctx.tree.dags[self.dag] = self(ctx.dag)
+        commit = self.rebase(self.head().commit, self(Commit(ctx.commit.parents, self(ctx.tree))))
         self.set_head(self.head, commit)
         self.delete(self.index)
         self.index = Ref(None)

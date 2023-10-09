@@ -8,9 +8,7 @@ from tempfile import TemporaryDirectory
 def dump(repo, count=None):
     rows = []
     for db in repo.dbs.keys():
-        for (k, v) in repo.cursor(db):
-            k = bytes(k).decode()
-            rows.append([len(rows) + 1, k, repo.get(Ref(k))])
+        [rows.append([len(rows) + 1, k, repo.get(Ref(k))]) for k in repo.cursor(db)]
     rows = rows[:min(count, len(rows))] if count is not None else rows
     print(f'\n{tabulate(rows, tablefmt="simple_grid")}')
 
@@ -90,8 +88,8 @@ class TestRepo(unittest.TestCase):
             m0 = db.rebase(b, a)
             db.set_head(Ref('head/foop'), m0)
 
-            # db.gc()
-            # dump(db)
-
             print()
             db.graph()
+
+            # db.gc()
+            # dump(db)
