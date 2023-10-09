@@ -116,7 +116,7 @@ class Repo:
         self._tx = None
         with self.tx(True):
             if not self.get(Ref('/init')):
-                self(self.head, Head(self(Commit({Ref(None)}, self(Tree({}))))))
+                self(self.head, Head(self(Commit({}, self(Tree({}))))))
                 self(Ref('/init'), True)
             self.checkout(self.head)
 
