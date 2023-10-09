@@ -1,5 +1,5 @@
-import asciidag.graph
-import asciidag.node
+from asciidag.graph import Graph as AsciiGraph
+from asciidag.node import Node as AsciiNode
 from daggerml_cli.db import dbenv, db_type
 from daggerml_cli.pack import packb, unpackb, packb64, unpackb64, register
 from daggerml_cli.util import now
@@ -172,11 +172,11 @@ class Repo:
 
     def log(self, db=None, ref=None, head=None):
         if db:
-            result = []
-            for (k, _) in self.cursor(db):
-                k = bytes(k).decode()
-                result.append(self.log(ref=Ref(k)().commit, head=k))
-            return result
+            h = getattr(self, db).to
+            ks = [bytes(x).decode() for x, _ in self.cursor(db)]
+            ks.remove(h)
+            ks = [h, *ks]
+            return [self.log(ref=Ref(k)().commit, head=k) for k in ks]
         if ref and ref.to:
             tag = f' {head}' if head else ''
             return [f'{ref.to}{tag}', [self.log(ref=x) for x in ref().parents if x and x.to]]
@@ -348,8 +348,30 @@ class Repo:
         self.dag = None
 
     def graph(self):
+        nodes = {}
         def walk(x):
             if x and x[0]:
-                return asciidag.node.Node(x[0], parents=[walk(y) for y in x[1] if y])
+                if x[0] not in nodes:
+                    nodes[x[0]] = AsciiNode(x[0], parents=[walk(y) for y in x[1] if y])
+                return nodes[x[0]]
         heads = [walk(x) for x in self.log('head')]
-        asciidag.graph.Graph().show_nodes(heads)
+        AsciiGraph().show_nodes(heads)
+
+    # def graph(self):
+    #     def walk(kvs, result={}):
+    #         kvs = [x for x in kvs if len(x) > 0]
+    #         if len(kvs) == 0:
+    #             return
+    #         for child, parents in kvs:
+    #             if child not in result:
+    #                 walk(parents, result)
+    #             result[child] = [y[0] for y in parents]
+    #         return result
+    #     graph = walk(self.log('head'))
+    #     ts = TopologicalSorter(graph)
+    #     nodes = {}
+    #     heads = []
+    #     for c in ts.static_order():
+    #         nodes[c] = asciidag.node.Node(c, parents=[nodes[x] for x in graph[c]])
+    #         heads.append(nodes[c])
+    #     asciidag.graph.Graph().show_nodes(reversed(heads))
