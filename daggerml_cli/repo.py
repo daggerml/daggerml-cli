@@ -172,11 +172,8 @@ class Repo:
 
     def log(self, db=None, ref=None, head=None):
         if db:
-            h = getattr(self, db).to
             ks = [bytes(x).decode() for x, _ in self.cursor(db)]
-            ks.remove(h)
-            ks = [h, *ks]
-            return [self.log(ref=Ref(k)().commit, head=k) for k in ks]
+            return {k: self.log(ref=Ref(k)().commit, head=k) for k in ks}
         if ref and ref.to:
             tag = f' {head}' if head else ''
             return [f'{ref.to}{tag}', [self.log(ref=x) for x in ref().parents if x and x.to]]
@@ -260,12 +257,6 @@ class Repo:
         return self(Commit([c1, c2], tree))
 
     def rebase(self, c1, c2):
-        c0 = self.common_ancestor(c1, c2)
-        if c0 == c1:
-            return c2
-        if c0 == c2:
-            return c1
-
         def replay(commit):
             if commit == c0:
                 return c1
@@ -279,7 +270,11 @@ class Repo:
             assert len(p) == 2
             a, b = (replay(x) for x in p)
             return self.merge(a, b)
-
+        c0 = self.common_ancestor(c1, c2)
+        if c0 == c1:
+            return c2
+        if c0 == c2:
+            return c1
         return replay(c2)
 
     def squash(self, commit):
@@ -291,6 +286,10 @@ class Repo:
         assert ref.type in ['head', 'commit']
         ref = self(Head(ref)) if ref.type == 'commit' else ref
         return self(branch, ref())
+
+    def delete_branch(self, branch):
+        assert self.head != branch
+        self.delete(branch)
 
     def set_head(self, head, commit):
         return self(head, Head(commit))
@@ -354,5 +353,7 @@ class Repo:
                     nodes[x[0]] = AsciiNode(x[0], parents=[walk(y) for y in x[1] if y])
                 return nodes[x[0]]
         nodes = {}
-        heads = [walk(x) for x in self.log('head')]
+        log = self.log('head')
+        ks = [self.head.to, *[k for k in log.keys() if k != self.head.to]]
+        heads = [walk(log[k]) for k in ks]
         AsciiGraph().show_nodes(heads)

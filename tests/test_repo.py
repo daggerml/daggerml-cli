@@ -52,15 +52,15 @@ class TestRepo(unittest.TestCase):
             a = Ref('head/main')().commit
             b = Ref('head/foop')().commit
 
-            m0 = db.rebase(a, b)
-            # m0 = db.merge(a, b)
-
-            # db.delete(Ref('head/foop'))
+            # m0 = db.rebase(a, b)
+            m0 = db.merge(a, b)
 
             # # print()
             # # pp([db.head, a, b, m0, c0])
 
             db.checkout(db.set_head(Ref('head/main'), m0))
+
+            # db.delete_branch(Ref('head/foop'))
 
             db.begin('d4')
             db.commit(db.put_node('literal', [], db.put_datum('d4')))
