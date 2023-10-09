@@ -326,7 +326,7 @@ class Repo:
         node = self(Node(type, expr, datum))
         dag.nodes.add(node)
         tree.dags[self.dag] = self(dag)
-        self(self.index, Index(self(Commit(commit.parents, self(tree)))))
+        self.index = self(self.index, Index(self(Commit(commit.parents, self(tree)))))
         return node
 
     def commit(self, res_or_err):
