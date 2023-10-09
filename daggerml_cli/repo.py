@@ -112,7 +112,7 @@ class Repo:
         self._tx = None
         with self.tx(True):
             if not self.get(Ref('/init')):
-                self(self.head, Head(self(Commit([], self(Tree({}))))))
+                self(self.head, Head(self(Commit([Ref(None)], self(Tree({}))))))
                 self(Ref('/init'), True)
             self.checkout(self.head)
 
@@ -170,14 +170,16 @@ class Repo:
             [self.walk(getattr(key, x.name), result) for x in fields(key)]
         return result
 
-    def log(self, db=None, ref=None):
+    def log(self, db=None, ref=None, head=None):
         if db:
             result = []
             for (k, _) in self.cursor(db):
-                result.append(self.log(ref=Ref(bytes(k).decode())().commit))
+                k = bytes(k).decode()
+                result.append(self.log(ref=Ref(k)().commit, head=k))
             return result
-        if ref:
-            return [ref.to, [self.log(ref=x) for x in ref().parents]]
+        if ref and ref.to:
+            tag = f' {head}' if head else ''
+            return [f'{ref.to}{tag}', [self.log(ref=x) for x in ref().parents if x and x.to]]
 
     def objects(self):
         result = set()
@@ -326,7 +328,8 @@ class Repo:
         node = self(Node(type, expr, datum))
         dag.nodes.add(node)
         tree.dags[self.dag] = self(dag)
-        self.index = self(self.index, Index(self(Commit(commit.parents, self(tree)))))
+        commit.tree = self(tree)
+        self.index = self(self.index, Index(self(commit)))
         return node
 
     def commit(self, res_or_err):
@@ -347,6 +350,6 @@ class Repo:
     def graph(self):
         def walk(x):
             if x and x[0]:
-                return asciidag.node.Node(x[0], parents=[walk(y) for y in x[1]])
+                return asciidag.node.Node(x[0], parents=[walk(y) for y in x[1] if y])
         heads = [walk(x) for x in self.log('head')]
         asciidag.graph.Graph().show_nodes(heads)

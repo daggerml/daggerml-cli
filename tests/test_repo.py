@@ -45,22 +45,22 @@ class TestRepo(unittest.TestCase):
             # db.begin('d3')
             # db.commit(db.put_node('literal', [], db.put_datum('d3')))
 
-            # db.begin('d0')
-            # db.commit(db.put_node('literal', [], db.put_datum('d0')))
+            db.begin('d0')
+            db.commit(db.put_node('literal', [], db.put_datum('d0')))
 
             # db.begin('d1')
             # db.commit(db.put_node('literal', [], db.put_datum('d1')))
 
-            # a = Ref('head/main')().commit
-            # b = Ref('head/foop')().commit
+            a = Ref('head/main')().commit
+            b = Ref('head/foop')().commit
 
-            # m0 = db.rebase(a, b)
+            m0 = db.rebase(a, b)
             # # m0 = db.merge(a, b)
 
             # # print()
             # # pp([db.head, a, b, m0, c0])
 
-            # db.checkout(db.set_head(Ref('head/main'), m0))
+            db.checkout(db.set_head(Ref('head/main'), m0))
 
             # db.begin('d4')
             # db.commit(db.put_node('literal', [], db.put_datum('d4')))
@@ -71,4 +71,7 @@ class TestRepo(unittest.TestCase):
             db.gc()
             dump(db, 15)
 
+            print()
+            pp(db.log('head'))
+            print()
             db.graph()
