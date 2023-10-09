@@ -159,7 +159,7 @@ class Repo:
         self._tx.delete(key.to.encode(), db=self.db(key.type))
 
     def cursor(self, db):
-        return iter(self._tx.cursor(db=self.db(db)))
+        return map(lambda x: bytes(x[0]).decode(), iter(self._tx.cursor(db=self.db(db))))
 
     def walk(self, key, result=None):
         result = set() if result is None else result
@@ -176,23 +176,20 @@ class Repo:
 
     def log(self, db=None, ref=None):
         if db:
-            ks = [bytes(x).decode() for x, _ in self.cursor(db)]
-            return {k: self.log(ref=Ref(k)().commit) for k in ks}
+            return {k: self.log(ref=Ref(k)().commit) for k in self.cursor(db)}
         if ref and ref.to:
             return [ref.to, [self.log(ref=x) for x in ref().parents if x and x.to]]
 
     def objects(self):
         result = set()
         for db in self.dbs.keys():
-            for (k, _) in self.cursor(db):
-                result.add(bytes(k).decode())
+            [result.add(k) for k in self.cursor(db)]
         return result
 
     def reachable_objects(self):
         result = set()
         for db in ['head', 'index']:
-            for (k, _) in self.cursor(db):
-                self.walk(Ref(bytes(k).decode()), result)
+            [self.walk(Ref(k), result) for k in self.cursor(db)]
         return result
 
     def unreachable_objects(self):

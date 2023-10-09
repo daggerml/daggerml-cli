@@ -32,8 +32,14 @@ class TestRepo(unittest.TestCase):
             db.begin('d0')
             db.commit(db.put_node('literal', [], db.put_datum('d0')))
 
+            db.graph()
+            print()
+
             db.create_branch(Ref('head/foop'), db.head)
             db.checkout(Ref('head/foop'))
+
+            db.graph()
+            print()
 
             db.begin('d1')
             db.commit(db.put_node('literal', [], db.put_datum(75)))
@@ -41,13 +47,22 @@ class TestRepo(unittest.TestCase):
             db.begin('d2')
             db.commit(db.put_node('literal', [], db.put_datum(99)))
 
+            db.graph()
+            print()
+
             db.checkout(Ref('head/main'))
+
+            db.graph()
+            print()
 
             db.begin('d3')
             db.commit(db.put_node('literal', [], db.put_datum('d3')))
 
             db.begin('d0')
             db.commit(db.put_node('literal', [], db.put_datum('d0')))
+
+            db.graph()
+            print()
 
             a = Ref('head/main')().commit
             b = Ref('head/foop')().commit
@@ -58,6 +73,9 @@ class TestRepo(unittest.TestCase):
             # # pp([db.head, a, b, m0, c0])
 
             db.checkout(db.set_head(Ref('head/main'), m0))
+
+            db.graph()
+            print()
 
             # db.delete_branch(Ref('head/foop'))
 
@@ -72,8 +90,8 @@ class TestRepo(unittest.TestCase):
             m0 = db.rebase(b, a)
             db.set_head(Ref('head/foop'), m0)
 
-            db.gc()
-            dump(db)
+            # db.gc()
+            # dump(db)
 
             print()
             db.graph()
