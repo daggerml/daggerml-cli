@@ -348,30 +348,11 @@ class Repo:
         self.dag = None
 
     def graph(self):
-        nodes = {}
         def walk(x):
             if x and x[0]:
                 if x[0] not in nodes:
                     nodes[x[0]] = AsciiNode(x[0], parents=[walk(y) for y in x[1] if y])
                 return nodes[x[0]]
+        nodes = {}
         heads = [walk(x) for x in self.log('head')]
         AsciiGraph().show_nodes(heads)
-
-    # def graph(self):
-    #     def walk(kvs, result={}):
-    #         kvs = [x for x in kvs if len(x) > 0]
-    #         if len(kvs) == 0:
-    #             return
-    #         for child, parents in kvs:
-    #             if child not in result:
-    #                 walk(parents, result)
-    #             result[child] = [y[0] for y in parents]
-    #         return result
-    #     graph = walk(self.log('head'))
-    #     ts = TopologicalSorter(graph)
-    #     nodes = {}
-    #     heads = []
-    #     for c in ts.static_order():
-    #         nodes[c] = asciidag.node.Node(c, parents=[nodes[x] for x in graph[c]])
-    #         heads.append(nodes[c])
-    #     asciidag.graph.Graph().show_nodes(reversed(heads))
