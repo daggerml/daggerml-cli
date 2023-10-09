@@ -196,7 +196,7 @@ class Repo:
         ys = []
         for x in [x for x in xs if x is not None]:
             y = x()
-            if y:
+            if y and x not in result:
                 result.append(x)
                 ys += y.parents
         return self.ancestors(ys, result) if len(ys) else result
@@ -204,13 +204,45 @@ class Repo:
     def common_ancestor(self, a, b):
         aa = self.ancestors(a)
         ab = self.ancestors(b)
-        sa = set(tuple(aa))
-        sb = set(tuple(ab))
+        if set(aa).issubset(ab):
+            return a
+        pivot = max(set(aa).difference(ab), key=aa.index)()
+        if len(pivot.parents) > 1:
+            return self.common_ancestor(*pivot.parents)
+        return list(pivot.parents)[0]
 
-        for x in aa:
-            if sa.issubset(sb):
-                return x
-            sa.remove(x)
+    def diff(self, t1, t2):
+        d1 = t1().dags
+        d2 = t2().dags
+        result = {'add': {}, 'rem': {}}
+        for k in set(d1.keys()).union(d2.keys()):
+            if k not in d2:
+                result['rem'][k] = d1[k]
+            elif k not in d1:
+                result['add'][k] = d2[k]
+            elif d1[k] != d2[k]:
+                result['rem'][k] = d1[k]
+                result['add'][k] = d2[k]
+        return result
+
+    def merge(self, c1, c2):
+        c0 = self.common_ancestor(c1, c2)
+        if c1 == c2:
+            return c2
+        if c0 == c2:
+            return c1
+        if c0 == c1:
+            return c2
+        d1 = self.diff(c0().tree, c1().tree)
+        d2 = self.diff(c0().tree, c2().tree)
+        d3 = {'add': {**d1['add'], **d2['add']}, 'rem': {**d1['rem'], **d2['rem']}}
+        tree = c1().tree()
+        [tree.dags.pop(k, None) for k in d3['rem'].keys()]
+        tree.dags.update(d3['add'])
+        return self(Commit([c1, c2], self(tree), now()))
+
+    def rebase(self, c1, c2):
+        c0 = self.common_ancestor(c1, c2)
 
     def create_branch(self, branch, ref):
         assert branch.type == 'head'
@@ -219,14 +251,13 @@ class Repo:
         ref = self(Head(ref)) if ref.type == 'commit' else ref
         return self(branch, ref())
 
+    def set_head(self, head, commit):
+        return self(head, Head(commit))
+
     def checkout(self, ref):
         assert ref.type in ['head'], f'unknown ref type: {ref.type}'
         assert ref(), f'no such ref: {ref.to}'
         self.head = ref
-
-    def merge(self, a, b):
-        c = self.common_ancestor(a, b)
-        print(c)
 
     def begin(self, dag, meta=None):
         head = self.head() or Head(Ref(None))
@@ -261,11 +292,15 @@ class Repo:
 
     def commit(self, res_or_err):
         result, error = (res_or_err, None) if isinstance(res_or_err, Ref) else (None, res_or_err)
-        index = self.index()
         head = self.head()
+        index = self.index()
+        merge = self.merge(head.commit, index.commit)
+        self.checkout(self.set_head(self.head, merge))
+
         dag = index.commit().tree().dags[self.dag]()
         dag.result = result
         dag.error = error
+
         dags = head.commit().tree().dags if head else {}
         dags[self.dag] = self(dag)
         self(self.head, Head(self(Commit([head.commit] if head else [Ref(None)], self(Tree(dags)), now()))))
