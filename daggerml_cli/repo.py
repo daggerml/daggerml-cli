@@ -76,14 +76,13 @@ class Dag:
     nodes: set
     result: Ref
     error: dict | None
-    meta: dict | None = None
 
 
-@repo_type(hash=[])
+@repo_type
 class Node:
     type: str
+    expr: list
     value: Ref
-    meta: Ref = Ref(None)
 
 
 @repo_type
@@ -288,12 +287,12 @@ class Repo:
         assert ref(), f'no such ref: {ref.to}'
         self.head = ref
 
-    def begin(self, dag, meta=None):
-        head = self.head() or Head(Ref(None))
-        commit = head.commit() or Commit([Ref(None)], Ref(None))
-        tree = commit.tree() or Tree({})
-        tree.dags[dag] = self(Dag(set(), Ref(None), None, meta=meta))
-        self.index = self(Index(self(Commit(commit.parents, self(tree)))))
+    def begin(self, dag):
+        head = self.head()
+        commit = head.commit()
+        tree = commit.tree()
+        tree.dags[dag] = self(Dag(set(), Ref(None), None))
+        self.index = self(Index(self(Commit([head.commit], self(tree)))))
         self.dag = dag
 
     def put_datum(self, value):
@@ -309,11 +308,11 @@ class Repo:
             raise TypeError(f'unknown type: {type(value)}')
         return put(value)
 
-    def put_node(self, type, datum, meta=None):
+    def put_node(self, type, expr, datum):
         commit = self.index().commit()
         tree = commit.tree()
         dag = tree.dags[self.dag]()
-        node = self(Node(type, datum, meta=meta))
+        node = self(Node(type, expr, datum))
         dag.nodes.add(node)
         tree.dags[self.dag] = self(dag)
         self(self.index, Index(self(Commit(commit.parents, self(tree)))))
@@ -322,30 +321,14 @@ class Repo:
     def commit(self, res_or_err):
         result, error = (res_or_err, None) if isinstance(res_or_err, Ref) else (None, res_or_err)
         index = self.index()
-        head = self.head()
-        dag = index.commit().tree().dags[self.dag]()
+        commit = index.commit()
+        tree = commit.tree()
+        dag = tree.dags[self.dag]()
         dag.result = result
         dag.error = error
-        dags = head.commit().tree().dags if head else {}
-        dags[self.dag] = self(dag)
-        self(self.head, Head(self(Commit([head.commit] if head else [Ref(None)], self(Tree(dags))))))
+        tree.dags[self.dag] = self(dag)
+        commit = self.rebase(self.head().commit, self(Commit(commit.parents, self(tree))))
+        self.set_head(self.head, commit)
         self.delete(self.index)
         self.index = Ref(None)
         self.dag = None
-
-        # result, error = (res_or_err, None) if isinstance(res_or_err, Ref) else (None, res_or_err)
-        # head = self.head()
-        # index = self.index()
-        # merge = self.merge(head.commit, index.commit)
-        # self.checkout(self.set_head(self.head, merge))
-
-        # dag = index.commit().tree().dags[self.dag]()
-        # dag.result = result
-        # dag.error = error
-
-        # dags = head.commit().tree().dags if head else {}
-        # dags[self.dag] = self(dag)
-        # self(self.head, Head(self(Commit([head.commit] if head else [Ref(None)], self(Tree(dags))))))
-        # self.delete(self.index)
-        # self.index = Ref(None)
-        # self.dag = None
