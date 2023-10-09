@@ -225,6 +225,15 @@ class Repo:
                 result['add'][k] = d2[k]
         return result
 
+    def patch(self, tree, *diffs):
+        diff = {'add': {}, 'rem': {}}
+        for d in diffs:
+            diff['add'].update(d['add'])
+            diff['rem'].update(d['rem'])
+        [tree.dags.pop(k, None) for k in diff['rem'].keys()]
+        tree.dags.update(diff['add'])
+        return tree
+
     def merge(self, c1, c2):
         c0 = self.common_ancestor(c1, c2)
         if c1 == c2:
@@ -235,10 +244,7 @@ class Repo:
             return c2
         d1 = self.diff(c0().tree, c1().tree)
         d2 = self.diff(c0().tree, c2().tree)
-        d3 = {'add': {**d1['add'], **d2['add']}, 'rem': {**d1['rem'], **d2['rem']}}
-        tree = c1().tree()
-        [tree.dags.pop(k, None) for k in d3['rem'].keys()]
-        tree.dags.update(d3['add'])
+        tree = self.patch(c1().tree(), d1, d2)
         return self(Commit([c1, c2], self(tree), now()))
 
     def rebase(self, c1, c2):
@@ -292,18 +298,31 @@ class Repo:
 
     def commit(self, res_or_err):
         result, error = (res_or_err, None) if isinstance(res_or_err, Ref) else (None, res_or_err)
-        head = self.head()
         index = self.index()
-        merge = self.merge(head.commit, index.commit)
-        self.checkout(self.set_head(self.head, merge))
-
+        head = self.head()
         dag = index.commit().tree().dags[self.dag]()
         dag.result = result
         dag.error = error
-
         dags = head.commit().tree().dags if head else {}
         dags[self.dag] = self(dag)
         self(self.head, Head(self(Commit([head.commit] if head else [Ref(None)], self(Tree(dags)), now()))))
         self.delete(self.index)
         self.index = Ref(None)
         self.dag = None
+
+        # result, error = (res_or_err, None) if isinstance(res_or_err, Ref) else (None, res_or_err)
+        # head = self.head()
+        # index = self.index()
+        # merge = self.merge(head.commit, index.commit)
+        # self.checkout(self.set_head(self.head, merge))
+
+        # dag = index.commit().tree().dags[self.dag]()
+        # dag.result = result
+        # dag.error = error
+
+        # dags = head.commit().tree().dags if head else {}
+        # dags[self.dag] = self(dag)
+        # self(self.head, Head(self(Commit([head.commit] if head else [Ref(None)], self(Tree(dags)), now()))))
+        # self.delete(self.index)
+        # self.index = Ref(None)
+        # self.dag = None
