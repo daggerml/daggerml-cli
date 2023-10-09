@@ -29,6 +29,7 @@ dependencies = [
   "lmdb",
   "msgpack",
   "tabulate",
+  "asciidag",
 ]
 
 [project.urls]

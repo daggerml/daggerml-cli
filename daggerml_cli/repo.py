@@ -1,3 +1,5 @@
+import asciidag.graph
+import asciidag.node
 from daggerml_cli.db import dbenv, db_type
 from daggerml_cli.pack import packb, unpackb, packb64, unpackb64, register
 from daggerml_cli.util import now
@@ -110,7 +112,7 @@ class Repo:
         self._tx = None
         with self.tx(True):
             if not self.get(Ref('/init')):
-                self(self.head, Head(self(Commit([Ref(None)], self(Tree({}))))))
+                self(self.head, Head(self(Commit([], self(Tree({}))))))
                 self(Ref('/init'), True)
             self.checkout(self.head)
 
@@ -167,6 +169,15 @@ class Repo:
         elif is_dataclass(key):
             [self.walk(getattr(key, x.name), result) for x in fields(key)]
         return result
+
+    def log(self, db=None, ref=None):
+        if db:
+            result = []
+            for (k, _) in self.cursor(db):
+                result.append(self.log(ref=Ref(bytes(k).decode())().commit))
+            return result
+        if ref:
+            return [ref.to, [self.log(ref=x) for x in ref().parents]]
 
     def objects(self):
         result = set()
@@ -332,3 +343,10 @@ class Repo:
         self.delete(self.index)
         self.index = Ref(None)
         self.dag = None
+
+    def graph(self):
+        def walk(x):
+            if x and x[0]:
+                return asciidag.node.Node(x[0], parents=[walk(y) for y in x[1]])
+        heads = [walk(x) for x in self.log('head')]
+        asciidag.graph.Graph().show_nodes(heads)
