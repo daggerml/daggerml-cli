@@ -11,7 +11,7 @@ from uuid import uuid4
 DEFAULT = 'head/main'
 
 
-register(set, lambda x, h: sorted(list(x)), lambda x: [tuple(x)])
+register(set, lambda x, h: sorted(list(x), key=packb), lambda x: [tuple(x)])
 
 
 def repo_type(cls=None, **kwargs):
@@ -116,7 +116,7 @@ class Repo:
         self._tx = None
         with self.tx(True):
             if not self.get(Ref('/init')):
-                self(self.head, Head(self(Commit([Ref(None)], self(Tree({}))))))
+                self(self.head, Head(self(Commit({Ref(None)}, self(Tree({}))))))
                 self(Ref('/init'), True)
             self.checkout(self.head)
 
@@ -254,7 +254,7 @@ class Repo:
         d1 = self.diff(c0().tree, c1().tree)
         d2 = self.diff(c0().tree, c2().tree)
         tree = self.patch(c1().tree, d1, d2)
-        return self(Commit([c1, c2], tree))
+        return self(Commit({c1, c2}, tree))
 
     def rebase(self, c1, c2):
         def replay(commit):
@@ -266,7 +266,7 @@ class Repo:
                 x = replay(p)
                 diff = self.diff(p().tree, commit().tree)
                 tree = self.patch(x().tree, diff)
-                return self(Commit([x], tree))
+                return self(Commit({x}, tree))
             assert len(p) == 2
             a, b = (replay(x) for x in p)
             return self.merge(a, b)
@@ -304,7 +304,7 @@ class Repo:
         commit = head.commit()
         tree = commit.tree()
         tree.dags[dag] = self(Dag(set(), Ref(None), None))
-        self.index = self(Index(self(Commit([head.commit], self(tree)))))
+        self.index = self(Index(self(Commit({head.commit}, self(tree)))))
         self.dag = dag
 
     def put_datum(self, value):
