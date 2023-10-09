@@ -354,7 +354,7 @@ class Repo:
             if x and x[0]:
                 k = names[x[0]] if x[0] in names else x[0].split('/')[1][:8]
                 tag1 = ' HEAD' if head == self.head.to else ''
-                tag2 = f' {head}' if head else ''
+                tag2 = f' {head.split("/")[1]}' if head else ''
                 names[x[0]] = f'{k}{tag1}{tag2}'
                 [walk_names(p) for p in x[1]]
 
