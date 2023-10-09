@@ -170,13 +170,12 @@ class Repo:
             [self.walk(getattr(key, x.name), result) for x in fields(key)]
         return result
 
-    def log(self, db=None, ref=None, head=None):
+    def log(self, db=None, ref=None):
         if db:
             ks = [bytes(x).decode() for x, _ in self.cursor(db)]
-            return {k: self.log(ref=Ref(k)().commit, head=k) for k in ks}
+            return {k: self.log(ref=Ref(k)().commit) for k in ks}
         if ref and ref.to:
-            tag = f' {head}' if head else ''
-            return [f'{ref.to}{tag}', [self.log(ref=x) for x in ref().parents if x and x.to]]
+            return [ref.to, [self.log(ref=x) for x in ref().parents if x and x.to]]
 
     def objects(self):
         result = set()
@@ -347,13 +346,25 @@ class Repo:
         self.dag = None
 
     def graph(self):
-        def walk(x):
+        def walk_names(x, head=None):
+            if x and x[0]:
+                k = names[x[0]] if x[0] in names else x[0].split('/')[1][:8]
+                tag1 = ' HEAD' if head == self.head.to else ''
+                tag2 = f' {head}' if head else ''
+                names[x[0]] = f'{k}{tag1}{tag2}'
+                [walk_names(p) for p in x[1]]
+
+        def walk_nodes(x):
             if x and x[0]:
                 if x[0] not in nodes:
-                    nodes[x[0]] = AsciiNode(x[0], parents=[walk(y) for y in x[1] if y])
+                    parents = [walk_nodes(y) for y in x[1] if y]
+                    nodes[x[0]] = AsciiNode(names[x[0]], parents=parents)
                 return nodes[x[0]]
+
+        names = {}
         nodes = {}
         log = self.log('head')
         ks = [self.head.to, *[k for k in log.keys() if k != self.head.to]]
-        heads = [walk(log[k]) for k in ks]
+        [walk_names(log[k], head=k) for k in ks]
+        heads = [walk_nodes(log[k]) for k in ks]
         AsciiGraph().show_nodes(heads)
