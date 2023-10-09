@@ -253,13 +253,21 @@ class Repo:
             return c2
         if c0 == c2:
             return c1
-        commits = self.ancestors(c2)
-        commits = commits[commits.index(c0):]  # includes c0
-        for from_, to_ in zip(commits[:-1], commits[1:]):
-            diff = self.diff(from_().tree, to_().tree)
-            tree = self.patch(c1().tree(), diff)
-            c1 = self(Commit([c1], self(tree), now()))
-        return c1
+
+        def replay(base, commit):
+            if commit == c0:
+                return base
+            p = commit().parents
+            if len(p) == 1:
+                p, = p
+                x = replay(base, p)
+                d = self.diff(p().tree, commit().tree)
+                t = self.patch(x().tree(), d)
+                return self(Commit([x], self(t), now()))
+            assert len(p) == 2
+            a, b = (replay(base, x) for x in p)
+            return self.merge(a, b)
+        return replay(c1, c2)
 
     def create_branch(self, branch, ref):
         assert branch.type == 'head'

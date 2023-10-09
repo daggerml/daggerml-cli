@@ -62,7 +62,7 @@ class TestRepo(unittest.TestCase):
             print()
             pp([db.head, a, b, m0, c0])
 
-            db.checkout(db.set_head(db.head, Head(m0)))
+            db.checkout(db.set_head(db.head, Head(c0)))
 
             db.gc()
-            dump(db, 10)
+            dump(db, 12)
