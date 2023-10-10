@@ -17,6 +17,11 @@ class Ctx:
         self.head = Ref('head/%s' % asserting(config.HEAD, 'no branch selected'))
 
 
+def from_ref(ref):
+    ref = ref.to if isinstance(ref, Ref) else ref
+    return '/'.join(ref.split('/')[1:])
+
+
 ###############################################################################
 # REPO ########################################################################
 ###############################################################################
@@ -73,7 +78,12 @@ def list_branch():
     ctx = Ctx()
     db = Repo(ctx.path)
     with db.tx():
-        return sorted(['/'.join(k.split('/')[1:]) for k in db.heads()])
+        return sorted([from_ref(k) for k in db.heads()])
+
+
+def list_other_branch():
+    ctx = Ctx()
+    return [k for k in list_branch() if k != from_ref(ctx.head)]
 
 
 def create_branch(name):
@@ -100,6 +110,24 @@ def use_branch(name):
         with open(config.HEAD_CONFIG_FILE, 'w') as f:
             f.write(name+'\n')
     config.HEAD = name
+
+
+def merge_branch(name):
+    ctx = Ctx()
+    db = Repo(ctx.path, head=ctx.head)
+    with db.tx(True):
+        ref = db.merge(ctx.head().commit, Ref(f'head/{name}')().commit)
+        db.checkout(db.set_head(ctx.head, ref))
+        return from_ref(ref)
+
+
+def rebase_branch(name):
+    ctx = Ctx()
+    db = Repo(ctx.path, head=ctx.head)
+    with db.tx(True):
+        ref = db.rebase(ctx.head().commit, Ref(f'head/{name}')().commit)
+        db.checkout(db.set_head(ctx.head, ref))
+        return from_ref(ref)
 
 
 ###############################################################################
@@ -171,15 +199,26 @@ def invoke_api(token, data):
 
 
 ###############################################################################
-# LOG #########################################################################
+# COMMIT ######################################################################
 ###############################################################################
 
 
-def log_graph():
+def list_commit():
+    return []
+
+
+def commit_log(graph=False):
     ctx = Ctx()
     db = Repo(ctx.path, head=ctx.head)
     with db.tx():
-        db.graph()
+        if graph:
+            db.graph()
+        else:
+            raise NotImplementedError('not implemented')
+
+
+def revert_commit(commit):
+    raise NotImplementedError('not implemented')
 
 
 ###############################################################################

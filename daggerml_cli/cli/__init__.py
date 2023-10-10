@@ -100,7 +100,7 @@ def branch_group(ctx):
         click.echo(api.current_branch())
 
 
-@click.argument('name', shell_complete=complete(api.list_repo))
+@click.argument('name', shell_complete=complete(api.list_branch))
 @branch_group.command(name='create', help='Create a new branch.')
 @clickex
 def branch_create(name):
@@ -108,7 +108,7 @@ def branch_create(name):
     click.echo(f'Created branch: {name}')
 
 
-@click.argument('name', shell_complete=complete(api.list_repo))
+@click.argument('name', shell_complete=complete(api.list_branch))
 @branch_group.command(name='delete', help='Delete a branch.')
 @clickex
 def branch_delete(name):
@@ -122,12 +122,26 @@ def branch_list():
     [click.echo(k) for k in api.list_branch()]
 
 
-@click.argument('name', shell_complete=complete(api.list_repo))
+@click.argument('name', shell_complete=complete(api.list_branch))
 @branch_group.command(name='use', help='Select the branch to use.')
 @clickex
 def branch_use(name):
     api.use_branch(name)
     click.echo(f'Using branch: {name}')
+
+
+@click.argument('branch', shell_complete=complete(api.list_other_branch))
+@branch_group.command(name='merge', help='Merge another branch with the current one.')
+@clickex
+def branch_merge(branch):
+    click.echo(api.merge_branch(branch))
+
+
+@click.argument('rebase', shell_complete=complete(api.list_other_branch))
+@branch_group.command(name='merge', help='Rebase another branch onto the current one.')
+@clickex
+def branch_rebase(branch):
+    click.echo(api.rebase_branch(branch))
 
 
 ###############################################################################
@@ -171,14 +185,25 @@ def dag_list():
 
 
 ###############################################################################
-# LOG #########################################################################
+# COMMIT ######################################################################
 ###############################################################################
 
 
-@click.option('--graph', is_flag=True, help='Print a graph of all commits.')
-@cli.command(name='log', help='Query the commit log.')
+@cli.group(name='commit', no_args_is_help=True, help='Commit management commands.')
 @clickex
-def log_commits(graph):
-    if graph:
-        return api.log_graph()
-    raise NotImplementedError('not implemented')
+def commit_group():
+    pass
+
+
+@click.option('--graph', is_flag=True, help='Print a graph of all commits.')
+@commit_group.command(name='log', help='Query the commit log.')
+@clickex
+def commit_log(graph):
+    return api.commit_log(graph)
+
+
+@click.argument('commit', shell_complete=complete(api.list_commit))
+@commit_group.command(name='revert', help='Revert a commit.')
+@clickex
+def commit_revert(commit):
+    return api.revert_commit(commit)

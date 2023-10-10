@@ -374,7 +374,7 @@ class Repo:
     def graph(self):
         def walk_names(x, head=None):
             if x and x[0]:
-                k = names[x[0]] if x[0] in names else x[0].split('/')[1][:8]
+                k = names[x[0]] if x[0] in names else x[0].split('/')[1]
                 tag1 = ' HEAD' if head == self.head.to else ''
                 tag2 = f' {head.split("/")[1]}' if head else ''
                 names[x[0]] = f'{k}{tag1}{tag2}'
