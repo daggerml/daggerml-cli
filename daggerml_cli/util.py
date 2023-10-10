@@ -18,9 +18,8 @@ def sort_dict(x):
 def sort_dict_recursively(x):
     if isinstance(x, list):
         return [sort_dict_recursively(y) for y in x]
-    elif isinstance(x, dict):
-        return {k: sort_dict(v) for k, v in x.items()}
-    elif isinstance(x, set):
+    if isinstance(x, dict):
+        return {k: sort_dict_recursively(x[k]) for k in sorted(x.keys())}
+    if isinstance(x, set):
         return {sort_dict_recursively(v) for v in x}
-    else:
-        return x
+    return x
