@@ -73,13 +73,17 @@ def repo_list():
 
 
 @click.argument('name', shell_complete=complete(api.list_repo))
-@repo_group.command(
-    name='use',
-    help='Select the repository to use.')
+@repo_group.command(name='use', help='Select the repository to use.')
 @clickex
 def repo_use(name):
     api.use_repo(name)
     click.echo(f'Using repository: {name}')
+
+
+@repo_group.command(name='gc', help='Delete unreachable objects in the repo.')
+@clickex
+def gc_unreachable():
+    click.echo(f'Deleted {api.gc_unreachable()} objects.')
 
 
 ###############################################################################
@@ -142,6 +146,21 @@ def dag_group():
     pass
 
 
+@click.argument('name')
+@dag_group.command(name='create', help='Create a new DAG.')
+@clickex
+def api_create_dag(name):
+    click.echo(dumps(api.invoke_api(None, ['begin', name])))
+
+
+@click.argument('json')
+@click.argument('token')
+@dag_group.command(name='invoke', help='Invoke API with token returned by create and JSON command.')
+@clickex
+def api_invoke(token, json):
+    click.echo(dumps(api.invoke_api(token, loads(json))))
+
+
 @click.argument('name', shell_complete=complete(api.list_dag))
 @dag_group.command(name='delete', help='Delete a DAG.')
 @clickex
@@ -157,32 +176,6 @@ def dag_list():
 
 
 ###############################################################################
-# API #########################################################################
-###############################################################################
-
-
-@cli.group(name='api', no_args_is_help=True, help='API for creating DAGs.')
-@clickex
-def api_group():
-    pass
-
-
-@click.argument('name')
-@api_group.command(name='create', help='Create a new DAG.')
-@clickex
-def api_create_dag(name):
-    click.echo(dumps(api.invoke_api(None, ['begin', name])))
-
-
-@click.argument('json')
-@click.argument('token')
-@api_group.command(name='invoke', help='Invoke API with token returned by create and JSON command.')
-@clickex
-def api_invoke(token, json):
-    click.echo(dumps(api.invoke_api(token, loads(json))))
-
-
-###############################################################################
 # LOG #########################################################################
 ###############################################################################
 
@@ -194,14 +187,3 @@ def log_commits(graph):
     if graph:
         return api.log_graph()
     raise NotImplementedError('not implemented')
-
-
-###############################################################################
-# GC ##########################################################################
-###############################################################################
-
-
-@cli.command(name='gc', help='Delete unreachable objects in the repo.')
-@clickex
-def gc_unreachable():
-    click.echo(f'Deleted {api.gc_unreachable()} objects.')
