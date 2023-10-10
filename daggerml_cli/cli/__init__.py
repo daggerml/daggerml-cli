@@ -1,9 +1,9 @@
 import click
 import daggerml_cli.api as api
-import json
 from click import ClickException
 from daggerml_cli.__about__ import __version__
 from functools import wraps
+from json import loads, dumps
 
 
 def clickex(f):
@@ -34,6 +34,8 @@ def cli():
     pass
 
 
+###############################################################################
+# REPO ########################################################################
 ###############################################################################
 
 
@@ -81,6 +83,8 @@ def repo_use(name):
 
 
 ###############################################################################
+# BRANCH ######################################################################
+###############################################################################
 
 
 @cli.group(
@@ -125,6 +129,8 @@ def branch_use(name):
 
 
 ###############################################################################
+# DAG #########################################################################
+###############################################################################
 
 
 @cli.group(
@@ -151,6 +157,8 @@ def dag_list():
 
 
 ###############################################################################
+# API #########################################################################
+###############################################################################
 
 
 @cli.group(name='api', no_args_is_help=True, help='API for creating DAGs.')
@@ -160,23 +168,15 @@ def api_group():
 
 
 @click.argument('name')
-@api_group.command(name='create-dag', help='Create a new DAG.')
+@api_group.command(name='create', help='Create a new DAG.')
 @clickex
 def api_create_dag(name):
-    click.echo(json.dumps(api.invoke_api(None, ['begin', name])))
+    click.echo(dumps(api.invoke_api(None, ['begin', name])))
 
 
-@click.argument('payload')
+@click.argument('json')
 @click.argument('token')
-@api_group.command(name='invoke', help='Invoke API with token returned by create-dag.')
+@api_group.command(name='invoke', help='Invoke API with token returned by create and JSON command.')
 @clickex
-def api_invoke(token, payload):
-    click.echo(json.dumps(api.invoke_api(token, json.loads(payload))))
-
-
-# @click.option('--token', help='The session token returned from the previous API call.')
-# @click.argument('data')
-# @api_group.command(name='create', help='Create a new DAG.')
-# @clickex
-# def api_create(data):
-#     pass
+def api_invoke(token, json):
+    click.echo(dumps(api.invoke_api(token, loads(json))))
