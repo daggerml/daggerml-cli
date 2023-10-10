@@ -316,7 +316,7 @@ class Repo:
         return self(branch, ref())
 
     def delete_branch(self, branch):
-        assert self.head != branch
+        assert self.head != branch, 'cannot delete HEAD'
         self.delete(branch)
 
     def set_head(self, head, commit):
