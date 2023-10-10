@@ -2,7 +2,7 @@ import os
 from pathlib import Path
 
 PROFILE = os.getenv('DML_PROFILE', 'DEFAULT')
-DML_DIR = Path.joinpath(Path.home(), '.local', 'dml')
+DML_DIR = os.getenv('DML_DIR', Path.joinpath(Path.home(), '.local', 'dml'))
 REPO_DIR = Path.joinpath(DML_DIR, 'repo')
 CONFIG_DIR = Path.joinpath(Path.cwd(), '.dml')
 REPO_CONFIG_FILE = Path.joinpath(CONFIG_DIR, 'repo')

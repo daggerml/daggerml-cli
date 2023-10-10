@@ -1,6 +1,14 @@
 from datetime import datetime, timezone
 
 
+def asserting(x, message=None):
+    if message:
+        assert x, message
+    else:
+        assert x
+    return x
+
+
 def fullname(obj):
     if type(obj) != type:
         return fullname(type(obj))

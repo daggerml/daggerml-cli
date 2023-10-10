@@ -124,17 +124,17 @@ class Repo:
         return packb64([getattr(self, x.name) for x in fields(self)])
 
     def __post_init__(self):
-        dbfile = Path.joinpath(Path(self.path), 'data.mdb')
+        dbfile = str(Path.joinpath(Path(self.path), 'data.mdb'))
+        dbfile_exists = Path.exists(Path(dbfile))
         if self.create:
-            assert not Path.exists(Path(dbfile)), f'repo exists: {dbfile}'
+            assert not dbfile_exists, f'repo exists: {dbfile}'
         else:
-            assert Path.exists(Path(dbfile)), f'repo not found: {dbfile}'
+            assert dbfile_exists, f'repo not found: {dbfile}'
         self.env, self.dbs = dbenv(self.path)
-        self._tx = None
-        with self.tx(True):
-            if not self.get(Ref('/init')):
+        with self.tx(self.create):
+            if not self.get('/init'):
                 self(self.head, Head(self(Commit({}, self(Tree({}))))))
-                self(Ref('/init'), True)
+                self('/init', uuid4().hex)
             self.checkout(self.head)
 
     def __call__(self, key, obj=None):
@@ -160,13 +160,15 @@ class Repo:
         return md5(packb(obj, True)).hexdigest()
 
     def get(self, key):
-        if key and key.to:
-            obj = unpackb(self._tx.get(key.to.encode(), db=self.db(key.type)))
-            return obj
+        if key:
+            key = Ref(key) if isinstance(key, str) else key
+            if key.to:
+                obj = unpackb(self._tx.get(key.to.encode(), db=self.db(key.type)))
+                return obj
 
     def put(self, key, obj=None):
         key, obj = (key, obj) if obj else (obj, key)
-        key = Ref(None) if key is None else key
+        key = Ref(None) if key is None else (Ref(key) if isinstance(key, str) else key)
         if obj is not None:
             db = key.type if key.to else obj.__class__.__name__.lower()
             data = packb(obj)

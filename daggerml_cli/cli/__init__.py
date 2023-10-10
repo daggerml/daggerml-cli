@@ -1,5 +1,5 @@
 import click
-import daggerml_cli.core as core
+import daggerml_cli.api as api
 import json
 from click import ClickException
 from daggerml_cli.__about__ import __version__
@@ -38,44 +38,45 @@ def cli():
 
 
 @cli.group(
+    name='repo',
     invoke_without_command=True,
     help='Repository management commands.')
 @click.pass_context
 @clickex
-def repo(ctx):
+def repo_group(ctx):
     if ctx.invoked_subcommand is None:
-        click.echo(core.current_repo())
+        click.echo(api.current_repo())
 
 
-@click.argument('name', shell_complete=complete(core.list_repo))
-@repo.command(name='create', help='Create a new repository.')
+@click.argument('name', shell_complete=complete(api.list_repo))
+@repo_group.command(name='create', help='Create a new repository.')
 @clickex
 def repo_create(name):
-    core.create_repo(name)
+    api.create_repo(name)
     click.echo(f'Created repository: {name}')
 
 
-@click.argument('name', shell_complete=complete(core.list_repo))
-@repo.command(name='delete', help='Delete a repository.')
+@click.argument('name', shell_complete=complete(api.list_repo))
+@repo_group.command(name='delete', help='Delete a repository.')
 @clickex
 def repo_delete(name):
-    core.delete_repo(name)
+    api.delete_repo(name)
     click.echo(f'Deleted repository: {name}')
 
 
-@repo.command(name='list', help='List repositories.')
+@repo_group.command(name='list', help='List repositories.')
 @clickex
 def repo_list():
-    [click.echo(k) for k in core.list_repo()]
+    [click.echo(k) for k in api.list_repo()]
 
 
-@click.argument('name', shell_complete=complete(core.list_repo))
-@repo.command(
+@click.argument('name', shell_complete=complete(api.list_repo))
+@repo_group.command(
     name='use',
     help='Select the repository to use.')
 @clickex
 def repo_use(name):
-    core.use_repo(name)
+    api.use_repo(name)
     click.echo(f'Using repository: {name}')
 
 
@@ -83,95 +84,99 @@ def repo_use(name):
 
 
 @cli.group(
+    name='branch',
     invoke_without_command=True,
     help='Branch management commands.')
 @click.pass_context
 @clickex
-def branch(ctx):
+def branch_group(ctx):
     if ctx.invoked_subcommand is None:
-        click.echo(core.current_branch())
+        click.echo(api.current_branch())
 
 
-@click.argument('name', shell_complete=complete(core.list_repo))
-@branch.command(name='create', help='Create a new branch.')
+@click.argument('name', shell_complete=complete(api.list_repo))
+@branch_group.command(name='create', help='Create a new branch.')
 @clickex
 def branch_create(name):
-    core.create_branch(name)
+    api.create_branch(name)
     click.echo(f'Created branch: {name}')
 
 
-@click.argument('name', shell_complete=complete(core.list_repo))
-@branch.command(name='delete', help='Delete a branch.')
+@click.argument('name', shell_complete=complete(api.list_repo))
+@branch_group.command(name='delete', help='Delete a branch.')
 @clickex
 def branch_delete(name):
-    core.delete_branch(name)
+    api.delete_branch(name)
     click.echo(f'Deleted branch: {name}')
 
 
-@branch.command(name='list', help='List branches.')
+@branch_group.command(name='list', help='List branches.')
 @clickex
 def branch_list():
-    [click.echo(k) for k in core.list_branch()]
+    [click.echo(k) for k in api.list_branch()]
 
 
-@click.argument('name', shell_complete=complete(core.list_repo))
-@branch.command(name='use', help='Select the branch to use.')
+@click.argument('name', shell_complete=complete(api.list_repo))
+@branch_group.command(name='use', help='Select the branch to use.')
 @clickex
 def branch_use(name):
-    core.use_branch(name)
+    api.use_branch(name)
     click.echo(f'Using branch: {name}')
 
 
 ###############################################################################
 
 
-@cli.group(no_args_is_help=True, help='DAG management commands.')
+@cli.group(
+    name='dag',
+    no_args_is_help=True,
+    help='DAG management commands.')
 @clickex
-def dag():
+def dag_group():
     pass
 
 
-@click.argument('name', shell_complete=complete(core.list_dag))
-@dag.command(name='delete', help='Delete a DAG.')
+@click.argument('name', shell_complete=complete(api.list_dag))
+@dag_group.command(name='delete', help='Delete a DAG.')
 @clickex
 def dag_delete(name):
-    core.delete_dag(name)
+    api.delete_dag(name)
     click.echo(f'Deleted DAG: {name}')
 
 
-@dag.command(name='list', help='List DAGs.')
+@dag_group.command(name='list', help='List DAGs.')
 @clickex
 def dag_list():
-    [click.echo(k) for k in core.list_dag()]
+    [click.echo(k) for k in api.list_dag()]
 
 
 ###############################################################################
 
 
-@cli.group(no_args_is_help=True, help='API for creating DAGs.')
+@cli.group(name='api', no_args_is_help=True, help='API for creating DAGs.')
 @clickex
-def api():
+def api_group():
     pass
 
 
 @click.argument('name')
-@api.command(name='create-dag', help='Create a new DAG.')
+@api_group.command(name='create-dag', help='Create a new DAG.')
 @clickex
 def api_create_dag(name):
-    click.echo(json.dumps(None, core.invoke_api(['begin', name])))
+    click.echo(json.dumps(api.invoke_api(None, ['begin', name])))
 
 
 @click.argument('payload')
 @click.argument('token')
-@api.command(name='invoke', help='Invoke API with token returned by create-dag.')
+@api_group.command(name='invoke', help='Invoke API with token returned by create-dag.')
 @clickex
 def api_invoke(token, payload):
-    click.echo(json.dumps(core.invoke_api(token, json.loads(payload))))
+    click.echo(json.dumps(api.invoke_api(token, json.loads(payload))))
 
 
 # @click.option('--token', help='The session token returned from the previous API call.')
 # @click.argument('data')
-# @api.command(name='create', help='Create a new DAG.')
+# @api_group.command(name='create', help='Create a new DAG.')
 # @clickex
 # def api_create(data):
 #     pass

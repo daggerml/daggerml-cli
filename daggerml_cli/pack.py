@@ -1,4 +1,5 @@
 import msgpack
+from zlib import compress, decompress
 from base64 import b64encode, b64decode
 from daggerml_cli.util import fullname, sort_dict_recursively
 from msgpack import ExtType
@@ -43,9 +44,9 @@ def unpackb(x):
     return msgpack.unpackb(x, ext_hook=ext_hook) if x is not None else None
 
 
-def packb64(x):
-    return b64encode(packb(x)).decode()
+def packb64(x, zlib=False):
+    return b64encode(compress(packb(x), level=9) if zlib else packb(x)).decode()
 
 
-def unpackb64(x):
-    return unpackb(b64decode(x.encode()))
+def unpackb64(x, zlib=False):
+    return unpackb(decompress(b64decode(x.encode())) if zlib else b64decode(x.encode()))
