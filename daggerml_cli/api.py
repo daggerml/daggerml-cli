@@ -26,6 +26,10 @@ def current_repo():
     return config.REPO
 
 
+def repo_path():
+    return asserting(config.REPO_PATH, 'no repo selected')
+
+
 def list_repo():
     return sorted(os.listdir(config.REPO_DIR))
 

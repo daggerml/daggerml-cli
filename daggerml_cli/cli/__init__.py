@@ -82,8 +82,14 @@ def repo_use(name):
 
 @repo_group.command(name='gc', help='Delete unreachable objects in the repo.')
 @clickex
-def gc_unreachable():
+def repo_gc():
     click.echo(f'Deleted {api.gc_unreachable()} objects.')
+
+
+@repo_group.command(name='path', help='Filesystem location of the repo.')
+@clickex
+def repo_path():
+    click.echo(api.repo_path())
 
 
 ###############################################################################
