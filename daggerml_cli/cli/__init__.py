@@ -180,3 +180,28 @@ def api_create_dag(name):
 @clickex
 def api_invoke(token, json):
     click.echo(dumps(api.invoke_api(token, loads(json))))
+
+
+###############################################################################
+# LOG #########################################################################
+###############################################################################
+
+
+@click.option('--graph', is_flag=True, help='Print a graph of all commits.')
+@cli.command(name='log', help='Query the commit log.')
+@clickex
+def log_commits(graph):
+    if graph:
+        return api.log_graph()
+    raise NotImplementedError('not implemented')
+
+
+###############################################################################
+# GC ##########################################################################
+###############################################################################
+
+
+@cli.command(name='gc', help='Delete unreachable objects in the repo.')
+@clickex
+def gc_unreachable():
+    click.echo(f'Deleted {api.gc_unreachable()} objects.')

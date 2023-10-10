@@ -226,7 +226,9 @@ class Repo:
         return self.objects().difference(self.reachable_objects())
 
     def gc(self):
-        [self.delete(Ref(k)) for k in self.unreachable_objects()]
+        to_delete = self.unreachable_objects()
+        [self.delete(Ref(k)) for k in to_delete]
+        return len(to_delete)
 
     def ancestors(self, xs, result=None):
         xs = xs if isinstance(xs, list) else [xs]
