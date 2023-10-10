@@ -137,8 +137,8 @@ def branch_merge(branch):
     click.echo(api.merge_branch(branch))
 
 
-@click.argument('rebase', shell_complete=complete(api.list_other_branch))
-@branch_group.command(name='merge', help='Rebase another branch onto the current one.')
+@click.argument('branch', shell_complete=complete(api.list_other_branch))
+@branch_group.command(name='rebase', help='Rebase another branch onto the current one.')
 @clickex
 def branch_rebase(branch):
     click.echo(api.rebase_branch(branch))
