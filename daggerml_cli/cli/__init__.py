@@ -25,9 +25,7 @@ def complete(f):
     return inner
 
 
-@click.group(
-    context_settings={'help_option_names': ['-h', '--help']},
-    no_args_is_help=True)
+@click.group(context_settings={'help_option_names': ['-h', '--help']}, no_args_is_help=True)
 @click.version_option(version=__version__, prog_name='dml')
 @clickex
 def cli():
@@ -39,10 +37,7 @@ def cli():
 ###############################################################################
 
 
-@cli.group(
-    name='repo',
-    invoke_without_command=True,
-    help='Repository management commands.')
+@cli.group(name='repo', invoke_without_command=True, help='Repository management commands.')
 @click.pass_context
 @clickex
 def repo_group(ctx):
@@ -97,10 +92,7 @@ def repo_path():
 ###############################################################################
 
 
-@cli.group(
-    name='branch',
-    invoke_without_command=True,
-    help='Branch management commands.')
+@cli.group(name='branch', invoke_without_command=True, help='Branch management commands.')
 @click.pass_context
 @clickex
 def branch_group(ctx):
@@ -143,10 +135,7 @@ def branch_use(name):
 ###############################################################################
 
 
-@cli.group(
-    name='dag',
-    no_args_is_help=True,
-    help='DAG management commands.')
+@cli.group(name='dag', no_args_is_help=True, help='DAG management commands.')
 @clickex
 def dag_group():
     pass
