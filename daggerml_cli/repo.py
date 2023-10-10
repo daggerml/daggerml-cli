@@ -5,6 +5,7 @@ from daggerml_cli.pack import packb, unpackb, packb64, unpackb64, register
 from daggerml_cli.util import now
 from dataclasses import dataclass, fields, is_dataclass
 from hashlib import md5
+from pathlib import Path
 from uuid import uuid4
 
 
@@ -112,6 +113,7 @@ class Repo:
     head: Ref = Ref(DEFAULT)
     index: Ref = Ref(None)
     dag: str = None
+    create: bool = False
 
     @classmethod
     def new(cls, b64state):
@@ -122,6 +124,11 @@ class Repo:
         return packb64([getattr(self, x.name) for x in fields(self)])
 
     def __post_init__(self):
+        dbfile = Path.joinpath(Path(self.path), 'data.mdb')
+        if self.create:
+            assert not Path.exists(Path(dbfile)), f'repo exists: {dbfile}'
+        else:
+            assert Path.exists(Path(dbfile)), f'repo not found: {dbfile}'
         self.env, self.dbs = dbenv(self.path)
         self._tx = None
         with self.tx(True):
@@ -191,6 +198,9 @@ class Repo:
         elif is_dataclass(key):
             [self.walk(getattr(key, x.name), result) for x in fields(key)]
         return result
+
+    def heads(self):
+        return [k for k in self.cursor('head')]
 
     def log(self, db=None, ref=None):
         if db:
@@ -300,7 +310,7 @@ class Repo:
 
     def create_branch(self, branch, ref):
         assert branch.type == 'head'
-        assert branch() is None
+        assert branch() is None, 'branch already exists'
         assert ref.type in ['head', 'commit']
         ref = self(Head(ref)) if ref.type == 'commit' else ref
         return self(branch, ref())

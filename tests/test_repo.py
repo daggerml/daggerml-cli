@@ -25,7 +25,7 @@ class TestRepo(unittest.TestCase):
 
     def test_create_dag(self):
         print('---')
-        db = Repo(self.tmpdir)
+        db = Repo(self.tmpdir, create=True)
         with db.tx(True):
             db.begin('d0')
             db.commit(db.put_node('literal', [], db.put_datum('d0')))
