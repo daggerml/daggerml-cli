@@ -1,5 +1,3 @@
-from asciidag.graph import Graph as AsciiGraph
-from asciidag.node import Node as AsciiNode
 from daggerml_cli.db import dbenv, db_type
 from daggerml_cli.pack import packb, unpackb, packb64, unpackb64, register
 from daggerml_cli.util import now
@@ -47,7 +45,11 @@ class Ref:
 
     @property
     def type(self):
-        return self.to.split('/')[0] if self.to else None
+        return self.to.split('/', 1)[0] if self.to else None
+
+    @property
+    def name(self):
+        return self.to.split('/', 1)[1] if self.to else None
 
     def __call__(self):
         return Repo.curr.get(self)
@@ -202,7 +204,7 @@ class Repo:
         return result
 
     def heads(self):
-        return [k for k in self.cursor('head')]
+        return [Ref(k) for k in self.cursor('head')]
 
     def log(self, db=None, ref=None):
         if db:
@@ -370,27 +372,3 @@ class Repo:
         self.delete(self.index)
         self.index = Ref(None)
         self.dag = None
-
-    def graph(self):
-        def walk_names(x, head=None):
-            if x and x[0]:
-                k = names[x[0]] if x[0] in names else x[0].split('/')[1]
-                tag1 = ' HEAD' if head == self.head.to else ''
-                tag2 = f' {head.split("/")[1]}' if head else ''
-                names[x[0]] = f'{k}{tag1}{tag2}'
-                [walk_names(p) for p in x[1]]
-
-        def walk_nodes(x):
-            if x and x[0]:
-                if x[0] not in nodes:
-                    parents = [walk_nodes(y) for y in x[1] if y]
-                    nodes[x[0]] = AsciiNode(names[x[0]], parents=parents)
-                return nodes[x[0]]
-
-        names = {}
-        nodes = {}
-        log = self.log('head')
-        ks = [self.head.to, *[k for k in log.keys() if k != self.head.to]]
-        [walk_names(log[k], head=k) for k in ks]
-        heads = [walk_nodes(log[k]) for k in ks]
-        AsciiGraph().show_nodes(heads)

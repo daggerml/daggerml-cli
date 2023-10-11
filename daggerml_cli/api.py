@@ -1,3 +1,5 @@
+from asciidag.graph import Graph as AsciiGraph
+from asciidag.node import Node as AsciiNode
 import daggerml_cli.config as config
 import os
 from daggerml_cli.repo import Repo, Ref, Resource
@@ -15,11 +17,6 @@ class Ctx:
     def __post_init__(self):
         self.path = str(asserting(config.REPO_PATH, 'no repo selected'))
         self.head = Ref('head/%s' % asserting(config.HEAD, 'no branch selected'))
-
-
-def from_ref(ref):
-    ref = ref.to if isinstance(ref, Ref) else ref
-    return '/'.join(ref.split('/')[1:])
 
 
 ###############################################################################
@@ -78,12 +75,12 @@ def list_branch():
     ctx = Ctx()
     db = Repo(ctx.path)
     with db.tx():
-        return sorted([from_ref(k) for k in db.heads()])
+        return sorted([k.name for k in db.heads()])
 
 
 def list_other_branch():
     ctx = Ctx()
-    return [k for k in list_branch() if k != from_ref(ctx.head)]
+    return [k for k in list_branch() if k != ctx.head.name]
 
 
 def create_branch(name):
@@ -118,7 +115,7 @@ def merge_branch(name):
     with db.tx(True):
         ref = db.merge(ctx.head().commit, Ref(f'head/{name}')().commit)
         db.checkout(db.set_head(ctx.head, ref))
-        return from_ref(ref)
+        return ref.name
 
 
 def rebase_branch(name):
@@ -127,7 +124,7 @@ def rebase_branch(name):
     with db.tx(True):
         ref = db.rebase(ctx.head().commit, Ref(f'head/{name}')().commit)
         db.checkout(db.set_head(ctx.head, ref))
-        return from_ref(ref)
+        return ref.name
 
 
 ###############################################################################
@@ -205,6 +202,34 @@ def invoke_api(token, data):
 
 def list_commit():
     return []
+
+
+def commit_log_graph():
+    ctx = Ctx()
+    db = Repo(ctx.path, head=ctx.head)
+    with db.tx():
+        def walk_names(x, head=None):
+            if x and x[0]:
+                k = names[x[0]] if x[0] in names else Ref(x[0]).name
+                tag1 = ' HEAD' if head == db.head.to else ''
+                tag2 = f' {Ref(head).name}' if head else ''
+                names[x[0]] = f'{k}{tag1}{tag2}'
+                [walk_names(p) for p in x[1]]
+
+        def walk_nodes(x):
+            if x and x[0]:
+                if x[0] not in nodes:
+                    parents = [walk_nodes(y) for y in x[1] if y]
+                    nodes[x[0]] = AsciiNode(names[x[0]], parents=parents)
+                return nodes[x[0]]
+
+        names = {}
+        nodes = {}
+        log = db.log('head')
+        ks = [db.head.to, *[k for k in log.keys() if k != db.head.to]]
+        [walk_names(log[k], head=k) for k in ks]
+        heads = [walk_nodes(log[k]) for k in ks]
+        AsciiGraph().show_nodes(heads)
 
 
 def commit_log(graph=False):

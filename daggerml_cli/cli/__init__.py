@@ -199,7 +199,7 @@ def commit_group():
 @commit_group.command(name='log', help='Query the commit log.')
 @clickex
 def commit_log(graph):
-    return api.commit_log(graph)
+    return api.commit_log_graph()
 
 
 @click.argument('commit', shell_complete=complete(api.list_commit))
