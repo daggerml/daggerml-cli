@@ -72,7 +72,8 @@ class Commit:
     timestamp: str = None
 
     def __post_init__(self):
-        self.timestamp = now()
+        if self.timestamp is None:
+            self.timestamp = now()
 
 
 @repo_type
@@ -135,7 +136,7 @@ class Repo:
         self.env, self.dbs = dbenv(self.path)
         with self.tx(self.create):
             if not self.get('/init'):
-                self(self.head, Head(self(Commit({}, self(Tree({}))))))
+                self(self.head, Head(self(Commit([], self(Tree({}))))))
                 self('/init', uuid4().hex)
             self.checkout(self.head)
 
@@ -207,10 +208,12 @@ class Repo:
         return [Ref(k) for k in self.cursor('head')]
 
     def log(self, db=None, ref=None):
+        def sort(xs):
+            return reversed(sorted(xs, key=lambda x: x().timestamp))
         if db:
             return {k: self.log(ref=Ref(k)().commit) for k in self.cursor(db)}
         if ref and ref.to:
-            return [ref.to, [self.log(ref=x) for x in ref().parents if x and x.to]]
+            return [ref.to, [self.log(ref=x) for x in sort(ref().parents) if x and x.to]]
 
     def objects(self):
         result = set()
@@ -232,26 +235,27 @@ class Repo:
         [self.delete(Ref(k)) for k in to_delete]
         return len(to_delete)
 
-    def ancestors(self, xs, result=None):
-        xs = xs if isinstance(xs, list) else [xs]
-        result = [] if result is None else result
-        ys = []
-        for x in [x for x in xs if x is not None]:
-            y = x()
-            if y and x not in result:
-                result.append(x)
-                ys += y.parents
-        return self.ancestors(ys, result) if len(ys) else result
+    def ancestors(self, *xs):
+        xs = list(xs)
+        result = []
+        while len(xs):
+            x = xs.pop(0)
+            if x is not None:
+                if x() and x not in result:
+                    result.append(x)
+                    xs += x().parents
+        return result
 
     def common_ancestor(self, a, b):
-        aa = self.ancestors(a)
-        ab = self.ancestors(b)
-        if set(aa).issubset(ab):
-            return a
-        pivot = max(set(aa).difference(ab), key=aa.index)()
-        if len(pivot.parents) > 1:
-            return self.common_ancestor(*pivot.parents)
-        return list(pivot.parents)[0]
+        while True:
+            aa = self.ancestors(a)
+            ab = self.ancestors(b)
+            if set(aa).issubset(ab):
+                return a
+            pivot = max(set(aa).difference(ab), key=aa.index)()
+            if len(pivot.parents) == 1:
+                return pivot.parents[0]
+            a, b = pivot.parents
 
     def diff(self, t1, t2):
         d1 = t1().dags
@@ -288,7 +292,7 @@ class Repo:
         d1 = self.diff(c0().tree, c1().tree)
         d2 = self.diff(c0().tree, c2().tree)
         tree = self.patch(c1().tree, d1, d2)
-        return self(Commit({c1, c2}, tree))
+        return self(Commit([c1, c2], tree))
 
     def rebase(self, c1, c2):
         def replay(commit):
@@ -300,7 +304,7 @@ class Repo:
                 x = replay(p)
                 diff = self.diff(p().tree, commit().tree)
                 tree = self.patch(x().tree, diff)
-                return self(Commit({x}, tree))
+                return self(Commit([x], tree))
             assert len(p) == 2
             a, b = (replay(x) for x in p)
             return self.merge(a, b)
@@ -336,7 +340,7 @@ class Repo:
     def begin(self, dag):
         ctx = self.ctx(self.head, dag)
         ctx.dags[dag] = self(Dag(set(), Ref(None), None))
-        self.index = self(Index(self(Commit({ctx.head.commit}, self(ctx.tree)))))
+        self.index = self(Index(self(Commit([ctx.head.commit], self(ctx.tree)))))
         self.dag = dag
 
     def put_datum(self, value):
@@ -358,6 +362,7 @@ class Repo:
         ctx.dag.nodes.add(node)
         ctx.dags[self.dag] = self(ctx.dag)
         ctx.commit.tree = self(ctx.tree)
+        ctx.commit.timestamp = now()
         self.index = self(self.index, Index(self(ctx.commit)))
         return node
 
