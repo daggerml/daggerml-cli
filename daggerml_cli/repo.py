@@ -39,7 +39,7 @@ class Resource:
     data: dict
 
 
-@repo_type(frozen=True)
+@repo_type(db=False, frozen=True)
 class Ref:
     to: str
 
@@ -189,31 +189,34 @@ class Repo:
         self._tx.delete(key.to.encode(), db=self.db(key.type))
 
     def cursor(self, db):
-        return map(lambda x: bytes(x[0]).decode(), iter(self._tx.cursor(db=self.db(db))))
+        return map(lambda x: Ref(bytes(x[0]).decode()), iter(self._tx.cursor(db=self.db(db))))
 
-    def walk(self, key, result=None):
-        result = set() if result is None else result
-        if isinstance(key, Ref):
-            result.add(key.to)
-            self.walk(key(), result)
-        elif isinstance(key, (list, set)):
-            [self.walk(x, result) for x in key]
-        elif isinstance(key, dict):
-            self.walk(list(key.values()), result)
-        elif is_dataclass(key):
-            [self.walk(getattr(key, x.name), result) for x in fields(key)]
+    def walk(self, *key):
+        result = set()
+        xs = list(key)
+        while len(xs):
+            x = xs.pop(0)
+            if isinstance(x, Ref):
+                result.add(x)
+                xs.append(x())
+            elif isinstance(x, (list, set)):
+                xs += x
+            elif isinstance(x, dict):
+                xs += x.values()
+            elif is_dataclass(x):
+                xs += [getattr(x, y.name) for y in fields(x)]
         return result
 
     def heads(self):
-        return [Ref(k) for k in self.cursor('head')]
+        return [k for k in self.cursor('head')]
 
     def log(self, db=None, ref=None):
         def sort(xs):
             return reversed(sorted(xs, key=lambda x: x().timestamp))
         if db:
-            return {k: self.log(ref=Ref(k)().commit) for k in self.cursor(db)}
+            return {k: self.log(ref=k().commit) for k in self.cursor(db)}
         if ref and ref.to:
-            return [ref.to, [self.log(ref=x) for x in sort(ref().parents) if x and x.to]]
+            return [ref, [self.log(ref=x) for x in sort(ref().parents) if x and x.to]]
 
     def objects(self):
         result = set()
@@ -224,7 +227,7 @@ class Repo:
     def reachable_objects(self):
         result = set()
         for db in ['head', 'index']:
-            [self.walk(Ref(k), result) for k in self.cursor(db)]
+            result = result.union(self.walk(*[k for k in self.cursor(db)]))
         return result
 
     def unreachable_objects(self):
@@ -232,7 +235,7 @@ class Repo:
 
     def gc(self):
         to_delete = self.unreachable_objects()
-        [self.delete(Ref(k)) for k in to_delete]
+        [self.delete(k) for k in to_delete]
         return len(to_delete)
 
     def ancestors(self, *xs):

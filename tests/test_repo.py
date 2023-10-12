@@ -9,9 +9,9 @@ from tempfile import TemporaryDirectory
 def dump(repo, count=None):
     rows = []
     for db in repo.dbs.keys():
-        [rows.append([len(rows) + 1, k, repo.get(Ref(k))]) for k in repo.cursor(db)]
+        [rows.append([len(rows) + 1, k.to, k()]) for k in repo.cursor(db)]
     rows = rows[:min(count, len(rows))] if count is not None else rows
-    print(f'\n{tabulate(rows, tablefmt="simple_grid")}')
+    print('\n' + tabulate(rows, tablefmt="simple_grid"))
 
 
 class TestRepo(unittest.TestCase):
