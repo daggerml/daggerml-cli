@@ -240,10 +240,9 @@ class Repo:
         result = []
         while len(xs):
             x = xs.pop(0)
-            if x is not None:
-                if x() and x not in result:
-                    result.append(x)
-                    xs += x().parents
+            if x is not None and x() and x not in result:
+                result.append(x)
+                xs = x().parents + xs
         return result
 
     def common_ancestor(self, a, b):
