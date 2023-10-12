@@ -228,7 +228,7 @@ def commit_log_graph():
         def walk_names(x, head=None):
             if x and x[0]:
                 k = names[x[0]] if x[0] in names else x[0].name
-                tag1 = ' HEAD' if head == db.head.to else ''
+                tag1 = ' HEAD' if head and head.to == db.head.to else ''
                 tag2 = f' {head.name}' if head else ''
                 names[x[0]] = f'{k}{tag1}{tag2}'
                 [walk_names(p) for p in x[1]]

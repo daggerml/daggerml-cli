@@ -67,7 +67,7 @@ class Head:
 
 @repo_type
 class Commit:
-    parents: set[Ref]
+    parents: list[Ref]
     tree: Ref
     timestamp: str = None
 
@@ -258,6 +258,8 @@ class Repo:
             ab = self.ancestors(b)
             if set(aa).issubset(ab):
                 return a
+            if set(ab).issubset(aa):
+                return b
             pivot = max(set(aa).difference(ab), key=aa.index)()
             if len(pivot.parents) == 1:
                 return pivot.parents[0]

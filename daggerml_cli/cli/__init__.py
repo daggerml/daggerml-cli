@@ -76,7 +76,7 @@ def repo_delete(name):
 
 
 @click.argument('name')
-@repo_group.command(name='copy', help='Copy of this repository to NAME.')
+@repo_group.command(name='copy', help='Copy this repository to NAME.')
 @clickex
 def repo_copy(name):
     api.copy_repo(name)
@@ -112,7 +112,7 @@ def project_group():
     pass
 
 
-@click.argument('repo', shell_complete=complete(api.list_other_repo))
+@click.argument('repo', shell_complete=complete(api.list_repo))
 @project_group.command(name='init', help='Associate a project with a REPO.')
 @clickex
 def project_init(repo):
