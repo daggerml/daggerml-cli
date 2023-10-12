@@ -1,9 +1,14 @@
 import click
 import daggerml_cli.api as api
+import daggerml_cli.config as config
+import os
 from click import ClickException
 from daggerml_cli.__about__ import __version__
 from functools import wraps
 from json import loads, dumps
+
+
+DEBUG = False
 
 
 def clickex(f):
@@ -12,7 +17,7 @@ def clickex(f):
         try:
             return f(*args, **kwargs)
         except BaseException as e:
-            raise ClickException(e)
+            raise e if DEBUG else ClickException(e)
     return inner
 
 
@@ -25,11 +30,20 @@ def complete(f):
     return inner
 
 
+@click.option('--debug', is_flag=True, help='Enable debug output.')
+@click.option('--repo', help='Specify a repo other than the project repo.')
+@click.option('--branch', help='Specify a branch other than the current project branch.')
 @click.group(context_settings={'help_option_names': ['-h', '--help']}, no_args_is_help=True)
 @click.version_option(version=__version__, prog_name='dml')
 @clickex
-def cli():
-    pass
+def cli(debug, repo, branch):
+    global DEBUG
+    DEBUG = debug
+    if repo:
+        config.REPO = repo
+        config.REPO_PATH = os.path.join(config.REPO_DIR, config.REPO)
+    if branch:
+        config.HEAD = branch
 
 
 ###############################################################################
@@ -61,30 +75,49 @@ def repo_delete(name):
     click.echo(f'Deleted repository: {name}')
 
 
+@click.argument('name')
+@repo_group.command(name='copy', help='Copy of this repository to NAME.')
+@clickex
+def repo_copy(name):
+    api.copy_repo(name)
+    click.echo(f'Copied repo: {config.REPO} -> {name}')
+
+
 @repo_group.command(name='list', help='List repositories.')
 @clickex
 def repo_list():
     [click.echo(k) for k in api.list_repo()]
 
 
-@click.argument('name', shell_complete=complete(api.list_repo))
-@repo_group.command(name='use', help='Select the repository to use.')
-@clickex
-def repo_use(name):
-    api.use_repo(name)
-    click.echo(f'Using repository: {name}')
-
-
 @repo_group.command(name='gc', help='Delete unreachable objects in the repo.')
 @clickex
 def repo_gc():
-    click.echo(f'Deleted {api.gc_unreachable()} objects.')
+    click.echo(f'Deleted {api.gc_repo()} objects.')
 
 
-@repo_group.command(name='path', help='Filesystem location of the repo.')
+@repo_group.command(name='path', help='Filesystem location of the repository.')
 @clickex
 def repo_path():
     click.echo(api.repo_path())
+
+
+###############################################################################
+# PROJECT #####################################################################
+###############################################################################
+
+
+@cli.group(name='project', no_args_is_help=True, help='Project management commands.')
+@clickex
+def project_group():
+    pass
+
+
+@click.argument('repo', shell_complete=complete(api.list_other_repo))
+@project_group.command(name='init', help='Associate a project with a REPO.')
+@clickex
+def project_init(repo):
+    api.init_project(repo)
+    click.echo(f'Initialized project with repo: {repo}')
 
 
 ###############################################################################
@@ -100,7 +133,7 @@ def branch_group(ctx):
         click.echo(api.current_branch())
 
 
-@click.argument('name', shell_complete=complete(api.list_branch))
+@click.argument('name')
 @branch_group.command(name='create', help='Create a new branch.')
 @clickex
 def branch_create(name):
@@ -108,7 +141,7 @@ def branch_create(name):
     click.echo(f'Created branch: {name}')
 
 
-@click.argument('name', shell_complete=complete(api.list_branch))
+@click.argument('name', shell_complete=complete(api.list_other_branch))
 @branch_group.command(name='delete', help='Delete a branch.')
 @clickex
 def branch_delete(name):
@@ -122,7 +155,7 @@ def branch_list():
     [click.echo(k) for k in api.list_branch()]
 
 
-@click.argument('name', shell_complete=complete(api.list_branch))
+@click.argument('name', shell_complete=complete(api.list_other_branch))
 @branch_group.command(name='use', help='Select the branch to use.')
 @clickex
 def branch_use(name):
@@ -138,7 +171,7 @@ def branch_merge(branch):
 
 
 @click.argument('branch', shell_complete=complete(api.list_other_branch))
-@branch_group.command(name='rebase', help='Rebase another branch onto the current one.')
+@branch_group.command(name='rebase', help='Rebase the current branch onto BRANCH.')
 @clickex
 def branch_rebase(branch):
     click.echo(api.rebase_branch(branch))

@@ -5,7 +5,6 @@ import os
 from daggerml_cli.repo import Repo, Ref, Resource
 from daggerml_cli.util import asserting
 from dataclasses import dataclass
-from pathlib import Path
 from shutil import rmtree
 
 
@@ -36,29 +35,47 @@ def list_repo():
     return sorted(os.listdir(config.REPO_DIR))
 
 
+def list_other_repo():
+    return sorted([k for k in list_repo() if k != config.REPO])
+
+
 def create_repo(name):
-    path = Path.joinpath(config.REPO_DIR, name)
+    path = os.path.join(config.REPO_DIR, name)
     Repo(str(path), create=True)
-    use_repo(name)
 
 
 def delete_repo(name):
-    path = Path.joinpath(config.REPO_DIR, name)
+    path = os.path.join(config.REPO_DIR, name)
     rmtree(str(path))
-    if current_repo() == name:
-        use_repo(None)
 
 
-def use_repo(name):
+def copy_repo(name):
+    ctx = Ctx()
+    Repo(ctx.path).copy(os.path.join(config.REPO_DIR, name))
+
+
+def gc_repo():
+    ctx = Ctx()
+    db = Repo(ctx.path, head=ctx.head)
+    with db.tx(True):
+        return db.gc()
+
+
+###############################################################################
+# PROJECT #####################################################################
+###############################################################################
+
+
+def init_project(name):
     if name is None:
         os.remove(config.REPO_CONFIG_FILE)
         config.REPO_PATH = None
     else:
         assert name in list_repo(), f'repo not found: {name}'
-        os.makedirs(config.CONFIG_DIR, mode=0o700, exist_ok=True)
+        os.makedirs(config.PROJECT_DIR, mode=0o700, exist_ok=True)
         with open(config.REPO_CONFIG_FILE, 'w') as f:
             f.write(name+'\n')
-        config.REPO_PATH = Path.joinpath(config.REPO_DIR, name)
+        config.REPO_PATH = os.path.join(config.REPO_DIR, name)
     config.REPO = name
 
 
@@ -103,7 +120,7 @@ def use_branch(name):
         pass
     else:
         assert name in list_branch(), f'branch not found: {name}'
-        os.makedirs(config.CONFIG_DIR, mode=0o700, exist_ok=True)
+        os.makedirs(config.PROJECT_DIR, mode=0o700, exist_ok=True)
         with open(config.HEAD_CONFIG_FILE, 'w') as f:
             f.write(name+'\n')
     config.HEAD = name
@@ -122,7 +139,7 @@ def rebase_branch(name):
     ctx = Ctx()
     db = Repo(ctx.path, head=ctx.head)
     with db.tx(True):
-        ref = db.rebase(ctx.head().commit, Ref(f'head/{name}')().commit)
+        ref = db.rebase(Ref(f'head/{name}')().commit, ctx.head().commit)
         db.checkout(db.set_head(ctx.head, ref))
         return ref.name
 
@@ -210,9 +227,9 @@ def commit_log_graph():
     with db.tx():
         def walk_names(x, head=None):
             if x and x[0]:
-                k = names[x[0]] if x[0] in names else Ref(x[0]).name
+                k = names[x[0]] if x[0] in names else x[0].name
                 tag1 = ' HEAD' if head == db.head.to else ''
-                tag2 = f' {Ref(head).name}' if head else ''
+                tag2 = f' {head.name}' if head else ''
                 names[x[0]] = f'{k}{tag1}{tag2}'
                 [walk_names(p) for p in x[1]]
 
@@ -226,33 +243,11 @@ def commit_log_graph():
         names = {}
         nodes = {}
         log = db.log('head')
-        ks = [db.head.to, *[k for k in log.keys() if k != db.head.to]]
+        ks = [db.head, *[k for k in log.keys() if k != db.head]]
         [walk_names(log[k], head=k) for k in ks]
         heads = [walk_nodes(log[k]) for k in ks]
         AsciiGraph().show_nodes(heads)
 
 
-def commit_log(graph=False):
-    ctx = Ctx()
-    db = Repo(ctx.path, head=ctx.head)
-    with db.tx():
-        if graph:
-            db.graph()
-        else:
-            raise NotImplementedError('not implemented')
-
-
 def revert_commit(commit):
     raise NotImplementedError('not implemented')
-
-
-###############################################################################
-# GC ##########################################################################
-###############################################################################
-
-
-def gc_unreachable():
-    ctx = Ctx()
-    db = Repo(ctx.path, head=ctx.head)
-    with db.tx(True):
-        return db.gc()

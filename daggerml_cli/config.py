@@ -1,26 +1,25 @@
 import os
 from pathlib import Path
 
-PROFILE = os.getenv('DML_PROFILE', 'DEFAULT')
-DML_DIR = os.getenv('DML_DIR', Path.joinpath(Path.home(), '.local', 'dml'))
-REPO_DIR = Path.joinpath(DML_DIR, 'repo')
-CONFIG_DIR = Path.joinpath(Path.cwd(), '.dml')
-REPO_CONFIG_FILE = Path.joinpath(CONFIG_DIR, 'repo')
-HEAD_CONFIG_FILE = Path.joinpath(CONFIG_DIR, 'head')
+DML_DIR = os.getenv('DML_DIR', os.path.join(str(Path.home()), '.local', 'dml'))
+REPO_DIR = os.getenv('DML_REPO_DIR', os.path.join(DML_DIR, 'repo'))
+PROJECT_DIR = os.getenv('DML_PROJECT_DIR', os.path.join(str(Path.cwd()), '.dml'))
+REPO_CONFIG_FILE = os.path.join(PROJECT_DIR, 'repo')
+HEAD_CONFIG_FILE = os.path.join(PROJECT_DIR, 'head')
 
-REPO = None
-REPO_PATH = None
-HEAD = None
+REPO = os.getenv('DML_REPO', None)
+REPO_PATH = os.getenv('DML_REPO_PATH', None)
+HEAD = os.getenv('DML_BRANCH', None)
 
 os.makedirs(str(REPO_DIR), mode=0o700, exist_ok=True)
 
-if Path.exists(REPO_CONFIG_FILE):
+if REPO is None and os.path.exists(REPO_CONFIG_FILE):
     with open(REPO_CONFIG_FILE, 'r') as f:
         REPO = f.read().strip()
 
-if REPO:
-    REPO_PATH = Path.joinpath(REPO_DIR, REPO)
+if REPO and REPO_PATH is None:
+    REPO_PATH = os.path.join(REPO_DIR, REPO)
 
-if Path.exists(HEAD_CONFIG_FILE):
+if HEAD is None and os.path.exists(HEAD_CONFIG_FILE):
     with open(HEAD_CONFIG_FILE, 'r') as f:
         HEAD = f.read().strip()

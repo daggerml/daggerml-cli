@@ -1,9 +1,9 @@
+import os
 from daggerml_cli.db import dbenv, db_type
 from daggerml_cli.pack import packb, unpackb, packb64, unpackb64, register
 from daggerml_cli.util import now
 from dataclasses import dataclass, fields, is_dataclass
 from hashlib import md5
-from pathlib import Path
 from uuid import uuid4
 
 
@@ -127,8 +127,8 @@ class Repo:
         return packb64([getattr(self, x.name) for x in fields(self)])
 
     def __post_init__(self):
-        dbfile = str(Path.joinpath(Path(self.path), 'data.mdb'))
-        dbfile_exists = Path.exists(Path(dbfile))
+        dbfile = str(os.path.join(self.path, 'data.mdb'))
+        dbfile_exists = os.path.exists(dbfile)
         if self.create:
             assert not dbfile_exists, f'repo exists: {dbfile}'
         else:
@@ -150,6 +150,10 @@ class Repo:
         tx = self._tx = self.env.begin(write=write, buffers=True)
         Repo.curr = self
         return tx
+
+    def copy(self, path):
+        os.makedirs(path, mode=0o700, exist_ok=True)
+        self.env.copy(path)
 
     def ctx(self, ref, dag=None):
         head = ref()
