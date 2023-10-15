@@ -39,7 +39,7 @@ class Resource:
     data: dict
 
 
-@repo_type(db=False, frozen=True)
+@repo_type(db=False, frozen=True, order=True)
 class Ref:
     to: str
 
