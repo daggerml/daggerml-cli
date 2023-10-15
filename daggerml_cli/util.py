@@ -1,3 +1,4 @@
+import os
 from datetime import datetime, timezone
 
 
@@ -7,6 +8,27 @@ def asserting(x, message=None):
     else:
         assert x
     return x
+
+
+def readfile(path, *paths):
+    if path is not None:
+        p = os.path.join(path, *paths)
+        if os.path.exists(p):
+            with open(p, 'r') as f:
+                result = f.read().strip()
+                return result or None
+
+
+def writefile(contents, path, *paths):
+    if path is not None:
+        p = os.path.join(path, *paths)
+        if contents is None:
+            if os.path.exists(p):
+                os.remove(p)
+        else:
+            os.makedirs(os.path.dirname(p), mode=0o700, exist_ok=True)
+            with open(p, 'w') as f:
+                f.write(contents)
 
 
 def fullname(obj):

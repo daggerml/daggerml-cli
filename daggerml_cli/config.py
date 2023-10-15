@@ -1,25 +1,66 @@
 import os
-from pathlib import Path
+from dataclasses import dataclass
+from getpass import getuser
+from socket import gethostname
+from daggerml_cli.util import readfile, writefile
+from daggerml_cli.repo import Ref
 
-DML_DIR = os.getenv('DML_DIR', os.path.join(str(Path.home()), '.local', 'dml'))
-REPO_DIR = os.getenv('DML_REPO_DIR', os.path.join(DML_DIR, 'repo'))
-PROJECT_DIR = os.getenv('DML_PROJECT_DIR', os.path.join(str(Path.cwd()), '.dml'))
-REPO_CONFIG_FILE = os.path.join(PROJECT_DIR, 'repo')
-HEAD_CONFIG_FILE = os.path.join(PROJECT_DIR, 'head')
 
-REPO = os.getenv('DML_REPO', None)
-REPO_PATH = os.getenv('DML_REPO_PATH', None)
-HEAD = os.getenv('DML_BRANCH', None)
+@dataclass
+class Config:
+    DEBUG: bool = None
+    CONFIG_DIR: str = None
+    PROJECT_DIR: str = None
+    _REPO: str = None
+    _HEAD: str = None
+    _USER: str = None
+    _REPO_PATH: str = None
 
-os.makedirs(str(REPO_DIR), mode=0o700, exist_ok=True)
+    @property
+    def HEAD(self):
+        if self._HEAD is None:
+            self._HEAD = readfile(self.PROJECT_DIR, 'head')
+        return self._HEAD
 
-if REPO is None and os.path.exists(REPO_CONFIG_FILE):
-    with open(REPO_CONFIG_FILE, 'r') as f:
-        REPO = f.read().strip()
+    @HEAD.setter
+    def HEAD(self, value):
+        writefile(value, self.PROJECT_DIR, 'head')
+        self._HEAD = value
 
-if REPO and REPO_PATH is None:
-    REPO_PATH = os.path.join(REPO_DIR, REPO)
+    @property
+    def HEADREF(self):
+        return Ref(f'head/{self.HEAD}') if self.HEAD else None
 
-if HEAD is None and os.path.exists(HEAD_CONFIG_FILE):
-    with open(HEAD_CONFIG_FILE, 'r') as f:
-        HEAD = f.read().strip()
+    @property
+    def REPO(self):
+        if self._REPO is None:
+            self._REPO = readfile(self.PROJECT_DIR, 'repo')
+        return self._REPO
+
+    @REPO.setter
+    def REPO(self, value):
+        writefile(value, self.PROJECT_DIR, 'repo')
+        self._REPO = value
+
+    @property
+    def REPO_DIR(self):
+        if self.CONFIG_DIR:
+            return os.path.join(self.CONFIG_DIR, 'repo')
+
+    @property
+    def REPO_PATH(self):
+        if self._REPO_PATH:
+            return self._REPO_PATH
+        if self.REPO_DIR and self.REPO:
+            return os.path.join(self.REPO_DIR, self.REPO)
+
+    @property
+    def USER(self):
+        if self._USER is None:
+            self._USER = readfile(self.CONFIG_DIR, 'config', 'user')
+        return self._USER or f'{getuser()}@{gethostname()}'
+
+    @USER.setter
+    def USER(self, value):
+        writefile(value, self.CONFIG_DIR, 'config', 'user')
+        self._USER = value

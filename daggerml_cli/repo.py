@@ -69,21 +69,28 @@ class Head:
 class Commit:
     parents: list[Ref]
     tree: Ref
-    timestamp: str = None
+    author: str
+    committer: str
+    message: str
+    dag: str = None
+    created: str = None
+    modified: str = None
 
     def __post_init__(self):
-        if self.timestamp is None:
-            self.timestamp = now()
+        if self.created is None:
+            self.created = now()
+        if self.modified is None:
+            self.modified = now()
 
 
 @repo_type
 class Tree:
-    dags: dict
+    dags: dict[str, Ref]
 
 
 @repo_type
 class Dag:
-    nodes: set
+    nodes: set[Ref]
     result: Ref
     error: dict | None
 
@@ -91,7 +98,7 @@ class Dag:
 @repo_type
 class Node:
     type: str
-    expr: list
+    expr: list[Ref]
     value: Ref
 
 
@@ -113,6 +120,7 @@ class Ctx:
 @dataclass
 class Repo:
     path: str
+    user: str = None
     head: Ref = Ref(DEFAULT)
     index: Ref = Ref(None)
     dag: str = None
@@ -136,7 +144,14 @@ class Repo:
         self.env, self.dbs = dbenv(self.path)
         with self.tx(self.create):
             if not self.get('/init'):
-                self(self.head, Head(self(Commit([], self(Tree({}))))))
+                commit = Commit(
+                    [],
+                    self(Tree({})),
+                    self.user,
+                    self.user,
+                    'initial commit',
+                )
+                self(self.head, Head(self(commit)))
                 self('/init', uuid4().hex)
             self.checkout(self.head)
 
@@ -183,7 +198,7 @@ class Repo:
             comp = None
             if key.to is None:
                 comp = self._tx.get(key2.encode(), db=self.db(db))
-                assert comp is None or comp == data
+                assert comp is None or comp == data, f'attempt to update immutable object: {key2}'
             if key is None or comp is None:
                 self._tx.put(key2.encode(), data, db=self.db(db))
             return Ref(key2)
@@ -214,9 +229,12 @@ class Repo:
     def heads(self):
         return [k for k in self.cursor('head')]
 
+    def indexes(self):
+        return [k for k in self.cursor('index')]
+
     def log(self, db=None, ref=None):
         def sort(xs):
-            return reversed(sorted(xs, key=lambda x: x().timestamp))
+            return reversed(sorted(xs, key=lambda x: x().modified))
         if db:
             return {k: self.log(ref=k().commit) for k in self.cursor(db)}
         if ref and ref.to:
@@ -242,7 +260,7 @@ class Repo:
         [self.delete(k) for k in to_delete]
         return len(to_delete)
 
-    def ancestors(self, *xs):
+    def topo_sort(self, *xs):
         xs = list(xs)
         result = []
         while len(xs):
@@ -252,10 +270,10 @@ class Repo:
                 xs = x().parents + xs
         return result
 
-    def common_ancestor(self, a, b):
+    def merge_base(self, a, b):
         while True:
-            aa = self.ancestors(a)
-            ab = self.ancestors(b)
+            aa = self.topo_sort(a)
+            ab = self.topo_sort(b)
             if set(aa).issubset(ab):
                 return a
             if set(ab).issubset(aa):
@@ -289,8 +307,8 @@ class Repo:
         tree.dags.update(diff['add'])
         return self(tree)
 
-    def merge(self, c1, c2):
-        c0 = self.common_ancestor(c1, c2)
+    def merge(self, c1, c2, author=None, message=None, created=None):
+        c0 = self.merge_base(c1, c2)
         if c1 == c2:
             return c2
         if c0 == c2:
@@ -299,42 +317,46 @@ class Repo:
             return c2
         d1 = self.diff(c0().tree, c1().tree)
         d2 = self.diff(c0().tree, c2().tree)
-        tree = self.patch(c1().tree, d1, d2)
-        return self(Commit([c1, c2], tree))
+        return self(Commit(
+            [c1, c2],
+            self.patch(c1().tree, d1, d2),
+            author or self.user,
+            self.user,
+            message or f'merge {c2.name} with {c1.name}',
+            None,
+            created or now(),
+        ))
 
     def rebase(self, c1, c2):
         def replay(commit):
             if commit == c0:
                 return c1
-            p = commit().parents
+            c = commit()
+            p = c.parents
+            assert len(p), f'commit has no parents: {commit.to}'
             if len(p) == 1:
-                p, = p
-                x = replay(p)
-                diff = self.diff(p().tree, commit().tree)
-                tree = self.patch(x().tree, diff)
-                return self(Commit([x], tree))
-            assert len(p) == 2
+                x = replay(p[0])
+                c.tree = self.patch(x().tree, self.diff(p[0]().tree, commit().tree))
+                c.parents, c.committer, c.modified = ([x], self.user, now())
+                return self(c)
+            assert len(p) == 2, f'commit has more than two parents: {commit.to}'
             a, b = (replay(x) for x in p)
-            return self.merge(a, b)
-        c0 = self.common_ancestor(c1, c2)
-        if c0 == c1:
-            return c2
-        if c0 == c2:
-            return c1
-        return replay(c2)
+            return self.merge(a, b, commit.author, commit.message, commit.created)
+        c0 = self.merge_base(c1, c2)
+        return c2 if c0 == c1 else c1 if c0 == c2 else replay(c2)
 
     def squash(self, commit):
         pass
 
     def create_branch(self, branch, ref):
-        assert branch.type == 'head'
+        assert branch.type == 'head', f'unexpected branch type: {branch.type}'
         assert branch() is None, 'branch already exists'
-        assert ref.type in ['head', 'commit']
+        assert ref.type in ['head', 'commit'], f'unexpected ref type: {ref.type}'
         ref = self(Head(ref)) if ref.type == 'commit' else ref
         return self(branch, ref())
 
     def delete_branch(self, branch):
-        assert self.head != branch, 'cannot delete HEAD'
+        assert self.head != branch, 'cannot delete the current branch'
         self.delete(branch)
 
     def set_head(self, head, commit):
@@ -345,10 +367,16 @@ class Repo:
         assert ref(), f'no such ref: {ref.to}'
         self.head = ref
 
-    def begin(self, dag):
+    def begin(self, dag, message):
         ctx = self.ctx(self.head, dag)
         ctx.dags[dag] = self(Dag(set(), Ref(None), None))
-        self.index = self(Index(self(Commit([ctx.head.commit], self(ctx.tree)))))
+        self.index = self(Index(self(Commit(
+            [ctx.head.commit],
+            self(ctx.tree),
+            self.user,
+            self.user,
+            message,
+            dag))))
         self.dag = dag
 
     def put_datum(self, value):
@@ -370,7 +398,7 @@ class Repo:
         ctx.dag.nodes.add(node)
         ctx.dags[self.dag] = self(ctx.dag)
         ctx.commit.tree = self(ctx.tree)
-        ctx.commit.timestamp = now()
+        ctx.commit.created = ctx.commit.modified = now()
         self.index = self(self.index, Index(self(ctx.commit)))
         return node
 
@@ -380,7 +408,9 @@ class Repo:
         ctx.dag.result = result
         ctx.dag.error = error
         ctx.tree.dags[self.dag] = self(ctx.dag)
-        commit = self.rebase(self.head().commit, self(Commit(ctx.commit.parents, self(ctx.tree))))
+        ctx.commit.tree = self(ctx.tree)
+        ctx.commit.created = ctx.commit.modified = now()
+        commit = self.merge(self.head().commit, self(ctx.commit))
         self.set_head(self.head, commit)
         self.delete(self.index)
         self.index = Ref(None)

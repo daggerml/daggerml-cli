@@ -23,40 +23,38 @@ class Ctx:
 ###############################################################################
 
 
-def current_repo():
+def current_repo(config):
     return config.REPO
 
 
-def repo_path():
-    return asserting(config.REPO_PATH, 'no repo selected')
+def repo_path(config):
+    return config.REPO_PATH
 
 
-def list_repo():
+def list_repo(config):
     return sorted(os.listdir(config.REPO_DIR))
 
 
-def list_other_repo():
+def list_other_repo(config):
     return sorted([k for k in list_repo() if k != config.REPO])
 
 
-def create_repo(name):
+def create_repo(config, name):
     path = os.path.join(config.REPO_DIR, name)
-    Repo(str(path), create=True)
+    Repo(path, config.USER, create=True)
 
 
-def delete_repo(name):
+def delete_repo(config, name):
     path = os.path.join(config.REPO_DIR, name)
-    rmtree(str(path))
+    rmtree(path)
 
 
-def copy_repo(name):
-    ctx = Ctx()
-    Repo(ctx.path).copy(os.path.join(config.REPO_DIR, name))
+def copy_repo(config, name):
+    Repo(config.REPO_PATH).copy(os.path.join(config.REPO_DIR, name))
 
 
-def gc_repo():
-    ctx = Ctx()
-    db = Repo(ctx.path, head=ctx.head)
+def gc_repo(config):
+    db = Repo(config.REPO_PATH)
     with db.tx(True):
         return db.gc()
 
@@ -66,16 +64,9 @@ def gc_repo():
 ###############################################################################
 
 
-def init_project(name):
-    if name is None:
-        os.remove(config.REPO_CONFIG_FILE)
-        config.REPO_PATH = None
-    else:
-        assert name in list_repo(), f'repo not found: {name}'
-        os.makedirs(config.PROJECT_DIR, mode=0o700, exist_ok=True)
-        with open(config.REPO_CONFIG_FILE, 'w') as f:
-            f.write(name+'\n')
-        config.REPO_PATH = os.path.join(config.REPO_DIR, name)
+def init_project(config, name):
+    if name is not None:
+        assert name in list_repo(config), f'repo not found: {name}'
     config.REPO = name
 
 
@@ -84,63 +75,54 @@ def init_project(name):
 ###############################################################################
 
 
-def current_branch():
+def current_branch(config):
     return config.HEAD
 
 
-def list_branch():
-    ctx = Ctx()
-    db = Repo(ctx.path)
+def list_branch(config):
+    db = Repo(config.REPO_PATH)
     with db.tx():
         return sorted([k.name for k in db.heads()])
 
 
-def list_other_branch():
-    ctx = Ctx()
-    return [k for k in list_branch() if k != ctx.head.name]
+def list_other_branch(config):
+    return [k for k in list_branch(config) if k != config.HEAD]
 
 
-def create_branch(name):
-    ctx = Ctx()
-    db = Repo(ctx.path, head=ctx.head)
+def create_branch(config, name):
+    db = Repo(config.REPO_PATH, head=config.HEADREF)
     with db.tx(True):
-        db.create_branch(Ref(f'head/{name}'), ctx.head)
-    use_branch(name)
+        db.create_branch(Ref(f'head/{name}'), db.head)
+    use_branch(config, name)
 
 
-def delete_branch(name):
-    ctx = Ctx()
-    db = Repo(ctx.path, head=ctx.head)
+def delete_branch(config, name):
+    db = Repo(config.REPO_PATH, head=config.HEADREF)
     with db.tx(True):
         db.delete_branch(Ref(f'head/{name}'))
 
 
-def use_branch(name):
+def use_branch(config, name):
     if name is None:
         pass
     else:
-        assert name in list_branch(), f'branch not found: {name}'
-        os.makedirs(config.PROJECT_DIR, mode=0o700, exist_ok=True)
-        with open(config.HEAD_CONFIG_FILE, 'w') as f:
-            f.write(name+'\n')
+        assert name in list_branch(config), f'branch not found: {name}'
     config.HEAD = name
 
 
-def merge_branch(name):
-    ctx = Ctx()
-    db = Repo(ctx.path, head=ctx.head)
+def merge_branch(config, name):
+    db = Repo(config.REPO_PATH, head=config.HEADREF)
     with db.tx(True):
-        ref = db.merge(ctx.head().commit, Ref(f'head/{name}')().commit)
-        db.checkout(db.set_head(ctx.head, ref))
+        ref = db.merge(db.head().commit, Ref(f'head/{name}')().commit)
+        db.checkout(db.set_head(db.head, ref))
         return ref.name
 
 
-def rebase_branch(name):
-    ctx = Ctx()
-    db = Repo(ctx.path, head=ctx.head)
+def rebase_branch(config, name):
+    db = Repo(config.REPO_PATH, head=config.HEADREF)
     with db.tx(True):
-        ref = db.rebase(Ref(f'head/{name}')().commit, ctx.head().commit)
-        db.checkout(db.set_head(ctx.head, ref))
+        ref = db.rebase(Ref(f'head/{name}')().commit, db.head().commit)
+        db.checkout(db.set_head(db.head, ref))
         return ref.name
 
 
@@ -149,22 +131,19 @@ def rebase_branch(name):
 ###############################################################################
 
 
-def list_dag():
-    ctx = Ctx()
-    db = Repo(ctx.path, head=ctx.head)
+def list_dag(config):
+    db = Repo(config.REPO_PATH, head=config.HEADREF)
     with db.tx():
-        return db.ctx(ctx.head).dags.keys()
+        return db.ctx(db.head).dags.keys()
 
 
-def delete_dag(name):
-    ctx = Ctx()
-    db = Repo(ctx.path, head=ctx.head)
+def delete_dag(config, name):
+    db = Repo(config.REPO_PATH, head=config.HEADREF)
     with db.tx(True):
-        c = db.ctx(ctx.head)
+        c = db.ctx(db.head)
         if c.dags.pop(name, None):
             c.commit.tree = db(c.tree)
-            print([c.head, db(c.commit)])
-            db.set_head(ctx.head, db(c.commit))
+            db.set_head(db.head, db(c.commit))
 
 
 ###############################################################################
@@ -172,18 +151,19 @@ def delete_dag(name):
 ###############################################################################
 
 
-def invoke_api(token, data):
+def invoke_api(config, token, data):
     try:
-        ctx = Ctx()
-        db = Repo.new(token) if token else Repo(ctx.path, head=ctx.head)
-        op, arg = data
+        db = Repo.new(token) if token else Repo(config.REPO_PATH, config.USER, head=config.HEADREF)
+        op, *arg = data
 
         if op == 'begin':
+            name, user, message = arg
             with db.tx(True):
-                db.begin(arg)
+                db.begin(name, message)
                 return {'status': 'ok', 'token': db.state}
 
         if op == 'put_datum':
+            arg, = arg
             if arg['type'] in ['map', 'list', 'scalar']:
                 value = arg['value']
             elif arg['type'] == 'set':
@@ -197,11 +177,13 @@ def invoke_api(token, data):
                 return {'status': 'ok', 'result': {'ref': ref.to}}
 
         if op == 'put_node':
+            arg, = arg
             with db.tx(True):
                 ref = db.put_node(arg['type'], arg['expr'], Ref(arg['datum']))
                 return {'status': 'ok', 'result': {'ref': ref.to}}
 
         if op == 'commit':
+            arg, = arg
             res_or_err = Ref(arg['ref']) if arg['ref'] else arg['error']
             with db.tx(True):
                 db.commit(res_or_err)
@@ -209,7 +191,7 @@ def invoke_api(token, data):
 
         raise ValueError(f'no such op: {op}')
     except BaseException as e:
-        return {'status': 'error', 'error': e}
+        return {'status': 'error', 'error': {'code': type(e).__name__, 'message': str(e)}}
 
 
 ###############################################################################
@@ -217,13 +199,19 @@ def invoke_api(token, data):
 ###############################################################################
 
 
-def list_commit():
+def list_commit(config):
     return []
 
 
-def commit_log_graph():
-    ctx = Ctx()
-    db = Repo(ctx.path, head=ctx.head)
+def commit_log_graph(config):
+    @dataclass
+    class GNode:
+        commit: Ref
+        parents: list[Ref]
+        children: list[Ref]
+
+    db = Repo(config.REPO_PATH, config.USER, head=config.HEADREF)
+
     with db.tx():
         def walk_names(x, head=None):
             if x and x[0]:
@@ -249,5 +237,5 @@ def commit_log_graph():
         AsciiGraph().show_nodes(heads)
 
 
-def revert_commit(commit):
+def revert_commit(config, commit):
     raise NotImplementedError('not implemented')

@@ -26,26 +26,26 @@ class TestRepo(unittest.TestCase):
 
     def test_create_dag(self):
         print('---')
-        db = Repo(self.tmpdir, create=True)
+        db = Repo(self.tmpdir, 'testy@test', create=True)
         with db.tx(True):
-            db.begin('d0')
+            db.begin('d0', 'first dag')
             db.commit(db.put_node('literal', [], db.put_datum('d0')))
 
             db.create_branch(Ref('head/foop'), db.head)
             db.checkout(Ref('head/foop'))
 
-            db.begin('d1')
+            db.begin('d1', 'second dag')
             db.commit(db.put_node('literal', [], db.put_datum(75)))
 
-            db.begin('d2')
+            db.begin('d2', 'third dag')
             db.commit(db.put_node('literal', [], db.put_datum(99)))
 
-            db.checkout(Ref('head/main'))
-
-            db.begin('d3')
+        db = Repo(self.tmpdir, 'luser@test')
+        with db.tx(True):
+            db.begin('d3', 'fourth dag')
             db.commit(db.put_node('literal', [], db.put_datum('d3')))
 
-            db.begin('d0')
+            db.begin('d0', 'fifth dag')
             db.commit(db.put_node('literal', [], db.put_datum('d0')))
 
             a = Ref('head/main')().commit
@@ -58,22 +58,17 @@ class TestRepo(unittest.TestCase):
 
             db.checkout(db.set_head(Ref('head/main'), m0))
 
-            # db.delete_branch(Ref('head/foop'))
+            db.delete_branch(Ref('head/foop'))
 
-            db.begin('d4')
+            db.begin('d4', 'sixth dag')
             db.commit(db.put_node('literal', [], db.put_datum('d4')))
 
-            db.begin('d6')
+            db.begin('d6', 'seventh dag')
             db.commit(db.put_node('literal', [], db.put_datum('d6')))
-
-            a = Ref('head/main')().commit
-            b = Ref('head/foop')().commit
-            m0 = db.rebase(b, a)
-            db.set_head(Ref('head/foop'), m0)
 
             print()
             db.gc()
             dump(db)
 
-        print()
-        api.commit_log_graph()
+        # print()
+        # api.commit_log_graph(db=db)
