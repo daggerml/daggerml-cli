@@ -15,7 +15,7 @@ class Ctx:
 
     def __post_init__(self):
         self.path = str(asserting(config.REPO_PATH, 'no repo selected'))
-        self.head = Ref('head/%s' % asserting(config.HEAD, 'no branch selected'))
+        self.head = Ref('head/%s' % asserting(config.BRANCH, 'no branch selected'))
 
 
 ###############################################################################
@@ -76,7 +76,7 @@ def init_project(config, name):
 
 
 def current_branch(config):
-    return config.HEAD
+    return config.BRANCH
 
 
 def list_branch(config):
@@ -86,18 +86,18 @@ def list_branch(config):
 
 
 def list_other_branch(config):
-    return [k for k in list_branch(config) if k != config.HEAD]
+    return [k for k in list_branch(config) if k != config.BRANCH]
 
 
 def create_branch(config, name):
-    db = Repo(config.REPO_PATH, head=config.HEADREF)
+    db = Repo(config.REPO_PATH, head=config.BRANCHREF)
     with db.tx(True):
         db.create_branch(Ref(f'head/{name}'), db.head)
     use_branch(config, name)
 
 
 def delete_branch(config, name):
-    db = Repo(config.REPO_PATH, head=config.HEADREF)
+    db = Repo(config.REPO_PATH, head=config.BRANCHREF)
     with db.tx(True):
         db.delete_branch(Ref(f'head/{name}'))
 
@@ -107,11 +107,11 @@ def use_branch(config, name):
         pass
     else:
         assert name in list_branch(config), f'branch not found: {name}'
-    config.HEAD = name
+    config.BRANCH = name
 
 
 def merge_branch(config, name):
-    db = Repo(config.REPO_PATH, head=config.HEADREF)
+    db = Repo(config.REPO_PATH, head=config.BRANCHREF)
     with db.tx(True):
         ref = db.merge(db.head().commit, Ref(f'head/{name}')().commit)
         db.checkout(db.set_head(db.head, ref))
@@ -119,7 +119,7 @@ def merge_branch(config, name):
 
 
 def rebase_branch(config, name):
-    db = Repo(config.REPO_PATH, head=config.HEADREF)
+    db = Repo(config.REPO_PATH, head=config.BRANCHREF)
     with db.tx(True):
         ref = db.rebase(Ref(f'head/{name}')().commit, db.head().commit)
         db.checkout(db.set_head(db.head, ref))
@@ -132,13 +132,13 @@ def rebase_branch(config, name):
 
 
 def list_dag(config):
-    db = Repo(config.REPO_PATH, head=config.HEADREF)
+    db = Repo(config.REPO_PATH, head=config.BRANCHREF)
     with db.tx():
         return db.ctx(db.head).dags.keys()
 
 
 def delete_dag(config, name):
-    db = Repo(config.REPO_PATH, head=config.HEADREF)
+    db = Repo(config.REPO_PATH, head=config.BRANCHREF)
     with db.tx(True):
         c = db.ctx(db.head)
         if c.dags.pop(name, None):
@@ -153,7 +153,7 @@ def delete_dag(config, name):
 
 def invoke_api(config, token, data):
     try:
-        db = Repo.new(token) if token else Repo(config.REPO_PATH, config.USER, head=config.HEADREF)
+        db = Repo.new(token) if token else Repo(config.REPO_PATH, config.USER, head=config.BRANCHREF)
         op, *arg = data
 
         if op == 'begin':
@@ -210,7 +210,7 @@ def commit_log_graph(config):
         parents: list[Ref]
         children: list[Ref]
 
-    db = Repo(config.REPO_PATH, config.USER, head=config.HEADREF)
+    db = Repo(config.REPO_PATH, config.USER, head=config.BRANCHREF)
 
     with db.tx():
         def walk_names(x, head=None):
