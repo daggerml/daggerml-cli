@@ -29,24 +29,24 @@ class TestRepo(unittest.TestCase):
         db = Repo(self.tmpdir, 'testy@test', create=True)
         with db.tx(True):
             db.begin('d0', 'first dag')
-            db.commit(db.put_node('literal', [], db.put_datum('d0')))
+            db.commit(db.put_node('literal', [], db.put_datum('d0'), None))
 
             db.create_branch(Ref('head/foop'), db.head)
             db.checkout(Ref('head/foop'))
 
             db.begin('d1', 'second dag')
-            db.commit(db.put_node('literal', [], db.put_datum(75)))
+            db.commit(db.put_node('literal', [], db.put_datum(75), None))
 
             db.begin('d2', 'third dag')
-            db.commit(db.put_node('literal', [], db.put_datum(99)))
+            db.commit(db.put_node('literal', [], db.put_datum(99), None))
 
         db = Repo(self.tmpdir, 'luser@test')
         with db.tx(True):
             db.begin('d3', 'fourth dag')
-            db.commit(db.put_node('literal', [], db.put_datum('d3')))
+            db.commit(db.put_node('literal', [], db.put_datum('d3'), None))
 
             db.begin('d0', 'fifth dag')
-            db.commit(db.put_node('literal', [], db.put_datum('d0')))
+            db.commit(db.put_node('literal', [], db.put_datum('d0'), None))
 
             a = Ref('head/main')().commit
             b = Ref('head/foop')().commit
@@ -61,10 +61,13 @@ class TestRepo(unittest.TestCase):
             db.delete_branch(Ref('head/foop'))
 
             db.begin('d4', 'sixth dag')
-            db.commit(db.put_node('literal', [], db.put_datum('d4')))
+            db.commit(db.put_node('literal', [], db.put_datum('d4'), None))
 
             db.begin('d6', 'seventh dag')
-            db.commit(db.put_node('literal', [], db.put_datum('d6')))
+            db.commit(db.put_node('literal', [], db.put_datum('d6'), None))
+
+            db.begin('d7', 'eigth dag')
+            db.commit(db.put_node('load-dag-result', ['d6', db.head().commit.to], db.get_dag_result('d6'), None))
 
             print()
             db.gc()

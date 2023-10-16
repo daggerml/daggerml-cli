@@ -1,11 +1,16 @@
-from asciidag.graph import Graph as AsciiGraph
-from asciidag.node import Node as AsciiNode
-import daggerml_cli.config as config
+import logging
 import os
-from daggerml_cli.repo import Repo, Ref, Resource
-from daggerml_cli.util import asserting
 from dataclasses import dataclass
 from shutil import rmtree
+
+from asciidag.graph import Graph as AsciiGraph
+from asciidag.node import Node as AsciiNode
+
+from daggerml_cli import config
+from daggerml_cli.repo import Error, Fnapp, Fnex, FnNode, LiteralNode, LoadNode, Node, Ref, Repo, Resource
+from daggerml_cli.util import DmlError, asserting
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -64,10 +69,11 @@ def gc_repo(config):
 ###############################################################################
 
 
-def init_project(config, name):
+def init_project(config, name, branch='main'):
     if name is not None:
         assert name in list_repo(config), f'repo not found: {name}'
     config.REPO = name
+    config.HEAD = branch
 
 
 ###############################################################################
@@ -146,14 +152,78 @@ def delete_dag(config, name):
             db.set_head(db.head, db(c.commit))
 
 
+def put_node(db, type, expr):
+    error = data = None
+    match type:
+        case 'literal':
+            data = db.put_datum(js2datum(expr[0]))
+            node = LiteralNode(data)
+        case 'load':
+            dag_name, = expr
+            try:
+                data = db.get_dag_result(dag_name)
+            except DmlError as e:
+                error = Error(str(e))
+            node = LoadNode(dag=db.dag, commit=db.head().commit, value=data, error=error)
+        case 'fn':
+            expr = [Ref(x) for x in expr]
+            datum_expr = [x().value for x in expr]
+            fnapp = Ref(f'fnapp/{db.hash(Fnapp(datum_expr))}')
+            if fnapp() is None:
+                fnapp = db(Fnapp(datum_expr))
+            if fnapp().fnex is None or fnapp().fnex().error is not None:
+                fnex = db(Fnex(datum_expr, fnapp))
+                new_fnapp = fnapp()
+                new_fnapp.fnex = fnex
+                db.delete(fnapp)
+                fnapp = db(new_fnapp)
+            else:
+                fnex = fnapp().fnex
+            node = FnNode(expr, fnex, fnex().value, fnex().error)
+        case _:
+            msg = f'invalid node type: {type}'
+            raise DmlError(msg)
+    return db.put_node(node)
+
+
 ###############################################################################
 # API #########################################################################
 ###############################################################################
 
 
+def datum2js(arg):
+    if isinstance(arg, (bool, int, float, str)):
+        return {'type': 'scalar', 'value': arg}
+    if isinstance(arg, Resource):
+        return {'type': 'resource', 'value': arg.data}
+    if isinstance(arg, list):
+        return {'type': 'list', 'value': [datum2js(x) for x in arg]}
+    if isinstance(arg, set):
+        return {'type': 'set', 'value': [datum2js(x) for x in arg]}
+    if isinstance(arg, dict):
+        return {'type': 'map', 'value': {k: datum2js(v) for k, v in arg.items()}}
+
+
+def js2datum(arg):
+    if arg['type'] == 'ref':
+        ref = Ref(arg['value'])
+        return ref().value()
+    if arg['type'] == 'scalar':
+        return arg['value']
+    if arg['type'] == 'resource':
+        return Resource(**arg['value'])
+    if arg['type'] == 'list':
+        return [js2datum(v) for v in arg['value']]
+    if arg['type'] == 'set':
+        return {js2datum(v) for v in arg['value']}
+    if arg['type'] == 'map':
+        return {k: js2datum(v) for k, v in arg['value'].items()}
+    raise ValueError(f'unknown datum type: {arg["type"]}')
+
+
 def invoke_api(config, token, data):
     try:
-        db = Repo.new(token) if token else Repo(config.REPO_PATH, config.USER, head=config.BRANCHREF)
+        db = Repo.from_state(token) if token else Repo(config.REPO_PATH, config.USER, head=config.BRANCHREF)
         op, *arg = data
 
         if op == 'begin':
@@ -163,15 +233,7 @@ def invoke_api(config, token, data):
                 return {'status': 'ok', 'token': db.state}
 
         if op == 'put_datum':
-            arg, = arg
-            if arg['type'] in ['map', 'list', 'scalar']:
-                value = arg['value']
-            elif arg['type'] == 'set':
-                value = set(arg['value'])
-            elif arg['type'] == 'resource':
-                value = Resource(arg['value'])
-            else:
-                raise ValueError(f'unknown datum type: {arg["type"]}')
+            value = js2datum(arg[0])
             with db.tx(True):
                 ref = db.put_datum(value)
                 return {'status': 'ok', 'result': {'ref': ref.to}}
@@ -179,8 +241,36 @@ def invoke_api(config, token, data):
         if op == 'put_node':
             arg, = arg
             with db.tx(True):
-                ref = db.put_node(arg['type'], arg['expr'], Ref(arg['datum']))
-                return {'status': 'ok', 'result': {'ref': ref.to}}
+                ref = put_node(db, arg['type'], arg['expr'])
+                return {'status': 'ok', 'result': {'ref': ref.to}, 'token': db.state}
+
+        if op == 'update_fn_node':
+            arg, = arg
+            with db.tx(True):
+                node = Ref(arg)()
+                if node.value is not None or node.error is not None:
+                    raise DmlError('cannot update a finished node')
+                fnex = node.fnex()
+                if fnex.fnapp is not None:
+                    fnex = fnex.fnapp().fnex()
+                return {'status': 'ok', 'info': fnex.info, 'token': db.state}
+
+        if op == 'modify_fn_node':
+            arg, = arg
+            node_id = arg['node_id']
+            value = arg.get('value')
+            error = arg.get('error')
+            info = arg.get('info')
+            if value is None and error is None:
+                assert info is not None
+            with db.tx(True):
+                node = Ref(arg)()
+                if node.value is not None or node.error is not None:
+                    raise DmlError('cannot modify a finished node')
+                fnex = node.fnex()
+                if fnex.fnapp is not None:
+                    fnex = fnex.fnapp().fnex()
+                return {'status': 'ok', 'result': {'ref': ref.to}, 'token': db.state}
 
         if op == 'commit':
             arg, = arg

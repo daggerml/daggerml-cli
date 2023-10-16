@@ -1,11 +1,12 @@
 import os
-from daggerml_cli.db import dbenv, db_type
-from daggerml_cli.pack import packb, unpackb, packb64, unpackb64, register
-from daggerml_cli.util import now
-from dataclasses import dataclass, fields, is_dataclass
+from dataclasses import dataclass, field, fields, is_dataclass
 from hashlib import md5
+from typing import ClassVar
 from uuid import uuid4
 
+from daggerml_cli.db import db_type, dbenv
+from daggerml_cli.pack import packb, packb64, register, unpackb, unpackb64
+from daggerml_cli.util import DmlError, now
 
 DEFAULT = 'head/main'
 
@@ -88,23 +89,66 @@ class Tree:
     dags: dict[str, Ref]
 
 
+@repo_type(db=False)
+class Error:
+    message: str
+    data: Ref = None
+
+
 @repo_type
 class Dag:
     nodes: set[Ref]
     result: Ref
-    error: dict | None
+    error: Error | None
+
+
+class Node:
+    pass
 
 
 @repo_type
-class Node:
-    type: str
+class LiteralNode(Node):
+    value: Ref  # -> datum
+    error: Error = None
+    type: ClassVar[str] = 'literal'
+
+
+@repo_type
+class LoadNode(Node):
+    dag: Ref
+    commit: Ref
+    value: Ref  # -> datum
+    error: Error = None
+    type: ClassVar[str] = 'load'
+
+
+@repo_type
+class FnNode(Node):
     expr: list[Ref]
-    value: Ref
+    fnex: Ref
+    value: Ref | None  # -> datum
+    error: Error | None = None
+    type: ClassVar[str] = 'fn'
 
 
 @repo_type
 class Datum:
     value: type(None) | str | bool | int | float | Resource | list | dict | set
+
+
+@repo_type(hash=['expr'])
+class Fnapp:
+    expr: list[Ref]  # -> datum
+    fnex: Ref | None = None
+
+
+@repo_type(hash=['expr'])
+class Fnex:
+    expr: list[Ref]  # -> datum
+    fnapp: Ref | None = None
+    value: Ref | None = None  # -> datum
+    error: Error | None = None
+    info: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -127,7 +171,7 @@ class Repo:
     create: bool = False
 
     @classmethod
-    def new(cls, b64state):
+    def from_state(cls, b64state):
         return cls(*unpackb64(b64state))
 
     @property
@@ -215,6 +259,8 @@ class Repo:
         xs = list(key)
         while len(xs):
             x = xs.pop(0)
+            if x in result:
+                continue
             if isinstance(x, Ref):
                 result.add(x)
                 xs.append(x())
@@ -389,18 +435,35 @@ class Repo:
                 return self(Datum({put(x) for x in value}))
             elif isinstance(value, dict):
                 return self(Datum({k: put(v) for k, v in value.items()}))
+            elif isinstance(value, Datum):
+                return self(value)
             raise TypeError(f'unknown type: {type(value)}')
         return put(value)
 
-    def put_node(self, type, expr, datum):
+    def put_node(self, node):
+        node = self(node) if isinstance(node, Node) else node
         ctx = self.ctx(self.index, self.dag)
-        node = self(Node(type, expr, datum))
         ctx.dag.nodes.add(node)
         ctx.dags[self.dag] = self(ctx.dag)
         ctx.commit.tree = self(ctx.tree)
         ctx.commit.created = ctx.commit.modified = now()
         self.index = self(self.index, Index(self(ctx.commit)))
         return node
+
+    def get_dag_result(self, dag_name):
+        ctx = self.ctx(self.head, self.dag)
+        if dag_name not in ctx.dags:
+            msg = f'dag {dag_name} does not exist in current commit'
+            raise DmlError(msg)
+        dag = ctx.dags[dag_name]()
+        if dag.result is None:
+            if dag.error is None:
+                msg = dag.error.message
+            else:
+                msg = 'cannot load dag without result (did it fail?)'
+            raise DmlError(msg)
+        data = dag.result().value
+        return data
 
     def commit(self, res_or_err):
         result, error = (res_or_err, None) if isinstance(res_or_err, Ref) else (None, res_or_err)

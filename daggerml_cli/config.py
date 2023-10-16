@@ -1,7 +1,7 @@
 import os
 from daggerml_cli.util import readfile, writefile
 from daggerml_cli.repo import Ref
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from functools import wraps
 
 
@@ -83,3 +83,6 @@ class Config:
     @config_property
     def REPO_PATH(self):
         return os.path.join(self.REPO_DIR, self.REPO)
+
+    def replace(self, **changes):
+        return replace(self, **changes)
