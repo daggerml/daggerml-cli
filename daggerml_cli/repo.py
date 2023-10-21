@@ -1,4 +1,5 @@
 import os
+from contextlib import contextmanager
 from dataclasses import dataclass, field, fields, is_dataclass
 from hashlib import md5
 from typing import ClassVar
@@ -179,6 +180,7 @@ class Repo:
         return packb64([getattr(self, x.name) for x in fields(self)])
 
     def __post_init__(self):
+        self._tx = None
         dbfile = str(os.path.join(self.path, 'data.mdb'))
         dbfile_exists = os.path.exists(dbfile)
         if self.create:
@@ -205,10 +207,17 @@ class Repo:
     def db(self, type):
         return self.dbs[type] if type else None
 
+    @contextmanager
     def tx(self, write=False):
-        tx = self._tx = self.env.begin(write=write, buffers=True)
-        Repo.curr = self
-        return tx
+        try:
+            if self._tx is None:
+                self._tx = self.env.begin(write=write, buffers=True).__enter__()
+                Repo.curr = self
+            yield True
+        finally:
+            if self._tx:
+                self._tx.__exit__(None, None, None)
+                self._tx = Repo.curr = None
 
     def copy(self, path):
         os.makedirs(path, mode=0o700, exist_ok=True)
@@ -259,11 +268,10 @@ class Repo:
         xs = list(key)
         while len(xs):
             x = xs.pop(0)
-            if x in result:
-                continue
             if isinstance(x, Ref):
-                result.add(x)
-                xs.append(x())
+                if x not in result:
+                    result.add(x)
+                    xs.append(x())
             elif isinstance(x, (list, set)):
                 xs += x
             elif isinstance(x, dict):

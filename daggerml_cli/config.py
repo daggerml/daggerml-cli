@@ -1,7 +1,7 @@
 import os
 from daggerml_cli.util import readfile, writefile
 from daggerml_cli.repo import Ref
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, replace, field
 from functools import wraps
 
 
@@ -29,7 +29,7 @@ def config_property(f=None, **opts):
         if base:
             @result.setter
             def setter(self, value):
-                writefile(value, self.get(base), *path)
+                self._writes[-1].append(lambda: writefile(value, self.get(base), *path))
                 setattr(self, priv, value)
             return setter
         return result
@@ -44,13 +44,18 @@ class Config:
     _BRANCH: str = None
     _USER: str = None
     _REPO_PATH: str = None
-    DEBUG: bool = False
+    _DEBUG: bool = False
+    _writes: list = field(default_factory=list)
 
     def get(self, name, default=None):
         try:
             return getattr(self, name)
         except ConfigError:
             return default
+
+    @config_property
+    def DEBUG(self):
+        pass
 
     @config_property
     def CONFIG_DIR(self):
@@ -86,3 +91,10 @@ class Config:
 
     def replace(self, **changes):
         return replace(self, **changes)
+
+    def __enter__(self):
+        self._writes.append([])
+
+    def __exit__(self, type, value, trace):
+        if type is None:
+            [f() for f in self._writes.pop()]

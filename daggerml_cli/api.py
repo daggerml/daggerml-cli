@@ -6,21 +6,10 @@ from shutil import rmtree
 from asciidag.graph import Graph as AsciiGraph
 from asciidag.node import Node as AsciiNode
 
-from daggerml_cli import config
-from daggerml_cli.repo import Error, Fnapp, Fnex, FnNode, LiteralNode, LoadNode, Node, Ref, Repo, Resource
+from daggerml_cli.repo import DEFAULT, Error, Fnapp, Fnex, FnNode, LiteralNode, LoadNode, Node, Ref, Repo, Resource
 from daggerml_cli.util import DmlError, asserting
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass
-class Ctx:
-    path: str = None
-    head: Ref = None
-
-    def __post_init__(self):
-        self.path = str(asserting(config.REPO_PATH, 'no repo selected'))
-        self.head = Ref('head/%s' % asserting(config.BRANCH, 'no branch selected'))
 
 
 ###############################################################################
@@ -69,11 +58,12 @@ def gc_repo(config):
 ###############################################################################
 
 
-def init_project(config, name, branch='main'):
-    if name is not None:
-        assert name in list_repo(config), f'repo not found: {name}'
-    config.REPO = name
-    config.HEAD = branch
+def init_project(config, name, branch=Ref(DEFAULT).name):
+    with config:
+        if name is not None:
+            assert name in list_repo(config), f'repo not found: {name}'
+        config.REPO = name
+        use_branch(config, branch)
 
 
 ###############################################################################
@@ -99,7 +89,7 @@ def create_branch(config, name):
     db = Repo(config.REPO_PATH, head=config.BRANCHREF)
     with db.tx(True):
         db.create_branch(Ref(f'head/{name}'), db.head)
-    use_branch(config, name)
+        use_branch(config, name)
 
 
 def delete_branch(config, name):
@@ -109,11 +99,9 @@ def delete_branch(config, name):
 
 
 def use_branch(config, name):
-    if name is None:
-        pass
-    else:
+    with config:
         assert name in list_branch(config), f'branch not found: {name}'
-    config.BRANCH = name
+        config.BRANCH = name
 
 
 def merge_branch(config, name):
@@ -257,7 +245,7 @@ def invoke_api(config, token, data):
 
         if op == 'modify_fn_node':
             arg, = arg
-            node_id = arg['node_id']
+            # node_id = arg['node_id']
             value = arg.get('value')
             error = arg.get('error')
             info = arg.get('info')
