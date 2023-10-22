@@ -17,18 +17,18 @@ register(set, lambda x, h: sorted(list(x), key=packb), lambda x: [tuple(x)])
 
 
 def from_data(data):
-    type, *args = [None, *data] if len(data) == 1 else data
-    if type is None:
+    n, *args = [None, *data] if len(data) == 1 else data
+    if n is None:
         return args[0]
-    if type == 'list':
+    if n == 'list':
         return [from_data(x) for x in args]
-    if type == 'set':
+    if n == 'set':
         return {from_data(x) for x in args}
-    if type == 'dict':
+    if n == 'dict':
         return {k: from_data(v) for k, v in args[0].items()}
-    if type in DATA_TYPE:
-        return DATA_TYPE[type](*[from_data(x) for x in args])
-    raise ValueError(f'no data encoding for type: {type}')
+    if n in DATA_TYPE:
+        return DATA_TYPE[n](*[from_data(x) for x in args])
+    raise ValueError(f'no data encoding for type: {n}')
 
 
 def to_data(obj):
