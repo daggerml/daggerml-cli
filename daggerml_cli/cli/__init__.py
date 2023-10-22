@@ -41,7 +41,7 @@ def complete(f, prelude=None):
         try:
             if prelude:
                 prelude(ctx, param, incomplete)
-            return [k for k in f(ctx.obj or DEFAULT_CONFIG) if k.startswith(incomplete)]
+            return [k for k in (f(ctx.obj or DEFAULT_CONFIG) or []) if k.startswith(incomplete)]
         except BaseException:
             return []
     return inner

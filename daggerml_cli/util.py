@@ -10,6 +10,11 @@ def asserting(x, message=None):
     return x
 
 
+def makedirs(path):
+    os.makedirs(path, mode=0o700, exist_ok=True)
+    return path
+
+
 def readfile(path, *paths):
     if path is not None:
         p = os.path.join(path, *paths)

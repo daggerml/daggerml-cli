@@ -4,7 +4,7 @@ from shutil import rmtree
 from asciidag.graph import Graph as AsciiGraph
 from asciidag.node import Node as AsciiNode
 from daggerml_cli.repo import DEFAULT, Literal, Load, Node, Ref, Repo, Resource
-from daggerml_cli.util import DmlError
+from daggerml_cli.util import DmlError, makedirs
 
 
 ###############################################################################
@@ -21,7 +21,9 @@ def repo_path(config):
 
 
 def list_repo(config):
-    return sorted(os.listdir(config.REPO_DIR))
+    if os.path.exists(config.REPO_DIR):
+        return sorted(os.listdir(config.REPO_DIR))
+    return []
 
 
 def list_other_repo(config):
@@ -31,7 +33,7 @@ def list_other_repo(config):
 def create_repo(config, name):
     with config:
         config._REPO = name
-        Repo(config.REPO_PATH, config.USER, create=True)
+        Repo(makedirs(config.REPO_PATH), config.USER, create=True)
 
 
 def use_repo(config, name):
@@ -78,9 +80,11 @@ def current_branch(config):
 
 
 def list_branch(config):
-    db = Repo(config.REPO_PATH)
-    with db.tx():
-        return sorted([k.name for k in db.heads()])
+    if os.path.exists(config.REPO_PATH):
+        db = Repo(config.REPO_PATH)
+        with db.tx():
+            return sorted([k.name for k in db.heads()])
+    return []
 
 
 def list_other_branch(config):
@@ -128,9 +132,11 @@ def rebase_branch(config, name):
 
 
 def list_dag(config):
-    db = Repo(config.REPO_PATH, head=config.BRANCHREF)
-    with db.tx():
-        return db.ctx(db.head).dags.keys()
+    if os.path.exists(config.REPO_PATH):
+        db = Repo(config.REPO_PATH, head=config.BRANCHREF)
+        with db.tx():
+            return db.ctx(db.head).dags.keys()
+    return []
 
 
 def delete_dag(config, name):
