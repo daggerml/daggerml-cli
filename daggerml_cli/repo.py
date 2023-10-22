@@ -10,9 +10,39 @@ from uuid import uuid4
 
 
 DEFAULT = 'head/main'
+DATA_TYPE = {}
 
 
 register(set, lambda x, h: sorted(list(x), key=packb), lambda x: [tuple(x)])
+
+
+def from_data(data):
+    type, *args = data
+    if not len(args):
+        return type
+    args = args[0]
+    if type == 'list':
+        return [from_data(x) for x in args]
+    if type == 'set':
+        return {from_data(x) for x in args}
+    if type == 'dict':
+        return {k: from_data(v) for k, v in args.items()}
+    if type in DATA_TYPE:
+        return DATA_TYPE[type](*args)
+    raise ValueError(f'no data encoding for type: {type}')
+
+
+def to_data(obj):
+    n = obj.__class__.__name__
+    if isinstance(obj, (type(None), str, bool, int, float)):
+        return [obj]
+    if isinstance(obj, (list, set)):
+        return [n, [to_data(x) for x in obj]]
+    if isinstance(obj, dict):
+        return [n, {k: to_data(v) for k, v in obj.items()}]
+    if n in DATA_TYPE:
+        return [n, [to_data(getattr(obj, x.name)) for x in fields(obj)]]
+    raise ValueError(f'no data encoding for type: {n}')
 
 
 def repo_type(cls=None, **kwargs):
@@ -30,6 +60,7 @@ def repo_type(cls=None, **kwargs):
         return [getattr(x, y) for y in f]
 
     def decorator(cls):
+        DATA_TYPE[cls.__name__] = cls
         register(cls, packfn, lambda x: x)
         return dataclass(**kwargs)(db_type(cls) if dbtype else cls)
 
@@ -172,6 +203,7 @@ class Repo:
     index: Ref = Ref(None)  # -> index
     dag: str = None
     create: bool = False
+    _tx: list = field(default_factory=list)
 
     @classmethod
     def from_state(cls, b64state):
@@ -182,7 +214,6 @@ class Repo:
         return packb64([getattr(self, x.name) for x in fields(self)])
 
     def __post_init__(self):
-        self._tx = None
         dbfile = str(os.path.join(self.path, 'data.mdb'))
         dbfile_exists = os.path.exists(dbfile)
         if self.create:
@@ -211,15 +242,19 @@ class Repo:
 
     @contextmanager
     def tx(self, write=False):
+        Repo._tx = Repo._tx if hasattr(Repo, '_tx') else []
         try:
-            if self._tx is None:
-                self._tx = self.env.begin(write=write, buffers=True).__enter__()
+            if not len(Repo._tx):
+                Repo._tx.append(self.env.begin(write=write, buffers=True).__enter__())
                 Repo.curr = self
+            else:
+                Repo._tx.append(None)
             yield True
         finally:
-            if self._tx:
-                self._tx.__exit__(None, None, None)
-                self._tx = Repo.curr = None
+            tx = Repo._tx.pop()
+            if tx:
+                tx.__exit__(None, None, None)
+                Repo.curr = None
 
     def copy(self, path):
         os.makedirs(path, mode=0o700, exist_ok=True)
@@ -240,7 +275,7 @@ class Repo:
         if key:
             key = Ref(key) if isinstance(key, str) else key
             if key.to:
-                obj = unpackb(self._tx.get(key.to.encode(), db=self.db(key.type)))
+                obj = unpackb(Repo._tx[0].get(key.to.encode(), db=self.db(key.type)))
                 return obj
 
     def put(self, key, obj=None):
@@ -252,19 +287,19 @@ class Repo:
             key2 = key.to or f'{db}/{self.hash(obj)}'
             comp = None
             if key.to is None:
-                comp = self._tx.get(key2.encode(), db=self.db(db))
+                comp = Repo._tx[0].get(key2.encode(), db=self.db(db))
                 assert comp is None or comp == data, f'attempt to update immutable object: {key2}'
             if key is None or comp is None:
-                self._tx.put(key2.encode(), data, db=self.db(db))
+                Repo._tx[0].put(key2.encode(), data, db=self.db(db))
             return Ref(key2)
         return Ref(None)
 
     def delete(self, key):
         key = Ref(key) if isinstance(key, str) else key
-        self._tx.delete(key.to.encode(), db=self.db(key.type))
+        Repo._tx[0].delete(key.to.encode(), db=self.db(key.type))
 
     def cursor(self, db):
-        return map(lambda x: Ref(bytes(x[0]).decode()), iter(self._tx.cursor(db=self.db(db))))
+        return map(lambda x: Ref(bytes(x[0]).decode()), iter(Repo._tx[0].cursor(db=self.db(db))))
 
     def walk(self, *key):
         result = set()

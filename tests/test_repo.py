@@ -1,9 +1,11 @@
 import unittest
+import daggerml_cli.repo
 import daggerml_cli.api as api
-from daggerml_cli.repo import Repo, Resource, Ref, Node, Literal, Load, Fnex
+from daggerml_cli.repo import Repo, Resource, Ref, Node, Literal, Load, Fnex, to_data, from_data
 from pprint import pp
 from tabulate import tabulate
 from tempfile import TemporaryDirectory
+from daggerml_cli.pack import EXT_CODE
 
 
 def dump(repo, count=None):
@@ -31,10 +33,10 @@ class TestRepo(unittest.TestCase):
             db.begin('d0', 'first dag')
             db.commit(db.put_node(Node(Literal(db.put_datum(Resource({'foo': 42}))))))
 
-            db.begin('d1', 'second dag')
+            db.begin('d1', '2nd dag')
             expr = []
             expr.append(db.put_node(Node(Load(db.get_dag('d0')))))
-            expr.append(db.put_node(Node(Literal(db.put_datum(1)))))
+            expr.append(db.put_node(Node(Literal(db.put_datum(['Fnapp', 1])))))
             expr.append(db.put_node(Node(Literal(db.put_datum(2)))))
             f0 = db.put_fn(expr)
             f1 = db.put_fn(expr, {'info': 100}, replace=f0)
@@ -43,12 +45,13 @@ class TestRepo(unittest.TestCase):
             f2 = db.put_fn(expr, {'info': 200}, db.put_datum(444), replace=f1)
             db.commit(Node(f2))
 
-            # db.begin('d2', '3rd dag')
-            # db.put_node(Node(Fn(
-
             print()
             db.gc()
             dump(db)
+
+            data = Resource({'foo': 100.2})
+            pp(to_data(data))
+            pp(from_data(to_data(data)))
 
         # print()
         # api.commit_log_graph(db=db)

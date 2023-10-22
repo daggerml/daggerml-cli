@@ -1,16 +1,10 @@
-import logging
 import os
 from dataclasses import dataclass
-from pathlib import Path
 from shutil import rmtree
-
 from asciidag.graph import Graph as AsciiGraph
 from asciidag.node import Node as AsciiNode
-
-from daggerml_cli.repo import DEFAULT, Error, Fn, Literal, Load, Node, Ref, Repo, Resource
-from daggerml_cli.util import DmlError, asserting
-
-logger = logging.getLogger(__name__)
+from daggerml_cli.repo import DEFAULT, Literal, Load, Node, Ref, Repo, Resource
+from daggerml_cli.util import DmlError
 
 
 ###############################################################################
@@ -35,9 +29,10 @@ def list_other_repo(config):
 
 
 def create_repo(config, name):
-    path = Path(config.REPO_DIR)/name
-    path.mkdir(parents=True, exist_ok=True)
-    Repo(str(path), config.USER, create=True)
+    with config:
+        config._REPO = name
+        os.makedirs(config.REPO_PATH, mode=0o700, exist_ok=True)
+        Repo(config.REPO_PATH, config.USER, create=True)
 
 
 def use_repo(config, name):

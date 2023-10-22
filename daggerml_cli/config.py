@@ -29,7 +29,7 @@ def config_property(f=None, **opts):
         if base:
             @result.setter
             def setter(self, value):
-                self._writes[0].append(lambda: writefile(value, self.get(base), *path))
+                self._writes[-1][(self.get(base), *path)] = value
                 setattr(self, priv, value)
             return setter
         return result
@@ -53,9 +53,9 @@ class Config:
         except ConfigError:
             return default
 
-    @config_property
+    @property
     def DEBUG(self):
-        pass
+        return self._DEBUG
 
     @config_property
     def CONFIG_DIR(self):
@@ -93,9 +93,11 @@ class Config:
         return replace(self, **changes)
 
     def __enter__(self):
-        self._writes.append([])
+        self._writes.append({})
 
     def __exit__(self, type, value, trace):
         writes = self._writes.pop()
         if type is None:
-            [f() for f in writes]
+            if len(self._writes):
+                return self._writes[-1].update(writes)
+            [writefile(v, *k) for k, v in writes.items()]
