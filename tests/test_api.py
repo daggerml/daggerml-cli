@@ -1,8 +1,6 @@
 import unittest
 from tempfile import TemporaryDirectory
-
 from tabulate import tabulate
-
 from daggerml_cli import api
 from daggerml_cli.config import Config
 from daggerml_cli.repo import Fnapp, Node, Ref, Repo, Resource

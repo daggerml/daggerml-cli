@@ -6,7 +6,7 @@ from shutil import rmtree
 from asciidag.graph import Graph as AsciiGraph
 from asciidag.node import Node as AsciiNode
 
-from daggerml_cli.repo import DEFAULT, Error, Fnapp, Fnex, FnNode, LiteralNode, LoadNode, Node, Ref, Repo, Resource
+from daggerml_cli.repo import DEFAULT, Error, Node, Ref, Repo, Resource
 from daggerml_cli.util import DmlError, asserting
 
 logger = logging.getLogger(__name__)
@@ -140,40 +140,6 @@ def delete_dag(config, name):
             db.set_head(db.head, db(c.commit))
 
 
-def put_node(db, type, expr):
-    error = data = None
-    match type:
-        case 'literal':
-            data = db.put_datum(js2datum(expr[0]))
-            node = LiteralNode(data)
-        case 'load':
-            dag_name, = expr
-            try:
-                data = db.get_dag_result(dag_name)
-            except DmlError as e:
-                error = Error(str(e))
-            node = LoadNode(dag=db.dag, commit=db.head().commit, value=data, error=error)
-        case 'fn':
-            expr = [Ref(x) for x in expr]
-            datum_expr = [x().value for x in expr]
-            fnapp = Ref(f'fnapp/{db.hash(Fnapp(datum_expr))}')
-            if fnapp() is None:
-                fnapp = db(Fnapp(datum_expr))
-            if fnapp().fnex is None or fnapp().fnex().error is not None:
-                fnex = db(Fnex(datum_expr, fnapp))
-                new_fnapp = fnapp()
-                new_fnapp.fnex = fnex
-                db.delete(fnapp)
-                fnapp = db(new_fnapp)
-            else:
-                fnex = fnapp().fnex
-            node = FnNode(expr, fnex, fnex().value, fnex().error)
-        case _:
-            msg = f'invalid node type: {type}'
-            raise DmlError(msg)
-    return db.put_node(node)
-
-
 ###############################################################################
 # API #########################################################################
 ###############################################################################
@@ -225,40 +191,6 @@ def invoke_api(config, token, data):
             with db.tx(True):
                 ref = db.put_datum(value)
                 return {'status': 'ok', 'result': {'ref': ref.to}}
-
-        if op == 'put_node':
-            arg, = arg
-            with db.tx(True):
-                ref = put_node(db, arg['type'], arg['expr'])
-                return {'status': 'ok', 'result': {'ref': ref.to}, 'token': db.state}
-
-        if op == 'update_fn_node':
-            arg, = arg
-            with db.tx(True):
-                node = Ref(arg)()
-                if node.value is not None or node.error is not None:
-                    raise DmlError('cannot update a finished node')
-                fnex = node.fnex()
-                if fnex.fnapp is not None:
-                    fnex = fnex.fnapp().fnex()
-                return {'status': 'ok', 'info': fnex.info, 'token': db.state}
-
-        if op == 'modify_fn_node':
-            arg, = arg
-            # node_id = arg['node_id']
-            value = arg.get('value')
-            error = arg.get('error')
-            info = arg.get('info')
-            if value is None and error is None:
-                assert info is not None
-            with db.tx(True):
-                node = Ref(arg)()
-                if node.value is not None or node.error is not None:
-                    raise DmlError('cannot modify a finished node')
-                fnex = node.fnex()
-                if fnex.fnapp is not None:
-                    fnex = fnex.fnapp().fnex()
-                return {'status': 'ok', 'result': {'ref': ref.to}, 'token': db.state}
 
         if op == 'commit':
             arg, = arg

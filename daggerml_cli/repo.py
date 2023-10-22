@@ -36,11 +36,6 @@ def repo_type(cls=None, **kwargs):
     return decorator(cls) if cls else decorator
 
 
-@repo_type(db=False)
-class Resource:
-    data: dict
-
-
 @repo_type(db=False, frozen=True, order=True)
 class Ref:
     to: str
@@ -57,79 +52,101 @@ class Ref:
         return Repo.curr.get(self)
 
 
+@repo_type(db=False)
+class Error:
+    message: str
+    data: Ref = None  # -> datum
+
+
+@repo_type(db=False)
+class Resource:
+    data: dict
+
+
 @repo_type(hash=[])
 class Index:
-    commit: Ref
+    commit: Ref  # -> commit
 
 
 @repo_type(hash=[])
 class Head:
-    commit: Ref
+    commit: Ref  # -> commit
 
 
 @repo_type
 class Commit:
-    parents: list[Ref]
-    tree: Ref
+    parents: list[Ref]  # -> commit
+    tree: Ref  # -> tree
     author: str
     committer: str
     message: str
     dag: str = None
-    created: str = None
-    modified: str = None
-
-    def __post_init__(self):
-        if self.created is None:
-            self.created = now()
-        if self.modified is None:
-            self.modified = now()
+    created: str = field(default_factory=now)
+    modified: str = field(default_factory=now)
 
 
 @repo_type
 class Tree:
-    dags: dict[str, Ref]
-
-
-@repo_type(db=False)
-class Error:
-    message: str
-    data: Ref = None
+    dags: dict[str, Ref]  # -> dag
 
 
 @repo_type
 class Dag:
-    nodes: set[Ref]
-    result: Ref
+    nodes: set[Ref]  # -> node
+    result: Ref  # -> node
     error: Error | None
 
 
-class Node:
-    pass
-
-
-@repo_type
-class LiteralNode(Node):
+@repo_type(db=False)
+class Literal:
     value: Ref  # -> datum
-    error: Error = None
-    type: ClassVar[str] = 'literal'
+
+
+@repo_type(db=False)
+class Load:
+    dag: Ref  # -> dag
+
+    @property
+    def value(self):
+        return self.dag().result().value
+
+
+@repo_type(db=False)
+class Fn:
+    expr: list[Ref]  # -> node
+    fnex: Ref  # -> fnex
+
+    @property
+    def value(self):
+        return self.fnex().value
+
+    @property
+    def error(self):
+        return self.fnex().error
 
 
 @repo_type
-class LoadNode(Node):
-    dag: Ref
-    commit: Ref
-    value: Ref  # -> datum
-    error: Error = None
-    type: ClassVar[str] = 'load'
-
-
-@repo_type
-class FnNode(Node):
-    expr: list[Ref]
-    fnex: Ref
-    value: Ref | None  # -> datum
+class Fnex:
+    expr: list[Ref]  # -> datum
+    fnapp: Ref | None = None  # -> fnapp
+    info: dict = field(default_factory=dict)
+    value: Ref | None = None  # -> datum
     error: Error | None = None
-    type: ClassVar[str] = 'fn'
+
+
+@repo_type(hash=['expr'])
+class Fnapp:
+    expr: list[Ref]  # -> datum
+    fnex: Ref  # -> fnex
+
+
+@repo_type
+class Node:
+    node: Literal | Load | Fn
+
+    @property
+    def value(self):
+        return self.node.value
 
 
 @repo_type
@@ -137,24 +154,9 @@ class Datum:
     value: type(None) | str | bool | int | float | Resource | list | dict | set
 
 
-@repo_type(hash=['expr'])
-class Fnapp:
-    expr: list[Ref]  # -> datum
-    fnex: Ref | None = None
-
-
-@repo_type(hash=['expr'])
-class Fnex:
-    expr: list[Ref]  # -> datum
-    fnapp: Ref | None = None
-    value: Ref | None = None  # -> datum
-    error: Error | None = None
-    info: dict = field(default_factory=dict)
-
-
 @dataclass
 class Ctx:
-    ref: Ref
+    ref: Ref  # -> head | index
     head: Head
     commit: Commit
     tree: Tree
@@ -166,8 +168,8 @@ class Ctx:
 class Repo:
     path: str
     user: str = None
-    head: Ref = Ref(DEFAULT)
-    index: Ref = Ref(None)
+    head: Ref = Ref(DEFAULT)  # -> head
+    index: Ref = Ref(None)  # -> index
     dag: str = None
     create: bool = False
 
@@ -448,9 +450,13 @@ class Repo:
             raise TypeError(f'unknown type: {type(value)}')
         return put(value)
 
-    def put_node(self, node):
+    def put_node(self, node, swap=None):
         node = self(node) if isinstance(node, Node) else node
         ctx = self.ctx(self.index, self.dag)
+        if swap is not None:
+            if swap not in ctx.dag.nodes:
+                raise DmlError('node not found')
+            ctx.dag.nodes.remove(swap)
         ctx.dag.nodes.add(node)
         ctx.dags[self.dag] = self(ctx.dag)
         ctx.commit.tree = self(ctx.tree)
@@ -458,20 +464,22 @@ class Repo:
         self.index = self(self.index, Index(self(ctx.commit)))
         return node
 
-    def get_dag_result(self, dag_name):
-        ctx = self.ctx(self.head, self.dag)
-        if dag_name not in ctx.dags:
-            msg = f'dag {dag_name} does not exist in current commit'
-            raise DmlError(msg)
-        dag = ctx.dags[dag_name]()
-        if dag.result is None:
-            if dag.error is None:
-                msg = dag.error.message
-            else:
-                msg = 'cannot load dag without result (did it fail?)'
-            raise DmlError(msg)
-        data = dag.result().value
-        return data
+    def get_dag(self, dag_name):
+        return self.ctx(self.head, dag_name).dags.get(dag_name)
+
+    def put_fn(self, expr, info=None, value=None, error=None):
+        e = [x().value for x in expr]
+        k = f'fnapp/{self.hash(e)}'
+        fnapp = self.get(k)
+        fnex = fnapp.fnex() if fnapp else None
+        if fnex and (fnex.value or fnex.error):
+            return Fn(expr, fnapp.fnex)
+        else:
+            fnex = self(Fnex(e, Ref(k), info, value, error))
+            if fnapp is not None:
+                self.delete(k)
+            self(Fnapp(e, fnex))
+            return Fn(expr, fnex)
 
     def commit(self, res_or_err):
         result, error = (res_or_err, None) if isinstance(res_or_err, Ref) else (None, res_or_err)
