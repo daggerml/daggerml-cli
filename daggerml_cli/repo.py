@@ -10,18 +10,9 @@ from uuid import uuid4
 
 
 DEFAULT = 'head/main'
-DATA_TYPE = {}
 
 
 register(set, lambda x, h: sorted(list(x), key=packb), lambda x: [tuple(x)])
-
-
-def from_data(x):
-    DATA_TYPE[x[0]](*x[1:])
-
-
-def to_data(x):
-    return [x.__class__.__name__, *[getattr(x, y) for y in fields(x)]]
 
 
 def repo_type(cls=None, **kwargs):
@@ -39,7 +30,6 @@ def repo_type(cls=None, **kwargs):
         return [getattr(x, y) for y in f]
 
     def decorator(cls):
-        DATA_TYPE[cls.__name__] = cls
         register(cls, packfn, lambda x: x)
         return dataclass(**kwargs)(db_type(cls) if dbtype else cls)
 
