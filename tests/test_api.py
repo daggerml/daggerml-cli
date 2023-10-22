@@ -1,9 +1,11 @@
 import unittest
 from tempfile import TemporaryDirectory
+
 from tabulate import tabulate
+
 from daggerml_cli import api
 from daggerml_cli.config import Config
-from daggerml_cli.repo import Fnapp, Node, Ref, Repo, Resource
+from daggerml_cli.repo import DATA_TYPE, Fnapp, Node, Ref, Repo, Resource
 
 
 def unroll_datum(ref):
@@ -27,18 +29,41 @@ def dump(repo, count=None):
     print('\n' + tabulate(rows, tablefmt="simple_grid"))
 
 
-class TestApi(unittest.TestCase):
+class TestApiCreate(unittest.TestCase):
+
+    def test_create_dag(self):
+        with TemporaryDirectory() as tmpd0, TemporaryDirectory() as tmpd1:
+            ctx = Config(
+                tmpd0,
+                tmpd1,
+                'repo0',
+                'branch0',
+                'user0',
+            )
+            api.create_repo(ctx, 'test')
+            assert api.list_repo(ctx) == ['test']
+            api.use_repo(ctx, 'test')
+            assert api.list_branch(ctx) == ['main']
+            api.init_project(ctx, 'test')
+            api.create_branch(ctx, 'b0')
+            assert api.current_branch(ctx) == 'b0'
+
+
+class TestApiBase(unittest.TestCase):
 
     def setUp(self):
         self.tmpdir_ctx = [TemporaryDirectory(), TemporaryDirectory()]
         self.tmpdirs = [x.__enter__() for x in self.tmpdir_ctx]
-        self.CTX = Config(
+        self.CTX = ctx = Config(
             self.tmpdirs[0],
             self.tmpdirs[1],
             'repo0',
             'branch0',
             'user0',
         )
+        api.create_repo(ctx, 'test')
+        api.use_repo(ctx, 'test')
+        api.init_project(ctx, 'test')
 
     def tearDown(self):
         for x in self.tmpdir_ctx:
@@ -46,18 +71,11 @@ class TestApi(unittest.TestCase):
 
     def test_create_dag(self):
         ctx = self.CTX
-        api.create_repo(ctx, 'test')
-        assert api.list_repo(ctx) == ['test']
-        api.use_repo(ctx, 'test')
-        assert api.list_branch(ctx) == ['main']
-        api.init_project(ctx, 'test')
-        api.create_branch(ctx, 'b0')
-        assert api.current_branch(ctx) == 'b0'
         resp = api.invoke_api(ctx, None, ['begin', 'd0', 'mee@foo', 'dag 0'])
         assert resp.get('error') is None
         assert resp['status'] == 'ok'
         data = {'foo': 23, 'bar': {4, 6}, 'baz': [True, 3]}
-        resp = api.invoke_api(ctx, resp['token'], ['put_node', 'literal', api.datum2js(data)])
+        resp = api.invoke_api(ctx, resp['token'], ['put_node', 'literal', api.to_data(data)])
         assert resp.get('error') is None
         assert resp['status'] == 'ok'
         assert resp.get('token') is not None
@@ -69,17 +87,13 @@ class TestApi(unittest.TestCase):
         resp = api.invoke_api(ctx, resp['token'], ['put_node', 'load', 'd0'])
         with Repo.from_state(resp['token']).tx():
             assert isinstance(Ref(resp['result']['ref'])(), Node)
-        tmp = {
-            'type': 'list',
-            'value': [
-                {'type': 'ref', 'value': resp['result']['ref']},
-                {'type': 'ref', 'value': resp['result']['ref']},
-            ]
-        }
-        resp = api.invoke_api(ctx, resp['token'], ['put_node', 'literal', tmp])
+            val = Ref(resp['result']['ref'])().value()
+        tmp = [val, val, 2]
+        resp = api.invoke_api(ctx, resp['token'], ['put_node', 'literal', api.to_data(tmp)])
         assert resp.get('error') is None
         assert resp['status'] == 'ok'
         assert resp.get('token') is not None
+        # with Repo.from_state(resp['token']).tx():
         cres = api.invoke_api(ctx, resp['token'], ['commit', {'ref': resp['result']['ref']}])
         assert cres.get('error') is None
         assert cres['status'] == 'ok'
@@ -87,18 +101,12 @@ class TestApi(unittest.TestCase):
         with db.tx():
             ref = Ref(resp['result']['ref'])().value
             result = unroll_datum(ref)
-            assert result == [data, data]
+            assert result == [data, data, 2]
 
     def test_fn(self):
-        tmp = {
-            'type': 'resource',
-            'value': {'data': None}
-        }
-        api.create_repo(self.CTX, self.id())
         ctx = self.CTX.replace()
-        api.init_project(ctx, self.id())
         resp = api.invoke_api(ctx, None, ['begin', 'd0', 'mee@foo', 'dag 0'])
-        resrc = api.invoke_api(ctx, resp['token'], ['put_node', 'literal', tmp])
+        resrc = api.invoke_api(ctx, resp['token'], ['put_node', 'literal', api.to_data(['asdf', 2])])
         resp0 = api.invoke_api(ctx, resp['token'], ['put_node', 'fn', {'expr': [resrc['result']['ref']]}])
         assert resp0.get('error') is None
         assert resp0.get('token') is not None

@@ -1,7 +1,7 @@
 import unittest
 import daggerml_cli.repo
 import daggerml_cli.api as api
-from daggerml_cli.repo import Repo, Resource, Ref, Node, Literal, Load, Fnex, to_data, from_data
+from daggerml_cli.repo import Repo, Resource, Ref, Node, Literal, Load, Fnex, from_data, to_data
 from pprint import pp
 from tabulate import tabulate
 from tempfile import TemporaryDirectory
@@ -27,7 +27,6 @@ class TestRepo(unittest.TestCase):
         self.tmpdir_ctx = self.tmpdir = None
 
     def test_create_dag(self):
-        print('---')
         db = Repo(self.tmpdir, 'testy@test', create=True)
         with db.tx(True):
             db.begin('d0', 'first dag')

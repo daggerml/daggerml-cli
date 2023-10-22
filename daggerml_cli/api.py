@@ -1,11 +1,12 @@
 import os
 from dataclasses import dataclass
 from shutil import rmtree
+
 from asciidag.graph import Graph as AsciiGraph
 from asciidag.node import Node as AsciiNode
-from daggerml_cli.repo import DEFAULT, Literal, Load, Node, Ref, Repo, Resource
-from daggerml_cli.util import DmlError, makedirs
 
+from daggerml_cli.repo import DEFAULT, Literal, Load, Node, Ref, Repo, Resource, from_data, to_data
+from daggerml_cli.util import DmlError, makedirs
 
 ###############################################################################
 # REPO ########################################################################
@@ -153,39 +154,9 @@ def delete_dag(config, name):
 ###############################################################################
 
 
-def datum2js(arg):
-    if isinstance(arg, (bool, int, float, str)):
-        return {'type': 'scalar', 'value': arg}
-    if isinstance(arg, Resource):
-        return {'type': 'resource', 'value': arg.data}
-    if isinstance(arg, list):
-        return {'type': 'list', 'value': [datum2js(x) for x in arg]}
-    if isinstance(arg, set):
-        return {'type': 'set', 'value': [datum2js(x) for x in arg]}
-    if isinstance(arg, dict):
-        return {'type': 'map', 'value': {k: datum2js(v) for k, v in arg.items()}}
-
-
-def js2datum(arg):
-    if arg['type'] == 'ref':
-        ref = Ref(arg['value'])
-        return ref().value()
-    if arg['type'] == 'scalar':
-        return arg['value']
-    if arg['type'] == 'resource':
-        return Resource(**arg['value'])
-    if arg['type'] == 'list':
-        return [js2datum(v) for v in arg['value']]
-    if arg['type'] == 'set':
-        return {js2datum(v) for v in arg['value']}
-    if arg['type'] == 'map':
-        return {k: js2datum(v) for k, v in arg['value'].items()}
-    raise ValueError(f'unknown datum type: {arg["type"]}')
-
-
 def put_node(db, type, data):
     if type == 'literal':
-        return db.put_node(Node(Literal(db.put_datum(js2datum(data)))))
+        return db.put_node(Node(Literal(db.put_datum(from_data(data)))))
     if type == 'load':
         return db.put_node(Node(Load(db.get_dag(data))))
     if type == 'fn':
@@ -208,7 +179,7 @@ def invoke_api(config, token, data):
                 return {'status': 'ok', 'token': db.state}
 
         if op == 'put_datum':
-            value = js2datum(arg[0])
+            value = from_data(arg[0])
             with db.tx(True):
                 ref = db.put_datum(value)
                 return {'status': 'ok', 'result': {'ref': ref.to}}
