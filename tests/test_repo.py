@@ -52,7 +52,7 @@ class TestRepo(unittest.TestCase):
             pp(to_data(f1))
             pp(from_data(to_data(f1)))
 
-            data = Resource({'foo': [1, 1.5], 'bar': {'zomg', True, None}})
+            data = Resource({'foo': [1, 1.5], 'bar': {'zomg', True, None}, 'baz': {'baf': 'qux'}})
             pp(to_data(data))
             pp(from_data(to_data(data)))
 
