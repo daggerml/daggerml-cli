@@ -17,7 +17,7 @@ register(set, lambda x, h: sorted(list(x), key=packb), lambda x: [tuple(x)])
 
 
 def from_data(data):
-    n, *args = [None, *data] if len(data) == 1 else data
+    n, *args = data if isinstance(data, list) else [None, data]
     if n is None:
         return args[0]
     if n == 'l':
@@ -34,7 +34,7 @@ def from_data(data):
 def to_data(obj):
     n = obj.__class__.__name__
     if isinstance(obj, (type(None), str, bool, int, float)):
-        return [obj]
+        return obj
     if isinstance(obj, (list, set)):
         return [n[0], *[to_data(x) for x in obj]]
     if isinstance(obj, dict):
