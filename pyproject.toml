@@ -114,6 +114,8 @@ select = [
   "YTT",
 ]
 ignore = [
+  # allow asserts
+  "S101",
   # Allow non-abstract empty methods in abstract base classes
   "B027",
   # Allow boolean positional values in function calls, like `dict.get(... True)`
