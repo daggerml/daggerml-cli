@@ -49,7 +49,7 @@ class TestRepo(unittest.TestCase):
             db.gc()
             dump(db)
 
-            data = Resource({'foo': 100.2})
+            data = Resource({'foo': 100.2, 'bar': {1, 2, 3}})
             pp(to_data(data))
             pp(from_data(to_data(data)))
 

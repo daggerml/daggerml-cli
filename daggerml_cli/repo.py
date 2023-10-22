@@ -17,15 +17,15 @@ register(set, lambda x, h: sorted(list(x), key=packb), lambda x: [tuple(x)])
 
 
 def from_data(data):
-    type, args = [None, *data] if len(data) == 1 else data
+    type, *args = [None, *data] if len(data) == 1 else data
     if type is None:
-        return args
+        return args[0]
     if type == 'list':
         return [from_data(x) for x in args]
     if type == 'set':
         return {from_data(x) for x in args}
     if type == 'dict':
-        return {k: from_data(v) for k, v in args.items()}
+        return {k: from_data(v) for k, v in args[0].items()}
     if type in DATA_TYPE:
         return DATA_TYPE[type](*[from_data(x) for x in args])
     raise ValueError(f'no data encoding for type: {type}')
@@ -36,11 +36,11 @@ def to_data(obj):
     if isinstance(obj, (type(None), str, bool, int, float)):
         return [obj]
     if isinstance(obj, (list, set)):
-        return [n, [to_data(x) for x in obj]]
+        return [n, *[to_data(x) for x in obj]]
     if isinstance(obj, dict):
         return [n, {k: to_data(v) for k, v in obj.items()}]
     if n in DATA_TYPE:
-        return [n, [to_data(getattr(obj, x.name)) for x in fields(obj)]]
+        return [n, *[to_data(getattr(obj, x.name)) for x in fields(obj)]]
     raise ValueError(f'no data encoding for type: {n}')
 
 
