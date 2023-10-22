@@ -85,7 +85,7 @@ class Ref:
 @repo_type(db=False)
 class Error:
     message: str
-    data: Ref = None  # -> datum
+    data: dict = field(default_factory=dict)
 
 
 @repo_type(db=False)

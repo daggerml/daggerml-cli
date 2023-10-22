@@ -160,9 +160,13 @@ def put_node(db, type, data):
     if type == 'load':
         return db.put_node(Node(Load(db.get_dag(data))))
     if type == 'fn':
+        data['expr'] = [Ref(x) for x in data['expr']]
         if 'replace' in data:
             data['replace'] = Ref(data['replace'])().node
-        data['expr'] = [Ref(x) for x in data['expr']]
+        if 'error' in data:
+            data['error'] = from_data(data['error'])
+        if 'value' in data:
+            data['value'] = db.put_datum(from_data(data['value']))
         return db.put_node(Node(db.put_fn(**data)))
     raise DmlError('unknown node type')
 
@@ -178,17 +182,27 @@ def invoke_api(config, token, data):
                 db.begin(name, message)
                 return {'status': 'ok', 'token': db.state}
 
-        if op == 'put_datum':
-            value = from_data(arg[0])
-            with db.tx(True):
-                ref = db.put_datum(value)
-                return {'status': 'ok', 'result': {'ref': ref.to}}
-
         if op == 'put_node':
             type_, data = arg
             with db.tx(True):
                 ref = put_node(db, type_, data)
                 return {'status': 'ok', 'result': {'ref': ref.to}, 'token': db.state}
+
+        if op == 'get_node':
+            node_id, = arg
+            with db.tx():
+                ref = Ref(node_id)
+                node = ref().node
+                value = node.value() if node.value is not None else None
+                error = node.error
+                d = {'node_id': ref.to, 'value': value, 'error': error}
+                if hasattr(node, 'info'):
+                    d['info'] = node.info
+                return {
+                    'status': 'ok',
+                    'result': to_data(d),
+                    'token': db.state
+                }
 
         if op == 'commit':
             arg, = arg
