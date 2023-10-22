@@ -1,6 +1,6 @@
 import unittest
 import daggerml_cli.api as api
-from daggerml_cli.repo import Repo, Resource, Ref, Node, Literal, Load
+from daggerml_cli.repo import Repo, Resource, Ref, Node, Literal, Load, Fnex
 from pprint import pp
 from tabulate import tabulate
 from tempfile import TemporaryDirectory
@@ -32,7 +32,14 @@ class TestRepo(unittest.TestCase):
             db.commit(db.put_node(Node(Literal(db.put_datum(Resource({'foo': 42}))))))
 
             db.begin('d1', 'second dag')
-            db.commit(db.put_node(Node(Load(db.get_dag('d0')))))
+            expr = []
+            expr.append(db.put_node(Node(Load(db.get_dag('d0')))))
+            expr.append(db.put_node(Node(Literal(db.put_datum(1)))))
+            expr.append(db.put_node(Node(Literal(db.put_datum(2)))))
+            f0 = db.put_fn(expr)
+            f1 = db.put_fn(expr, {'info': 100}, replace=f0)
+            f2 = db.put_fn(expr, {'info': 200}, db.put_datum(444), replace=f1)
+            db.commit(Node(f2))
 
             # db.begin('d2', '3rd dag')
             # db.put_node(Node(Fn(

@@ -1,18 +1,27 @@
 import os
 from contextlib import contextmanager
+from daggerml_cli.db import db_type, dbenv
+from daggerml_cli.pack import packb, packb64, register, unpackb, unpackb64
+from daggerml_cli.util import DmlError, now
 from dataclasses import dataclass, field, fields, is_dataclass
 from hashlib import md5
 from typing import ClassVar
 from uuid import uuid4
 
-from daggerml_cli.db import db_type, dbenv
-from daggerml_cli.pack import packb, packb64, register, unpackb, unpackb64
-from daggerml_cli.util import DmlError, now
 
 DEFAULT = 'head/main'
+DATA_TYPE = {}
 
 
 register(set, lambda x, h: sorted(list(x), key=packb), lambda x: [tuple(x)])
+
+
+def from_data(x):
+    DATA_TYPE[x[0]](*x[1:])
+
+
+def to_data(x):
+    return [x.__class__.__name__, *[getattr(x, y) for y in fields(x)]]
 
 
 def repo_type(cls=None, **kwargs):
@@ -30,6 +39,7 @@ def repo_type(cls=None, **kwargs):
         return [getattr(x, y) for y in f]
 
     def decorator(cls):
+        DATA_TYPE[cls.__name__] = cls
         register(cls, packfn, lambda x: x)
         return dataclass(**kwargs)(db_type(cls) if dbtype else cls)
 
@@ -129,7 +139,7 @@ class Fn:
 class Fnex:
     expr: list[Ref]  # -> datum
     fnapp: Ref | None = None  # -> fnapp
-    info: dict = field(default_factory=dict)
+    info: dict | None = None
     value: Ref | None = None  # -> datum
     error: Error | None = None
 
@@ -137,7 +147,7 @@ class Fnex:
 @repo_type(hash=['expr'])
 class Fnapp:
     expr: list[Ref]  # -> datum
-    fnex: Ref  # -> fnex
+    fnex: Ref | None = None  # -> fnex
 
 
 @repo_type
@@ -260,6 +270,7 @@ class Repo:
         return Ref(None)
 
     def delete(self, key):
+        key = Ref(key) if isinstance(key, str) else key
         self._tx.delete(key.to.encode(), db=self.db(key.type))
 
     def cursor(self, db):
@@ -450,13 +461,9 @@ class Repo:
             raise TypeError(f'unknown type: {type(value)}')
         return put(value)
 
-    def put_node(self, node, swap=None):
+    def put_node(self, node):
         node = self(node) if isinstance(node, Node) else node
         ctx = self.ctx(self.index, self.dag)
-        if swap is not None:
-            if swap not in ctx.dag.nodes:
-                raise DmlError('node not found')
-            ctx.dag.nodes.remove(swap)
         ctx.dag.nodes.add(node)
         ctx.dags[self.dag] = self(ctx.dag)
         ctx.commit.tree = self(ctx.tree)
@@ -467,19 +474,20 @@ class Repo:
     def get_dag(self, dag_name):
         return self.ctx(self.head, dag_name).dags.get(dag_name)
 
-    def put_fn(self, expr, info=None, value=None, error=None):
+    def put_fn(self, expr, info=None, value=None, error=None, replace=None):
         e = [x().value for x in expr]
-        k = f'fnapp/{self.hash(e)}'
+        k = 'fnapp/' + self.hash(Fnapp(e))
         fnapp = self.get(k)
         fnex = fnapp.fnex() if fnapp else None
-        if fnex and (fnex.value or fnex.error):
+        if fnex and (fnex.value or fnex.error) and replace is None:
             return Fn(expr, fnapp.fnex)
-        else:
-            fnex = self(Fnex(e, Ref(k), info, value, error))
-            if fnapp is not None:
-                self.delete(k)
-            self(Fnapp(e, fnex))
-            return Fn(expr, fnex)
+        if replace is not None:
+            assert fnex and replace.fnex() == fnex, 'fnex not found'
+        fnex = self(Fnex(e, Ref(k), info, value, error))
+        if fnapp is not None:
+            self.delete(k)
+        self(Fnapp(e, fnex))
+        return Fn(expr, fnex)
 
     def commit(self, res_or_err):
         result, error = (res_or_err, None) if isinstance(res_or_err, Ref) else (None, res_or_err)
