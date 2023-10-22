@@ -17,10 +17,9 @@ register(set, lambda x, h: sorted(list(x), key=packb), lambda x: [tuple(x)])
 
 
 def from_data(data):
-    type, *args = data
-    if not len(args):
-        return type
-    args = args[0]
+    type, args = [None, *data] if len(data) == 1 else data
+    if type is None:
+        return args
     if type == 'list':
         return [from_data(x) for x in args]
     if type == 'set':
