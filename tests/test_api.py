@@ -33,9 +33,11 @@ class TestApi(unittest.TestCase):
         self.tmpdir_ctx = [TemporaryDirectory(), TemporaryDirectory()]
         self.tmpdirs = [x.__enter__() for x in self.tmpdir_ctx]
         self.CTX = Config(
-            False,
             self.tmpdirs[0],
             self.tmpdirs[1],
+            'repo0',
+            'branch0',
+            'user0',
         )
 
     def tearDown(self):
@@ -43,15 +45,11 @@ class TestApi(unittest.TestCase):
             x.__exit__(None, None, None)
 
     def test_create_dag(self):
-        print('---')
-        repo = api.create_repo(self.CTX, 'test')
-        assert repo is None
-        ctx = self.CTX.replace()
-        ctx.REPO = 'test'
-        res = api.list_repo(ctx)
-        assert res  == ['test']
-        res = api.list_branch(ctx)
-        assert res == ['main']
+        ctx = self.CTX
+        api.create_repo(ctx, 'test')
+        assert api.list_repo(ctx) == ['test']
+        api.use_repo(ctx, 'test')
+        assert api.list_branch(ctx) == ['main']
         api.init_project(ctx, 'test')
         api.create_branch(ctx, 'b0')
         assert api.current_branch(ctx) == 'b0'
@@ -59,7 +57,7 @@ class TestApi(unittest.TestCase):
         assert resp.get('error') is None
         assert resp['status'] == 'ok'
         data = {'foo': 23, 'bar': {4, 6}, 'baz': [True, 3]}
-        resp = api.invoke_api(ctx, resp['token'], ['put_node', {'type': 'literal', 'expr': [api.datum2js(data)]}])
+        resp = api.invoke_api(ctx, resp['token'], ['put_node', 'literal', api.datum2js(data)])
         assert resp.get('error') is None
         assert resp['status'] == 'ok'
         assert resp.get('token') is not None
@@ -68,7 +66,7 @@ class TestApi(unittest.TestCase):
         assert resp['status'] == 'ok'
         # dag 2
         resp = api.invoke_api(ctx, None, ['begin', 'd1', 'mee@foo', 'dag 1'])
-        resp = api.invoke_api(ctx, resp['token'], ['put_node', {'type': 'load', 'expr': ['d0']}])
+        resp = api.invoke_api(ctx, resp['token'], ['put_node', 'load', 'd0'])
         with Repo.from_state(resp['token']).tx():
             assert isinstance(Ref(resp['result']['ref'])(), Node)
         tmp = {
@@ -78,7 +76,7 @@ class TestApi(unittest.TestCase):
                 {'type': 'ref', 'value': resp['result']['ref']},
             ]
         }
-        resp = api.invoke_api(ctx, resp['token'], ['put_node', {'type': 'literal', 'expr': [tmp]}])
+        resp = api.invoke_api(ctx, resp['token'], ['put_node', 'literal', tmp])
         assert resp.get('error') is None
         assert resp['status'] == 'ok'
         assert resp.get('token') is not None
@@ -91,8 +89,7 @@ class TestApi(unittest.TestCase):
             result = unroll_datum(ref)
             assert result == [data, data]
 
-    def test_fnapp(self):
-        print('---')
+    def test_fn(self):
         tmp = {
             'type': 'resource',
             'value': {'data': None}
@@ -101,17 +98,11 @@ class TestApi(unittest.TestCase):
         ctx = self.CTX.replace()
         api.init_project(ctx, self.id())
         resp = api.invoke_api(ctx, None, ['begin', 'd0', 'mee@foo', 'dag 0'])
-        resrc = api.invoke_api(ctx, resp['token'], ['put_node', {'type': 'literal', 'expr': [tmp]}])
-        node_expr = ['put_node', {'type': 'fn', 'expr': [resrc['result']['ref']]}]
-        resp0 = api.invoke_api(ctx, resp['token'], node_expr)
+        resrc = api.invoke_api(ctx, resp['token'], ['put_node', 'literal', tmp])
+        resp0 = api.invoke_api(ctx, resp['token'], ['put_node', 'fn', {'expr': [resrc['result']['ref']]}])
         assert resp0.get('error') is None
         assert resp0.get('token') is not None
-        resp1 = api.invoke_api(ctx, resp['token'], node_expr)
-        assert resp1.get('error') is None
-        assert resp1.get('token') is not None
+        resp1 = api.invoke_api(ctx, resp['token'], ['put_node', 'fn', {'expr': [resrc['result']['ref']]}])
+        assert resp0.get('error') is None
+        assert resp0.get('token') is not None
         assert resp0 == resp1
-        info = api.invoke_api(ctx, resp['token'], ['update_fn_node', resp0['result']['ref']])
-        assert info.get('error') is None
-        assert info['info'] == {}
-        expr = {'node_id': resp0['result']['ref'], 'value': None, 'error': None, 'info': {'foo': 'bar'}}
-        info = api.invoke_api(ctx, resp['token'], ['modify_fn_node', expr])

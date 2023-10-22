@@ -1,12 +1,13 @@
 import logging
 import os
 from dataclasses import dataclass
+from pathlib import Path
 from shutil import rmtree
 
 from asciidag.graph import Graph as AsciiGraph
 from asciidag.node import Node as AsciiNode
 
-from daggerml_cli.repo import DEFAULT, Error, Node, Ref, Repo, Resource
+from daggerml_cli.repo import DEFAULT, Error, Fn, Literal, Load, Node, Ref, Repo, Resource
 from daggerml_cli.util import DmlError, asserting
 
 logger = logging.getLogger(__name__)
@@ -34,8 +35,15 @@ def list_other_repo(config):
 
 
 def create_repo(config, name):
-    path = os.path.join(config.REPO_DIR, name)
-    Repo(path, config.USER, create=True)
+    path = Path(config.REPO_DIR)/name
+    path.mkdir(parents=True, exist_ok=True)
+    Repo(str(path), config.USER, create=True)
+
+
+def use_repo(config, name):
+    assert name in list_repo(config), f'no such repo: {name}'
+    with config:
+        config.REPO = name
 
 
 def delete_repo(config, name):
@@ -89,7 +97,7 @@ def create_branch(config, name):
     db = Repo(config.REPO_PATH, head=config.BRANCHREF)
     with db.tx(True):
         db.create_branch(Ref(f'head/{name}'), db.head)
-        use_branch(config, name)
+    use_branch(config, name)
 
 
 def delete_branch(config, name):
@@ -175,6 +183,19 @@ def js2datum(arg):
     raise ValueError(f'unknown datum type: {arg["type"]}')
 
 
+def put_node(db, type, data):
+    if type == 'literal':
+        return db.put_node(Node(Literal(db.put_datum(js2datum(data)))))
+    if type == 'load':
+        return db.put_node(Node(Load(db.get_dag(data))))
+    if type == 'fn':
+        if 'replace' in data:
+            data['replace'] = Ref(data['replace'])().node
+        data['expr'] = [Ref(x) for x in data['expr']]
+        return db.put_node(Node(db.put_fn(**data)))
+    raise DmlError('unknown node type')
+
+
 def invoke_api(config, token, data):
     try:
         db = Repo.from_state(token) if token else Repo(config.REPO_PATH, config.USER, head=config.BRANCHREF)
@@ -191,6 +212,12 @@ def invoke_api(config, token, data):
             with db.tx(True):
                 ref = db.put_datum(value)
                 return {'status': 'ok', 'result': {'ref': ref.to}}
+
+        if op == 'put_node':
+            type_, data = arg
+            with db.tx(True):
+                ref = put_node(db, type_, data)
+                return {'status': 'ok', 'result': {'ref': ref.to}, 'token': db.state}
 
         if op == 'commit':
             arg, = arg

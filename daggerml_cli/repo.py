@@ -472,7 +472,8 @@ class Repo:
         if fnex and (fnex.value or fnex.error) and replace is None:
             return Fn(expr, fnapp.fnex)
         if replace is not None:
-            assert fnex and replace.fnex() == fnex, 'fnex not found'
+            assert fnex is not None, 'fnex not found'
+            assert replace.fnex() == fnex, f'fnex is older than {fnapp.fnex.to}'
         fnex = self(Fnex(e, Ref(k), info, value, error))
         if fnapp is not None:
             self.delete(k)

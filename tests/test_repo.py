@@ -38,6 +38,8 @@ class TestRepo(unittest.TestCase):
             expr.append(db.put_node(Node(Literal(db.put_datum(2)))))
             f0 = db.put_fn(expr)
             f1 = db.put_fn(expr, {'info': 100}, replace=f0)
+            with self.assertRaisesRegex(AssertionError, f'fnex is older than {f1.fnex.to}'):
+                f2 = db.put_fn(expr, {'info': 200}, db.put_datum(444), replace=f0)
             f2 = db.put_fn(expr, {'info': 200}, db.put_datum(444), replace=f1)
             db.commit(Node(f2))
 
