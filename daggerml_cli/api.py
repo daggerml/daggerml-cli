@@ -31,7 +31,6 @@ def list_other_repo(config):
 def create_repo(config, name):
     with config:
         config._REPO = name
-        os.makedirs(config.REPO_PATH, mode=0o700, exist_ok=True)
         Repo(config.REPO_PATH, config.USER, create=True)
 
 
