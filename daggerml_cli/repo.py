@@ -27,7 +27,7 @@ def from_data(data):
     if type == 'dict':
         return {k: from_data(v) for k, v in args.items()}
     if type in DATA_TYPE:
-        return DATA_TYPE[type](*args)
+        return DATA_TYPE[type](*[from_data(x) for x in args])
     raise ValueError(f'no data encoding for type: {type}')
 
 
