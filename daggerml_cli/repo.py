@@ -448,6 +448,7 @@ class Repo:
 
     def delete_branch(self, branch):
         assert self.head != branch, 'cannot delete the current branch'
+        assert self.get(branch) is not None, f'branch not found: {branch.to}'
         self.delete(branch)
 
     def set_head(self, head, commit):
@@ -455,7 +456,7 @@ class Repo:
 
     def checkout(self, ref):
         assert ref.type in ['head'], f'unknown ref type: {ref.type}'
-        assert ref(), f'no such ref: {ref.to}'
+        assert ref(), f'ref not found: {ref.to}'
         self.head = ref
 
     def begin(self, dag, message):
