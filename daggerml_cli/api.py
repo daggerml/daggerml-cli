@@ -167,6 +167,7 @@ def invoke_api(config, token, data):
     def begin(name, message):
         with db.tx(True):
             db.begin(name, message)
+            return db.state
 
     @api_method
     def put_literal(data):
@@ -199,8 +200,7 @@ def invoke_api(config, token, data):
     try:
         db = Repo.from_state(token) if token else Repo(config.REPO_PATH, config.USER, config.BRANCHREF)
         op, kwargs = data
-        result = api.get(op, no_such_op(op))(**kwargs)
-        return db.state, result
+        return api.get(op, no_such_op(op))(**kwargs)
     except Exception as e:
         raise Error.from_ex(e)
 

@@ -56,41 +56,41 @@ class TestApiBase(unittest.TestCase):
         ctx = self.CTX
 
         # dag 0
-        tok, res = api.invoke_api(ctx, None, ['begin', {'name': 'd0', 'message': 'dag 0'}])
+        tok = api.invoke_api(ctx, None, ['begin', {'name': 'd0', 'message': 'dag 0'}])
         data = {'foo': 23, 'bar': {4, 6}, 'baz': [True, 3]}
-        tok, res = api.invoke_api(ctx, tok, ['put_literal', {'data': data}])
-        tok, res = api.invoke_api(ctx, tok, ['commit', {'result': res}])
+        res = api.invoke_api(ctx, tok, ['put_literal', {'data': data}])
+        res = api.invoke_api(ctx, tok, ['commit', {'result': res}])
 
         # dag 1
-        tok, res = api.invoke_api(ctx, None, ['begin', {'name': 'd1', 'message': 'dag 1'}])
-        tok, res = api.invoke_api(ctx, tok, ['put_load', {'dag': 'd0'}])
+        tok = api.invoke_api(ctx, None, ['begin', {'name': 'd1', 'message': 'dag 1'}])
+        res = api.invoke_api(ctx, tok, ['put_load', {'dag': 'd0'}])
         with Repo.from_state(tok).tx():
             assert isinstance(res(), Node)
             val = res().value()
         tmp = [val, val, 2]
-        tok, res = api.invoke_api(ctx, tok, ['put_literal', {'data': tmp}])
+        res = api.invoke_api(ctx, tok, ['put_literal', {'data': tmp}])
         ref = res
-        tok, res = api.invoke_api(ctx, tok, ['get_node', {'ref': ref}])
+        res = api.invoke_api(ctx, tok, ['get_node', {'ref': ref}])
         db = Repo.from_state(tok)
         with db.tx():
             result = db.get_datum(res.value)
             assert result == [data, data, 2]
-        tok, res = api.invoke_api(ctx, tok, ['commit', {'result': ref}])
+        res = api.invoke_api(ctx, tok, ['commit', {'result': ref}])
 
     def test_fn(self):
         ctx = self.CTX
-        tok, res = api.invoke_api(ctx, None, ['begin', {'name': 'd0', 'message': 'dag 0'}])
-        tok, n0 = api.invoke_api(ctx, tok, ['put_literal', {'data': Resource({'asdf', 2})}])
-        tok, n1 = api.invoke_api(ctx, tok, ['put_literal', {'data': 1}])
+        tok = api.invoke_api(ctx, None, ['begin', {'name': 'd0', 'message': 'dag 0'}])
+        n0 = api.invoke_api(ctx, tok, ['put_literal', {'data': Resource({'asdf', 2})}])
+        n1 = api.invoke_api(ctx, tok, ['put_literal', {'data': 1}])
         expr = [n0, n1]
-        tok, n2 = api.invoke_api(
+        n2 = api.invoke_api(
             ctx,
             tok,
             ['put_fn', {'expr': expr, 'info': {'foo': 1}}]
         )
         found = None
         try:
-            tok, n3 = api.invoke_api(
+            n2 = api.invoke_api(
                 ctx,
                 tok,
                 ['put_fn', {'expr': expr, 'info': {'foo': 2}}],
@@ -102,30 +102,30 @@ class TestApiBase(unittest.TestCase):
                 fnex = found.fnex()
                 assert fnex.info == {'foo': 1}
                 assert (fnex.value or fnex.error) is None
-        tok, n3 = api.invoke_api(
+        n2 = api.invoke_api(
             ctx,
             tok,
             ['put_fn', {'expr': expr, 'info': {'foo': 2}, 'replacing': found}],
         )
-        tok, n4 = api.invoke_api(
+        n4 = api.invoke_api(
             ctx,
             tok,
-            ['put_fn', {'expr': expr, 'value': {'foo': 2}, 'replacing': n3}],
+            ['put_fn', {'expr': expr, 'value': {'foo': 2}, 'replacing': n2}],
         )
-        tok, res = api.invoke_api(ctx, tok, ['commit', {'result': n4}])
+        api.invoke_api(ctx, tok, ['commit', {'result': n4}])
 
     def test_fn_w_error(self):
         ctx = self.CTX
-        tok, res = api.invoke_api(ctx, None, ['begin', {'name': 'd0', 'message': 'dag 0'}])
-        tok, n0 = api.invoke_api(ctx, tok, ['put_literal', {'data': Resource({'asdf', 2})}])
-        tok, n1 = api.invoke_api(ctx, tok, ['put_literal', {'data': 1}])
+        tok = api.invoke_api(ctx, None, ['begin', {'name': 'd0', 'message': 'dag 0'}])
+        n0 = api.invoke_api(ctx, tok, ['put_literal', {'data': Resource({'asdf', 2})}])
+        n1 = api.invoke_api(ctx, tok, ['put_literal', {'data': 1}])
         error = Error('fooby', {'asdf': 23})
-        tok, n2 = api.invoke_api(
+        n2 = api.invoke_api(
             ctx,
             tok,
             ['put_fn', {'expr': [n0, n1], 'error': error}]
         )
-        tok, n1 = api.invoke_api(ctx, tok, ['get_node', {'ref': n2}])
+        n1 = api.invoke_api(ctx, tok, ['get_node', {'ref': n2}])
         db = Repo.from_state(tok)
         with db.tx():
             assert n1.value is None
@@ -133,16 +133,16 @@ class TestApiBase(unittest.TestCase):
 
     def test_fn_w_value(self):
         ctx = self.CTX
-        tok, res = api.invoke_api(ctx, None, ['begin', {'name': 'd0', 'message': 'dag 0'}])
-        tok, n0 = api.invoke_api(ctx, tok, ['put_literal', {'data': Resource({'asdf', 2})}])
-        tok, n1 = api.invoke_api(ctx, tok, ['put_literal', {'data': 1}])
+        tok = api.invoke_api(ctx, None, ['begin', {'name': 'd0', 'message': 'dag 0'}])
+        n0 = api.invoke_api(ctx, tok, ['put_literal', {'data': Resource({'asdf', 2})}])
+        n1 = api.invoke_api(ctx, tok, ['put_literal', {'data': 1}])
         value = {'asdf': 23}
-        tok, n2 = api.invoke_api(
+        n2 = api.invoke_api(
             ctx,
             tok,
             ['put_fn', {'expr': [n0, n1], 'value': value}]
         )
-        tok, n1 = api.invoke_api(ctx, tok, ['get_node', {'ref': n2}])
+        n1 = api.invoke_api(ctx, tok, ['get_node', {'ref': n2}])
         db = Repo.from_state(tok)
         with db.tx():
             assert isinstance(n1.value().value, dict)

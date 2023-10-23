@@ -238,10 +238,9 @@ def dag_group(ctx):
 def api_create_dag(ctx, name, message):
     try:
         cmd = ['begin', {'name': name, 'message': message}]
-        token, result = api.invoke_api(ctx.obj, None, cmd)
-        click.echo(dumps(to_data(dict(status='ok', token=token, result=result))))
+        click.echo(dumps(to_data(api.invoke_api(ctx.obj, None, cmd))))
     except Exception as e:
-        click.echo(dumps(to_data(dict(status='error', error=Error.from_ex(e)))))
+        click.echo(dumps(to_data(Error.from_ex(e))))
 
 
 @click.argument('json')
@@ -250,11 +249,9 @@ def api_create_dag(ctx, name, message):
 @clickex
 def api_invoke(ctx, token, json):
     try:
-        cmd = from_data(loads(json))
-        token, result = api.invoke_api(ctx.obj, token, cmd)
-        click.echo(dumps(to_data(dict(status='ok', token=token, result=result))))
+        click.echo(dumps(to_data(api.invoke_api(ctx.obj, token, from_data(loads(json))))))
     except Exception as e:
-        click.echo(dumps(to_data(dict(status='error', error=Error.from_ex(e)))))
+        click.echo(dumps(to_data(Error.from_ex(e))))
 
 
 @click.argument('name', shell_complete=complete(api.list_dag))
