@@ -94,11 +94,9 @@ class Config:
         return replace(self, **changes)
 
     def __enter__(self):
-        print('ENTER')
         self._writes.append({})
 
     def __exit__(self, type, value, trace):
-        print('EXIT')
         writes = self._writes.pop()
         if type is None:
             if len(self._writes):
