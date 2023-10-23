@@ -44,7 +44,7 @@ class TestRepo(unittest.TestCase):
             with self.assertRaises(Error) as e:
                 f2 = db.put_fn(expr, {'info': 200}, db.put_datum(444), replace=f0)
             assert e.exception.message == f'fnex is older than {f1.fnex.to}'
-            assert isinstance(api.from_data(e.exception.context)['new_fn'], Fn)
+            assert isinstance(e.exception.context['new_fn'], Fn)
             f2 = db.put_fn(expr, {'info': 200}, db.put_datum(444), replace=f1)
             db.commit(Node(f2))
 

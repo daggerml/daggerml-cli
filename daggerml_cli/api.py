@@ -227,7 +227,7 @@ def invoke_api(config, token, data):
 
         raise ValueError(f'no such op: {op}')
     except Error as e:
-        return {'status': 'error', 'error': {'code': type(e).__name__, 'message': str(e), 'context': e.context}}
+        return {'status': 'error', 'error': {'code': type(e).__name__, 'message': str(e), 'context': to_data(e.context)}}
     except Exception as e:
         return {'status': 'error', 'error': {'code': type(e).__name__, 'message': str(e)}}
 
