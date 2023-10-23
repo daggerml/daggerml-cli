@@ -153,6 +153,10 @@ class Fn:
     def error(self):
         return self.fnex().error
 
+    @property
+    def info(self):
+        return self.fnex().info
+
 
 @repo_type
 class Fnex:
@@ -499,16 +503,20 @@ class Repo:
         return self.ctx(self.head, dag_name).dags.get(dag_name)
 
     def put_fn(self, expr, info=None, value=None, error=None, replace=None):
+        # if replace is None, then either fnapp is None (it's new),
+        #   or you're passively looking for updates (=> info,error,value all None)
+        # otherwise, replace == Fn
+        # calling this with replace=None is kinda like the entrypoint
         e = [x().value for x in expr]
         k = 'fnapp/' + self.hash(Fnapp(e))
         fnapp = self.get(k)
         fnex = fnapp.fnex() if fnapp else None
-        if fnex and (fnex.value or fnex.error) and replace is None:
+        if replace is None and fnapp is not None:
+            if not (info == value == error == None):  # noqa: E711
+                raise Error('incorrect replace value', context={'new_fn': Fn(expr, fnapp.fnex) if fnex else None})
             return Fn(expr, fnapp.fnex)
-        if replace is not None:
-            assert fnex is not None, 'fnex not found'
-            if replace.fnex() != fnex:
-                raise Error(f'fnex is older than {fnapp.fnex.to}', context={'new_fn': Fn(expr, fnex)})
+        if fnex != (replace and replace.fnex()):  # either both are None, or the same fnexs
+            raise Error('incorrect replace value', context={'new_fn': Fn(expr, fnapp.fnex) if fnex else None})
         fnex = self(Fnex(e, Ref(k), info, value, error))
         if fnapp is not None:
             self.delete(k)

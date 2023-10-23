@@ -92,14 +92,33 @@ class TestApiBase(unittest.TestCase):
     def test_fn(self):
         ctx = self.CTX
         resp = api.invoke_api(ctx, None, ['begin', 'd0', 'mee@foo', 'dag 0'])
-        resrc = api.invoke_api(ctx, resp['token'], ['put_node', 'literal', api.to_data(['asdf', 2])])
-        resp0 = api.invoke_api(ctx, resp['token'], ['put_node', 'fn', {'expr': [resrc['result']['ref']]}])
-        assert resp0.get('error') is None
-        assert resp0.get('token') is not None
-        resp1 = api.invoke_api(ctx, resp['token'], ['put_node', 'fn', {'expr': [resrc['result']['ref']]}])
-        assert resp0.get('error') is None
-        assert resp0.get('token') is not None
-        assert resp0 == resp1
+        n0 = api.invoke_api(ctx, resp['token'], ['put_node', 'literal', api.to_data(Resource({'asdf', 2}))])
+        n1 = api.invoke_api(ctx, n0['token'], ['put_node', 'literal', api.to_data(1)])
+        expr = [n0['result']['ref'], n1['result']['ref']]
+        n2 = api.invoke_api(
+            ctx, n1['token'],
+            ['put_node', 'fn', {'expr': expr, 'info': {'foo': 1}}]
+        )
+        assert n2.get('error') is None
+        n3 = api.invoke_api(
+            ctx, n2['token'],
+            ['put_node', 'fn', {'expr': expr, 'info': {'foo': 2}}],
+        )
+        err_ctx = api.from_data(n3['error']['context'])
+        assert err_ctx['info'] == {'foo': 1}
+        assert not err_ctx['has_error']
+        assert not err_ctx['has_value']
+        n3 = api.invoke_api(
+            ctx, n2['token'],
+            ['put_node', 'fn', {'expr': expr, 'info': {'foo': 2}, 'replace': err_ctx['replace']}],
+        )
+        n3 = api.invoke_api(
+            ctx, n3['token'],
+            ['put_node', 'fn', {'expr': expr, 'value': {'foo': 2}, 'replace': n3['result']['replace']}],
+        )
+        assert n3.get('error') is None
+        assert n3.get('token') is not None
+        resp = api.invoke_api(ctx, n3['token'], ['commit', {'ref': n3['result']['ref']}])
 
     def test_fn_w_error(self):
         ctx = self.CTX

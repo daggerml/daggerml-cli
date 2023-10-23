@@ -5,7 +5,7 @@ from shutil import rmtree
 from asciidag.graph import Graph as AsciiGraph
 from asciidag.node import Node as AsciiNode
 
-from daggerml_cli.repo import DEFAULT, Error, Literal, Load, Node, Ref, Repo, Resource, from_data, to_data
+from daggerml_cli.repo import DEFAULT, Error, Fn, Literal, Load, Node, Ref, Repo, Resource, from_data, to_data
 from daggerml_cli.util import makedirs
 
 ###############################################################################
@@ -162,12 +162,24 @@ def put_node(db, type, data):
     if type == 'fn':
         data['expr'] = [Ref(x) for x in data['expr']]
         if 'replace' in data:
-            data['replace'] = Ref(data['replace'])().node
+            data['replace'] = Fn([x().value for x in data['expr']], Ref(data['replace']))
         if 'error' in data:
             data['error'] = from_data(data['error'])
         if 'value' in data:
             data['value'] = db.put_datum(from_data(data['value']))
-        return db.put_node(Node(db.put_fn(**data)))
+        try:
+            fn = db.put_fn(**data)
+        except Error as e:
+            context = {
+                'info': e.context['new_fn'].info,
+                'has_value': e.context['new_fn'].value is not None,
+                'has_error': e.context['new_fn'].error is not None,
+                'replace': e.context['new_fn'].fnex.to,
+            }
+            raise Error(e.message, context=context) from None
+        if fn.value or fn.error:
+            return db.put_node(Node(fn))
+        return fn
     raise Error('unknown node type')
 
 
@@ -199,7 +211,8 @@ def invoke_api(config, token, data):
             type_, data = arg
             with db.tx(True):
                 ref = put_node(db, type_, data)
-                return {'status': 'ok', 'result': {'ref': ref.to}, 'token': db.state}
+                result = {'ref': ref.to} if isinstance(ref, Ref) else {'info': ref.info, 'replace': ref.fnex.to}
+                return {'status': 'ok', 'result': result, 'token': db.state}
 
         if op == 'get_node':
             node_id, = arg
@@ -220,7 +233,7 @@ def invoke_api(config, token, data):
 
         if op == 'commit':
             arg, = arg
-            res_or_err = Ref(arg['ref']) if arg['ref'] else arg['error']
+            res_or_err = Ref(arg['ref']) if arg.get('ref') else arg['error']
             with db.tx(True):
                 db.commit(res_or_err)
                 return {'status': 'ok'}
