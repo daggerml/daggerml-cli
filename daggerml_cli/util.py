@@ -58,7 +58,3 @@ def sort_dict_recursively(x):
     if isinstance(x, set):
         return {sort_dict_recursively(v) for v in x}
     return x
-
-
-class DmlError(Exception):
-    pass

@@ -5,8 +5,8 @@ from shutil import rmtree
 from asciidag.graph import Graph as AsciiGraph
 from asciidag.node import Node as AsciiNode
 
-from daggerml_cli.repo import DEFAULT, Literal, Load, Node, Ref, Repo, Resource, from_data, to_data
-from daggerml_cli.util import DmlError, makedirs
+from daggerml_cli.repo import DEFAULT, Error, Literal, Load, Node, Ref, Repo, Resource, from_data, to_data
+from daggerml_cli.util import makedirs
 
 ###############################################################################
 # REPO ########################################################################
@@ -168,7 +168,20 @@ def put_node(db, type, data):
         if 'value' in data:
             data['value'] = db.put_datum(from_data(data['value']))
         return db.put_node(Node(db.put_fn(**data)))
-    raise DmlError('unknown node type')
+    raise Error('unknown node type')
+
+
+def unroll_datum(val):
+    val = val.value
+    if isinstance(val, (bool, int, float, str, Resource)):
+        return val
+    if isinstance(val, list):
+        return [unroll_datum(x()) for x in val]
+    if isinstance(val, set):
+        return {unroll_datum(x()) for x in val}
+    if isinstance(val, dict):
+        return {k: unroll_datum(v()) for k, v in val.items()}
+    raise RuntimeError(f'unknown type: {type(val)}')
 
 
 def invoke_api(config, token, data):
@@ -194,10 +207,11 @@ def invoke_api(config, token, data):
                 ref = Ref(node_id)
                 node = ref().node
                 value = node.value() if node.value is not None else None
-                error = node.error
-                d = {'node_id': ref.to, 'value': value, 'error': error}
+                d = {'node_id': ref.to, 'value': value}
                 if hasattr(node, 'info'):
                     d['info'] = node.info
+                if hasattr(node, 'error'):
+                    d['error'] = node.error
                 return {
                     'status': 'ok',
                     'result': to_data(d),
@@ -212,7 +226,9 @@ def invoke_api(config, token, data):
                 return {'status': 'ok'}
 
         raise ValueError(f'no such op: {op}')
-    except BaseException as e:
+    except Error as e:
+        return {'status': 'error', 'error': {'code': type(e).__name__, 'message': str(e), 'context': e.context}}
+    except Exception as e:
         return {'status': 'error', 'error': {'code': type(e).__name__, 'message': str(e)}}
 
 

@@ -1,11 +1,13 @@
 import unittest
-import daggerml_cli.repo
-import daggerml_cli.api as api
-from daggerml_cli.repo import Repo, Resource, Ref, Node, Literal, Load, Fnex, from_data, to_data
 from pprint import pp
-from tabulate import tabulate
 from tempfile import TemporaryDirectory
+
+from tabulate import tabulate
+
+import daggerml_cli.repo
+from daggerml_cli import api
 from daggerml_cli.pack import EXT_CODE
+from daggerml_cli.repo import Error, Fn, Fnex, Literal, Load, Node, Ref, Repo, Resource, from_data, to_data
 
 
 def dump(repo, count=None):
@@ -39,8 +41,10 @@ class TestRepo(unittest.TestCase):
             expr.append(db.put_node(Node(Literal(db.put_datum(2)))))
             f0 = db.put_fn(expr)
             f1 = db.put_fn(expr, {'info': 100}, replace=f0)
-            with self.assertRaisesRegex(AssertionError, f'fnex is older than {f1.fnex.to}'):
+            with self.assertRaises(Error) as e:
                 f2 = db.put_fn(expr, {'info': 200}, db.put_datum(444), replace=f0)
+            assert e.exception.message == f'fnex is older than {f1.fnex.to}'
+            assert isinstance(api.from_data(e.exception.context)['new_fn'], Fn)
             f2 = db.put_fn(expr, {'info': 200}, db.put_datum(444), replace=f1)
             db.commit(Node(f2))
 

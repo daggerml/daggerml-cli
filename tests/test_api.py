@@ -5,22 +5,7 @@ from tabulate import tabulate
 
 from daggerml_cli import api
 from daggerml_cli.config import Config
-from daggerml_cli.repo import DATA_TYPE, Error, Fnapp, Node, Ref, Repo, Resource
-
-
-def unroll_datum(val):
-    if isinstance(val, Ref):
-        return unroll_datum(val())
-    val = val.value
-    if isinstance(val, (bool, int, float, str, Resource)):
-        return val
-    if isinstance(val, list):
-        return [unroll_datum(x) for x in val]
-    if isinstance(val, set):
-        return {unroll_datum(x) for x in val}
-    if isinstance(val, dict):
-        return {k: unroll_datum(v) for k, v in val.items()}
-    raise RuntimeError(f'unknown type: {type(val)}')
+from daggerml_cli.repo import Error, Fnapp, Node, Ref, Repo, Resource
 
 
 def dump(repo, count=None):
@@ -94,16 +79,15 @@ class TestApiBase(unittest.TestCase):
         resp = api.invoke_api(ctx, resp['token'], ['put_node', 'literal', api.to_data(tmp)])
         assert resp.get('error') is None
         assert resp['status'] == 'ok'
-        assert resp.get('token') is not None
-        # with Repo.from_state(resp['token']).tx():
-        cres = api.invoke_api(ctx, resp['token'], ['commit', {'ref': resp['result']['ref']}])
+        node_id = resp['result']['ref']
+        resp = api.invoke_api(ctx, resp['token'], ['get_node', node_id])
+        res = api.from_data(resp['result'])
+        with Repo.from_state(resp['token']).tx():
+            result = api.unroll_datum(res['value'])
+            assert result == [data, data, 2]
+        cres = api.invoke_api(ctx, resp['token'], ['commit', {'ref': node_id}])
         assert cres.get('error') is None
         assert cres['status'] == 'ok'
-        db = Repo.from_state(resp['token'])
-        with db.tx():
-            ref = Ref(resp['result']['ref'])().value
-            result = unroll_datum(ref)
-            assert result == [data, data, 2]
 
     def test_fn(self):
         ctx = self.CTX
@@ -146,5 +130,6 @@ class TestApiBase(unittest.TestCase):
         res = api.from_data(n1['result'])
         assert res['error'] is None
         db = Repo.from_state(resp['token'])
+        assert isinstance(res['value'].value, dict)
         with db.tx():
-            assert unroll_datum(res['value']) == value
+            assert api.unroll_datum(res['value']) == value

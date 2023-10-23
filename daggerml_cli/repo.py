@@ -2,10 +2,9 @@ import os
 from contextlib import contextmanager
 from daggerml_cli.db import db_type, dbenv
 from daggerml_cli.pack import packb, packb64, register, unpackb, unpackb64
-from daggerml_cli.util import DmlError, now
+from daggerml_cli.util import now
 from dataclasses import dataclass, field, fields, is_dataclass
 from hashlib import md5
-from typing import ClassVar
 from uuid import uuid4
 
 
@@ -83,9 +82,9 @@ class Ref:
 
 
 @repo_type(db=False)
-class Error:
+class Error(Exception):
     message: str
-    data: dict = field(default_factory=dict)
+    context: dict = field(default_factory=dict)
 
 
 @repo_type(db=False)
@@ -508,7 +507,8 @@ class Repo:
             return Fn(expr, fnapp.fnex)
         if replace is not None:
             assert fnex is not None, 'fnex not found'
-            assert replace.fnex() == fnex, f'fnex is older than {fnapp.fnex.to}'
+            if replace.fnex() != fnex:
+                raise Error(f'fnex is older than {fnapp.fnex.to}', context={'new_fn': Fn(expr, fnex)})
         fnex = self(Fnex(e, Ref(k), info, value, error))
         if fnapp is not None:
             self.delete(k)
