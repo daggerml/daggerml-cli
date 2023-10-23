@@ -4,6 +4,7 @@ import os
 from click import ClickException
 from daggerml_cli.__about__ import __version__
 from daggerml_cli.config import Config
+from daggerml_cli.repo import to_data, from_data, Error
 from functools import wraps
 from getpass import getuser
 from json import loads, dumps
@@ -87,6 +88,7 @@ def complete(f, prelude=None):
 @clickex
 def cli(ctx, config_dir, project_dir, repo, branch, user, repo_path, debug):
     set_config(ctx)
+    ctx.with_resource(ctx.obj)
 
 
 ###############################################################################
@@ -234,7 +236,12 @@ def dag_group(ctx):
 @dag_group.command(name='create', help='Create a new DAG.')
 @clickex
 def api_create_dag(ctx, name, message):
-    click.echo(dumps(api.invoke_api(ctx.obj, None, ['begin', name, ctx.obj.USER, message])))
+    try:
+        cmd = ['begin', {'name': name, 'message': message}]
+        token, result = api.invoke_api(ctx.obj, None, cmd)
+        click.echo(dumps(to_data(dict(status='ok', token=token, result=result))))
+    except Exception as e:
+        click.echo(dumps(to_data(dict(status='error', error=Error.from_ex(e)))))
 
 
 @click.argument('json')
@@ -242,7 +249,12 @@ def api_create_dag(ctx, name, message):
 @dag_group.command(name='invoke', help='Invoke API with token returned by create and JSON command.')
 @clickex
 def api_invoke(ctx, token, json):
-    click.echo(dumps(api.invoke_api(ctx.obj, token, loads(json))))
+    try:
+        cmd = from_data(loads(json))
+        token, result = api.invoke_api(ctx.obj, token, cmd)
+        click.echo(dumps(to_data(dict(status='ok', token=token, result=result))))
+    except Exception as e:
+        click.echo(dumps(to_data(dict(status='error', error=Error.from_ex(e)))))
 
 
 @click.argument('name', shell_complete=complete(api.list_dag))

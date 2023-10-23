@@ -29,7 +29,8 @@ def config_property(f=None, **opts):
         if base:
             @result.setter
             def setter(self, value):
-                self._writes[-1][(self.get(base), *path)] = value
+                if len(self._writes):
+                    self._writes[-1][(self.get(base), *path)] = value
                 setattr(self, priv, value)
             return setter
         return result
@@ -93,9 +94,11 @@ class Config:
         return replace(self, **changes)
 
     def __enter__(self):
+        print('ENTER')
         self._writes.append({})
 
     def __exit__(self, type, value, trace):
+        print('EXIT')
         writes = self._writes.pop()
         if type is None:
             if len(self._writes):

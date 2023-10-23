@@ -40,14 +40,14 @@ class TestRepo(unittest.TestCase):
             expr.append(db.put_node(Node(Literal(db.put_datum(['Fnapp', 1])))))
             expr.append(db.put_node(Node(Literal(db.put_datum(2)))))
             f0 = db.put_fn(expr)
-            f1 = db.put_fn(expr, {'info': 100}, replace=f0)
+            f1 = db.put_fn(expr, {'info': 100}, replacing=f0)
             with self.assertRaises(Error) as e:
                 f2 = db.put_fn(expr, {'info': 200}, db.put_datum(444))
             with self.assertRaises(Error) as e:
-                f2 = db.put_fn(expr, {'info': 200}, db.put_datum(444), replace=f0)
-            assert e.exception.message == 'incorrect replace value'
-            assert isinstance(e.exception.context['new_fn'], Fn)
-            f2 = db.put_fn(expr, {'info': 200}, db.put_datum(444), replace=f1)
+                f2 = db.put_fn(expr, {'info': 200}, db.put_datum(444), replacing=f0)
+            assert e.exception.message == 'replacing fn not found'
+            assert isinstance(e.exception.context['found'], Fn)
+            f2 = db.put_fn(expr, {'info': 200}, db.put_datum(444), replacing=f1)
             db.commit(Node(f2))
 
             print()

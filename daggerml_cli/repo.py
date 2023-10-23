@@ -85,6 +85,14 @@ class Ref:
 class Error(Exception):
     message: str
     context: dict = field(default_factory=dict)
+    code: str = None
+
+    def __post_init__(self):
+        self.code = type(self).__name__ if self.code is None else self.code
+
+    @classmethod
+    def from_ex(cls, ex):
+        return ex if isinstance(ex, Error) else cls(str(ex), {}, type(ex).__name__)
 
 
 @repo_type(db=False)
@@ -181,6 +189,10 @@ class Node:
     def value(self):
         return self.node.value
 
+    @property
+    def error(self):
+        return self.node.error
+
 
 @repo_type
 class Datum:
@@ -205,7 +217,6 @@ class Repo:
     index: Ref = Ref(None)  # -> index
     dag: str = None
     create: bool = False
-    _tx: list = field(default_factory=list)
 
     @classmethod
     def from_state(cls, b64state):
@@ -476,18 +487,38 @@ class Repo:
 
     def put_datum(self, value):
         def put(value):
+            if isinstance(value, Ref):
+                assert isinstance(value(), Datum), f'not a datum: {value.to}'
+                return value
+            if isinstance(value, Datum):
+                return self(value)
             if isinstance(value, (type(None), str, bool, int, float, Resource)):
                 return self(Datum(value))
-            elif isinstance(value, list):
+            if isinstance(value, list):
                 return self(Datum([put(x) for x in value]))
-            elif isinstance(value, set):
+            if isinstance(value, set):
                 return self(Datum({put(x) for x in value}))
-            elif isinstance(value, dict):
+            if isinstance(value, dict):
                 return self(Datum({k: put(v) for k, v in value.items()}))
-            elif isinstance(value, Datum):
-                return self(value)
             raise TypeError(f'unknown type: {type(value)}')
         return put(value)
+
+    def get_datum(self, value):
+        def get(value):
+            if isinstance(value, Ref):
+                return get(value())
+            if isinstance(value, Datum):
+                return get(value.value)
+            if isinstance(value, (type(None), str, bool, int, float, Resource)):
+                return value
+            if isinstance(value, list):
+                return [get(x) for x in value]
+            if isinstance(value, set):
+                return {get(x) for x in value}
+            if isinstance(value, dict):
+                return {k: get(v) for k, v in value.items()}
+            raise TypeError(f'unknown type: {type(value)}')
+        return get(value)
 
     def put_node(self, node):
         node = self(node) if isinstance(node, Node) else node
@@ -502,21 +533,24 @@ class Repo:
     def get_dag(self, dag_name):
         return self.ctx(self.head, dag_name).dags.get(dag_name)
 
-    def put_fn(self, expr, info=None, value=None, error=None, replace=None):
-        # if replace is None, then either fnapp is None (it's new),
+    def put_fn(self, expr, info=None, value=None, error=None, replacing=None):
+        # if replacing is None, then either fnapp is None (it's new),
         #   or you're passively looking for updates (=> info,error,value all None)
-        # otherwise, replace == Fn
-        # calling this with replace=None is kinda like the entrypoint
+        # otherwise, replacing == Fn
+        # calling this with replacing=None is kinda like the entrypoint
         e = [x().value for x in expr]
         k = 'fnapp/' + self.hash(Fnapp(e))
         fnapp = self.get(k)
         fnex = fnapp.fnex() if fnapp else None
-        if replace is None and fnapp is not None:
+        ex = Error(
+            'replacing fn not found',
+            context={'found': Fn(expr, fnapp.fnex) if fnex else None})
+        if replacing is None and fnapp is not None:
             if not (info == value == error == None):  # noqa: E711
-                raise Error('incorrect replace value', context={'new_fn': Fn(expr, fnapp.fnex) if fnex else None})
+                raise ex
             return Fn(expr, fnapp.fnex)
-        if fnex != (replace and replace.fnex()):  # either both are None, or the same fnexs
-            raise Error('incorrect replace value', context={'new_fn': Fn(expr, fnapp.fnex) if fnex else None})
+        if fnex != (replacing and replacing.fnex()):  # either both are None, or the same fnexs
+            raise ex
         fnex = self(Fnex(e, Ref(k), info, value, error))
         if fnapp is not None:
             self.delete(k)

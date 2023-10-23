@@ -5,7 +5,7 @@ from tabulate import tabulate
 
 from daggerml_cli import api
 from daggerml_cli.config import Config
-from daggerml_cli.repo import Error, Fnapp, Node, Ref, Repo, Resource
+from daggerml_cli.repo import Error, Fnapp, Node, Literal, Ref, Repo, Resource
 
 
 def dump(repo, count=None):
@@ -21,11 +21,9 @@ class TestApiCreate(unittest.TestCase):
     def test_create_dag(self):
         with TemporaryDirectory() as tmpd0, TemporaryDirectory() as tmpd1:
             ctx = Config(
-                tmpd0,
-                tmpd1,
-                'repo0',
-                'branch0',
-                'user0',
+                _CONFIG_DIR=tmpd0,
+                _PROJECT_DIR=tmpd1,
+                _USER='user0',
             )
             api.create_repo(ctx, 'test')
             assert api.list_repo(ctx) == ['test']
@@ -42,11 +40,9 @@ class TestApiBase(unittest.TestCase):
         self.tmpdir_ctx = [TemporaryDirectory(), TemporaryDirectory()]
         self.tmpdirs = [x.__enter__() for x in self.tmpdir_ctx]
         self.CTX = ctx = Config(
-            self.tmpdirs[0],
-            self.tmpdirs[1],
-            'repo0',
-            'branch0',
-            'user0',
+            _CONFIG_DIR=self.tmpdirs[0],
+            _PROJECT_DIR=self.tmpdirs[1],
+            _USER='user0',
         )
         api.create_repo(ctx, 'test')
         api.use_repo(ctx, 'test')
@@ -58,97 +54,96 @@ class TestApiBase(unittest.TestCase):
 
     def test_create_dag(self):
         ctx = self.CTX
-        resp = api.invoke_api(ctx, None, ['begin', 'd0', 'mee@foo', 'dag 0'])
-        assert resp.get('error') is None
-        assert resp['status'] == 'ok'
+
+        # dag 0
+        tok, res = api.invoke_api(ctx, None, ['begin', {'name': 'd0', 'message': 'dag 0'}])
         data = {'foo': 23, 'bar': {4, 6}, 'baz': [True, 3]}
-        resp = api.invoke_api(ctx, resp['token'], ['put_node', 'literal', api.to_data(data)])
-        assert resp.get('error') is None
-        assert resp['status'] == 'ok'
-        assert resp.get('token') is not None
-        resp = api.invoke_api(ctx, resp['token'], ['commit', {'ref': resp['result']['ref']}])
-        assert resp.get('error') is None
-        assert resp['status'] == 'ok'
-        # dag 2
-        resp = api.invoke_api(ctx, None, ['begin', 'd1', 'mee@foo', 'dag 1'])
-        resp = api.invoke_api(ctx, resp['token'], ['put_node', 'load', 'd0'])
-        with Repo.from_state(resp['token']).tx():
-            assert isinstance(Ref(resp['result']['ref'])(), Node)
-            val = Ref(resp['result']['ref'])().value()
+        tok, res = api.invoke_api(ctx, tok, ['put_literal', {'data': data}])
+        tok, res = api.invoke_api(ctx, tok, ['commit', {'result': res}])
+
+        # dag 1
+        tok, res = api.invoke_api(ctx, None, ['begin', {'name': 'd1', 'message': 'dag 1'}])
+        tok, res = api.invoke_api(ctx, tok, ['put_load', {'dag': 'd0'}])
+        with Repo.from_state(tok).tx():
+            assert isinstance(res(), Node)
+            val = res().value()
         tmp = [val, val, 2]
-        resp = api.invoke_api(ctx, resp['token'], ['put_node', 'literal', api.to_data(tmp)])
-        assert resp.get('error') is None
-        assert resp['status'] == 'ok'
-        node_id = resp['result']['ref']
-        resp = api.invoke_api(ctx, resp['token'], ['get_node', node_id])
-        res = api.from_data(resp['result'])
-        with Repo.from_state(resp['token']).tx():
-            result = api.unroll_datum(res['value'])
+        tok, res = api.invoke_api(ctx, tok, ['put_literal', {'data': tmp}])
+        ref = res
+        tok, res = api.invoke_api(ctx, tok, ['get_node', {'ref': ref}])
+        db = Repo.from_state(tok)
+        with db.tx():
+            result = db.get_datum(res.value)
             assert result == [data, data, 2]
-        cres = api.invoke_api(ctx, resp['token'], ['commit', {'ref': node_id}])
-        assert cres.get('error') is None
-        assert cres['status'] == 'ok'
+        tok, res = api.invoke_api(ctx, tok, ['commit', {'result': ref}])
 
     def test_fn(self):
         ctx = self.CTX
-        resp = api.invoke_api(ctx, None, ['begin', 'd0', 'mee@foo', 'dag 0'])
-        n0 = api.invoke_api(ctx, resp['token'], ['put_node', 'literal', api.to_data(Resource({'asdf', 2}))])
-        n1 = api.invoke_api(ctx, n0['token'], ['put_node', 'literal', api.to_data(1)])
-        expr = [n0['result']['ref'], n1['result']['ref']]
-        n2 = api.invoke_api(
-            ctx, n1['token'],
-            ['put_node', 'fn', {'expr': expr, 'info': {'foo': 1}}]
+        tok, res = api.invoke_api(ctx, None, ['begin', {'name': 'd0', 'message': 'dag 0'}])
+        tok, n0 = api.invoke_api(ctx, tok, ['put_literal', {'data': Resource({'asdf', 2})}])
+        tok, n1 = api.invoke_api(ctx, tok, ['put_literal', {'data': 1}])
+        expr = [n0, n1]
+        tok, n2 = api.invoke_api(
+            ctx,
+            tok,
+            ['put_fn', {'expr': expr, 'info': {'foo': 1}}]
         )
-        assert n2.get('error') is None
-        n3 = api.invoke_api(
-            ctx, n2['token'],
-            ['put_node', 'fn', {'expr': expr, 'info': {'foo': 2}}],
+        found = None
+        try:
+            tok, n3 = api.invoke_api(
+                ctx,
+                tok,
+                ['put_fn', {'expr': expr, 'info': {'foo': 2}}],
+            )
+        except Error as e:
+            db = Repo.from_state(tok)
+            with db.tx():
+                found = e.context['found']
+                fnex = found.fnex()
+                assert fnex.info == {'foo': 1}
+                assert (fnex.value or fnex.error) is None
+        tok, n3 = api.invoke_api(
+            ctx,
+            tok,
+            ['put_fn', {'expr': expr, 'info': {'foo': 2}, 'replacing': found}],
         )
-        err_ctx = api.from_data(n3['error']['context'])
-        assert err_ctx['info'] == {'foo': 1}
-        assert not err_ctx['has_error']
-        assert not err_ctx['has_value']
-        n3 = api.invoke_api(
-            ctx, n2['token'],
-            ['put_node', 'fn', {'expr': expr, 'info': {'foo': 2}, 'replace': err_ctx['replace']}],
+        tok, n4 = api.invoke_api(
+            ctx,
+            tok,
+            ['put_fn', {'expr': expr, 'value': {'foo': 2}, 'replacing': n3}],
         )
-        n3 = api.invoke_api(
-            ctx, n3['token'],
-            ['put_node', 'fn', {'expr': expr, 'value': {'foo': 2}, 'replace': n3['result']['replace']}],
-        )
-        assert n3.get('error') is None
-        assert n3.get('token') is not None
-        resp = api.invoke_api(ctx, n3['token'], ['commit', {'ref': n3['result']['ref']}])
+        tok, res = api.invoke_api(ctx, tok, ['commit', {'result': n4}])
 
     def test_fn_w_error(self):
         ctx = self.CTX
-        resp = api.invoke_api(ctx, None, ['begin', 'd0', 'mee@foo', 'dag 0'])
-        n0 = api.invoke_api(ctx, resp['token'], ['put_node', 'literal', api.to_data(Resource({'asdf', 2}))])
-        n1 = api.invoke_api(ctx, n0['token'], ['put_node', 'literal', api.to_data(1)])
+        tok, res = api.invoke_api(ctx, None, ['begin', {'name': 'd0', 'message': 'dag 0'}])
+        tok, n0 = api.invoke_api(ctx, tok, ['put_literal', {'data': Resource({'asdf', 2})}])
+        tok, n1 = api.invoke_api(ctx, tok, ['put_literal', {'data': 1}])
         error = Error('fooby', {'asdf': 23})
-        n2 = api.invoke_api(
-            ctx, resp['token'],
-            ['put_node', 'fn', {'expr': [n0['result']['ref'], n1['result']['ref']], 'error': error}]
+        tok, n2 = api.invoke_api(
+            ctx,
+            tok,
+            ['put_fn', {'expr': [n0, n1], 'error': error}]
         )
-        n1 = api.invoke_api(ctx, n2['token'], ['get_node', n2['result']['ref']])
-        res = api.from_data(n1['result'])
-        assert res['error'] == error
-        assert res['value'] is None
+        tok, n1 = api.invoke_api(ctx, tok, ['get_node', {'ref': n2}])
+        db = Repo.from_state(tok)
+        with db.tx():
+            assert n1.value is None
+            assert n1.error == error
 
     def test_fn_w_value(self):
         ctx = self.CTX
-        resp = api.invoke_api(ctx, None, ['begin', 'd0', 'mee@foo', 'dag 0'])
-        n0 = api.invoke_api(ctx, resp['token'], ['put_node', 'literal', api.to_data(Resource({'asdf', 2}))])
-        n1 = api.invoke_api(ctx, n0['token'], ['put_node', 'literal', api.to_data(1)])
+        tok, res = api.invoke_api(ctx, None, ['begin', {'name': 'd0', 'message': 'dag 0'}])
+        tok, n0 = api.invoke_api(ctx, tok, ['put_literal', {'data': Resource({'asdf', 2})}])
+        tok, n1 = api.invoke_api(ctx, tok, ['put_literal', {'data': 1}])
         value = {'asdf': 23}
-        n2 = api.invoke_api(
-            ctx, resp['token'],
-            ['put_node', 'fn', {'expr': [n0['result']['ref'], n1['result']['ref']], 'value': api.to_data(value)}]
+        tok, n2 = api.invoke_api(
+            ctx,
+            tok,
+            ['put_fn', {'expr': [n0, n1], 'value': value}]
         )
-        n1 = api.invoke_api(ctx, n2['token'], ['get_node', n2['result']['ref']])
-        res = api.from_data(n1['result'])
-        assert res['error'] is None
-        db = Repo.from_state(resp['token'])
-        assert isinstance(res['value'].value, dict)
+        tok, n1 = api.invoke_api(ctx, tok, ['get_node', {'ref': n2}])
+        db = Repo.from_state(tok)
         with db.tx():
-            assert api.unroll_datum(res['value']) == value
+            assert isinstance(n1.value().value, dict)
+            assert db.get_datum(n1.value().value) == value

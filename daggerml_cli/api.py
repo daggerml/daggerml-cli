@@ -32,15 +32,13 @@ def list_other_repo(config):
 
 
 def create_repo(config, name):
-    with config:
-        config._REPO = name
-        Repo(makedirs(config.REPO_PATH), config.USER, create=True)
+    config._REPO = name
+    Repo(makedirs(config.REPO_PATH), config.USER, create=True)
 
 
 def use_repo(config, name):
     assert name in list_repo(config), f'no such repo: {name}'
-    with config:
-        config.REPO = name
+    config.REPO = name
 
 
 def delete_repo(config, name):
@@ -64,11 +62,10 @@ def gc_repo(config):
 
 
 def init_project(config, name, branch=Ref(DEFAULT).name):
-    with config:
-        if name is not None:
-            assert name in list_repo(config), f'repo not found: {name}'
-        config.REPO = name
-        use_branch(config, branch)
+    if name is not None:
+        assert name in list_repo(config), f'repo not found: {name}'
+    config.REPO = name
+    use_branch(config, branch)
 
 
 ###############################################################################
@@ -106,9 +103,8 @@ def delete_branch(config, name):
 
 
 def use_branch(config, name):
-    with config:
-        assert name in list_branch(config), f'branch not found: {name}'
-        config.BRANCH = name
+    assert name in list_branch(config), f'branch not found: {name}'
+    config.BRANCH = name
 
 
 def merge_branch(config, name):
@@ -154,95 +150,59 @@ def delete_dag(config, name):
 ###############################################################################
 
 
-def put_node(db, type, data):
-    if type == 'literal':
-        return db.put_node(Node(Literal(db.put_datum(from_data(data)))))
-    if type == 'load':
-        return db.put_node(Node(Load(db.get_dag(data))))
-    if type == 'fn':
-        data['expr'] = [Ref(x) for x in data['expr']]
-        if 'replace' in data:
-            data['replace'] = Fn([x().value for x in data['expr']], Ref(data['replace']))
-        if 'error' in data:
-            data['error'] = from_data(data['error'])
-        if 'value' in data:
-            data['value'] = db.put_datum(from_data(data['value']))
-        try:
-            fn = db.put_fn(**data)
-        except Error as e:
-            context = {
-                'info': e.context['new_fn'].info,
-                'has_value': e.context['new_fn'].value is not None,
-                'has_error': e.context['new_fn'].error is not None,
-                'replace': e.context['new_fn'].fnex.to,
-            }
-            raise Error(e.message, context=context) from None
-        if fn.value or fn.error:
-            return db.put_node(Node(fn))
-        return fn
-    raise Error('unknown node type')
-
-
-def unroll_datum(val):
-    val = val.value
-    if isinstance(val, (bool, int, float, str, Resource)):
-        return val
-    if isinstance(val, list):
-        return [unroll_datum(x()) for x in val]
-    if isinstance(val, set):
-        return {unroll_datum(x()) for x in val}
-    if isinstance(val, dict):
-        return {k: unroll_datum(v()) for k, v in val.items()}
-    raise RuntimeError(f'unknown type: {type(val)}')
-
-
 def invoke_api(config, token, data):
+    db = None
+    api = {}
+
+    def api_method(f):
+        api[f.__name__] = f
+        return f
+
+    def no_such_op(name):
+        def inner(*args, **kwargs):
+            raise ValueError(f'no such op: {name}')
+        return inner
+
+    @api_method
+    def begin(name, message):
+        with db.tx(True):
+            db.begin(name, message)
+
+    @api_method
+    def put_literal(data):
+        with db.tx(True):
+            return db.put_node(Node(Literal(db.put_datum(data))))
+
+    @api_method
+    def put_load(dag):
+        with db.tx(True):
+            return db.put_node(Node(Load(db.get_dag(dag))))
+
+    @api_method
+    def put_fn(expr, info=None, value=None, error=None, replacing=None):
+        with db.tx(True):
+            if value is not None:
+                value = db.put_datum(value)
+            fn = db.put_fn(expr, info, value, error, replacing)
+            return db.put_node(Node(fn)) if fn.value or fn.error else fn
+
+    @api_method
+    def commit(result):
+        with db.tx(True):
+            db.commit(result)
+
+    @api_method
+    def get_node(ref):
+        with db.tx():
+            return ref()
+
     try:
-        db = Repo.from_state(token) if token else Repo(config.REPO_PATH, config.USER, head=config.BRANCHREF)
-        op, *arg = data
-
-        if op == 'begin':
-            name, user, message = arg
-            with db.tx(True):
-                db.begin(name, message)
-                return {'status': 'ok', 'token': db.state}
-
-        if op == 'put_node':
-            type_, data = arg
-            with db.tx(True):
-                ref = put_node(db, type_, data)
-                result = {'ref': ref.to} if isinstance(ref, Ref) else {'info': ref.info, 'replace': ref.fnex.to}
-                return {'status': 'ok', 'result': result, 'token': db.state}
-
-        if op == 'get_node':
-            node_id, = arg
-            with db.tx():
-                ref = Ref(node_id)
-                node = ref().node
-                value = node.value() if node.value is not None else None
-                d = {'node_id': ref.to, 'value': value}
-                if hasattr(node, 'info'):
-                    d['info'] = node.info
-                if hasattr(node, 'error'):
-                    d['error'] = node.error
-                return {
-                    'status': 'ok',
-                    'result': to_data(d),
-                    'token': db.state
-                }
-
-        if op == 'commit':
-            arg, = arg
-            res_or_err = Ref(arg['ref']) if arg.get('ref') else arg['error']
-            with db.tx(True):
-                db.commit(res_or_err)
-                return {'status': 'ok'}
-
-        raise ValueError(f'no such op: {op}')
-    except Error as e:
-        return {'status': 'error', 'error': {'code': type(e).__name__, 'message': str(e), 'context': to_data(e.context)}}
+        db = Repo.from_state(token) if token else Repo(config.REPO_PATH, config.USER, config.BRANCHREF)
+        op, kwargs = data
+        result = api.get(op, no_such_op(op))(**kwargs)
+        return db.state, result
     except Exception as e:
-        return {'status': 'error', 'error': {'code': type(e).__name__, 'message': str(e)}}
+        raise Error.from_ex(e)
 
 
 ###############################################################################
