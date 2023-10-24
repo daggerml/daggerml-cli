@@ -1,5 +1,5 @@
 import unittest
-from functools import partial
+from functools import wraps
 from tempfile import TemporaryDirectory
 
 from tabulate import tabulate
@@ -15,15 +15,6 @@ def dump(repo, count=None):
         [rows.append([len(rows) + 1, k.to, k()]) for k in repo.cursor(db)]
     rows = rows[:min(count, len(rows))] if count is not None else rows
     print('\n' + tabulate(rows, tablefmt="simple_grid"))
-
-
-def begin(ctx, name, message):
-    def inner(op, *args, **kwargs):
-        return api.invoke_api(ctx, tok, [op, args, kwargs])
-    tok = api.invoke_api(ctx, None, ['begin', [name, message]])
-    db = Repo.from_state(tok)
-    inner.tx = db.tx
-    return inner
 
 
 class TestApiCreate(unittest.TestCase):
@@ -62,17 +53,25 @@ class TestApiBase(unittest.TestCase):
         for x in self.tmpdir_ctx:
             x.__exit__(None, None, None)
 
+    def begin(self, name, message, ctx=None):
+        @wraps(api.invoke_api)
+        def inner(op, *args, **kwargs):
+            return api.invoke_api(ctx, tok, [op, args, kwargs])
+        ctx = self.CTX if ctx is None else ctx
+        tok = api.invoke_api(ctx, None, ['begin', [name, message]])
+        inner.tx = Repo.from_state(tok).tx
+        return inner
+
     def test_create_dag(self):
-        ctx = self.CTX
 
         # dag 0
-        d0 = begin(ctx, 'd0', 'dag 0')
+        d0 = self.begin('d0', 'dag 0')
         data = {'foo': 23, 'bar': {4, 6}, 'baz': [True, 3]}
         res = d0('put_literal', data)
         res = d0('commit', res)
 
         # dag 1
-        d1 = begin(ctx, 'd1', 'dag 1')
+        d1 = self.begin('d1', 'dag 1')
         res = d1('put_load', 'd0')
         with d1.tx():
             assert isinstance(res(), Node)
@@ -84,8 +83,7 @@ class TestApiBase(unittest.TestCase):
         res = d1('commit', ref)
 
     def test_fn(self):
-        ctx = self.CTX
-        d0 = begin(ctx, 'd0', 'dag 0')
+        d0 = self.begin('d0', 'dag 0')
         n0 = d0('put_literal', Resource({'asdf', 2}))
         n1 = d0('put_literal', 1)
         with d0.tx():
@@ -109,16 +107,16 @@ class TestApiBase(unittest.TestCase):
             assert n2.info == {'foo': 2}
             assert (n2.value or n2.error) is None
         n3 = d0('put_fn', expr, None, {'foo': 2}, replacing=n2)
+        n = d0('get_node', n3)
         with d0.tx():
-            assert isinstance(n3(), Node)
-            assert n3().node.info is None
-            assert unroll_datum(n3().value) == {'foo': 2}
-            assert n3().error is None
+            assert isinstance(n, Node)
+            assert n.node.info is None
+            assert unroll_datum(n.value) == {'foo': 2}
+            assert n.error is None
         d0('commit', n3)
 
     def test_fn_w_error(self):
-        ctx = self.CTX
-        d0 = begin(ctx, 'd0', 'dag 0')
+        d0 = self.begin('d0', 'dag 0')
         n0 = d0('put_literal', Resource({'asdf', 2}))
         n1 = d0('put_literal', 1)
         expr = [n0, n1]
@@ -128,10 +126,12 @@ class TestApiBase(unittest.TestCase):
         with d0.tx():
             assert unroll_datum(n1.value) is None
             assert n1.error == error
+            assert n1.error.code == 'Error'
+            assert n1.error.message == 'fooby'
+            assert n1.error.context == {'asdf': 23}
 
     def test_fn_w_value(self):
-        ctx = self.CTX
-        d0 = begin(ctx, 'd0', 'dag 0')
+        d0 = self.begin('d0', 'dag 0')
         n0 = d0('put_literal', Resource({'asdf', 2}))
         n1 = d0('put_literal', 1)
         expr = [n0, n1]
