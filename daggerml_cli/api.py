@@ -199,7 +199,7 @@ def invoke_api(config, token, data):
 
     try:
         db = Repo.from_state(token) if token else Repo(config.REPO_PATH, config.USER, config.BRANCHREF)
-        op, *(args, kwargs) = data
+        op, args, kwargs = data
         return api.get(op, no_such_op(op))(*args, **kwargs)
     except Exception as e:
         raise Error.from_ex(e)
