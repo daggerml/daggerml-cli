@@ -236,7 +236,7 @@ def dag_group(ctx):
 @clickex
 def api_create_dag(ctx, name, message):
     try:
-        cmd = ['begin', {'name': name, 'message': message}]
+        cmd = ['begin', [name, message], {}]
         click.echo(to_json(api.invoke_api(ctx.obj, None, cmd)))
     except Exception as e:
         click.echo(to_json(Error.from_ex(e)))
