@@ -95,9 +95,8 @@ class TestApiBase(unittest.TestCase):
         except Error as e:
             with d0.db.tx():
                 found = e.context['found']
-                fnex = found.fnex()
-                assert fnex.info == {'foo': 1}
-                assert (fnex.value or fnex.error) is None
+                assert found.info == {'foo': 1}
+                assert (found.value or found.error) is None
         n2 = d0('put_fn', expr, {'foo': 2}, replacing=found)
         n4 = d0('put_fn', expr, None, {'foo': 2}, replacing=n2)
         d0('commit', n4)
