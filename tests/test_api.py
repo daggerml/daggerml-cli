@@ -6,7 +6,7 @@ from tabulate import tabulate
 
 from daggerml_cli import api
 from daggerml_cli.config import Config
-from daggerml_cli.repo import Error, Node, Repo, Resource, unroll_datum
+from daggerml_cli.repo import Error, Node, Fn, Repo, Resource, unroll_datum
 
 
 def dump(repo, count=None):
@@ -21,7 +21,8 @@ def begin(ctx, name, message):
     def inner(op, *args, **kwargs):
         return api.invoke_api(ctx, tok, [op, args, kwargs])
     tok = api.invoke_api(ctx, None, ['begin', [name, message]])
-    inner.db = Repo.from_state(tok)
+    db = Repo.from_state(tok)
+    inner.tx = db.tx
     return inner
 
 
@@ -73,12 +74,12 @@ class TestApiBase(unittest.TestCase):
         # dag 1
         d1 = begin(ctx, 'd1', 'dag 1')
         res = d1('put_load', 'd0')
-        with d1.db.tx():
+        with d1.tx():
             assert isinstance(res(), Node)
             val = res().value()
         ref = d1('put_literal', [val, val, 2])
         res = d1('get_node', ref)
-        with d1.db.tx():
+        with d1.tx():
             assert unroll_datum(res.value) == [data, data, 2]
         res = d1('commit', ref)
 
@@ -87,19 +88,33 @@ class TestApiBase(unittest.TestCase):
         d0 = begin(ctx, 'd0', 'dag 0')
         n0 = d0('put_literal', Resource({'asdf', 2}))
         n1 = d0('put_literal', 1)
+        with d0.tx():
+            assert isinstance(n0(), Node)
+            assert isinstance(n1(), Node)
         expr = [n0, n1]
         n2 = d0('put_fn', expr, {'foo': 1})
         found = None
         try:
             n2 = d0('put_fn', expr, {'foo': 2})
+            with d0.tx():
+                assert isinstance(n2, Fn)
         except Error as e:
-            with d0.db.tx():
+            with d0.tx():
                 found = e.context['found']
                 assert found.info == {'foo': 1}
                 assert (found.value or found.error) is None
         n2 = d0('put_fn', expr, {'foo': 2}, replacing=found)
-        n4 = d0('put_fn', expr, None, {'foo': 2}, replacing=n2)
-        d0('commit', n4)
+        with d0.tx():
+            assert isinstance(n2, Fn)
+            assert n2.info == {'foo': 2}
+            assert (n2.value or n2.error) is None
+        n3 = d0('put_fn', expr, None, {'foo': 2}, replacing=n2)
+        with d0.tx():
+            assert isinstance(n3(), Node)
+            assert n3().node.info is None
+            assert unroll_datum(n3().value) == {'foo': 2}
+            assert n3().error is None
+        d0('commit', n3)
 
     def test_fn_w_error(self):
         ctx = self.CTX
@@ -110,7 +125,7 @@ class TestApiBase(unittest.TestCase):
         error = Error('fooby', {'asdf': 23})
         n2 = d0('put_fn', expr, None, None, error)
         n1 = d0('get_node', n2)
-        with d0.db.tx():
+        with d0.tx():
             assert unroll_datum(n1.value) is None
             assert n1.error == error
 
@@ -123,6 +138,6 @@ class TestApiBase(unittest.TestCase):
         value = {'asdf': 23}
         n2 = d0('put_fn', expr, None, value)
         n1 = d0('get_node', n2)
-        with d0.db.tx():
+        with d0.tx():
             assert isinstance(unroll_datum(n1.value), dict)
             assert unroll_datum(n1.value) == value
