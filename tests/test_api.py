@@ -101,6 +101,7 @@ class TestApiBase(unittest.TestCase):
                 found = e.context['found']
                 assert found.info == {'foo': 1}
                 assert (found.value or found.error) is None
+        assert found is not None
         n2 = d0('put_fn', expr, {'foo': 2}, replacing=found)
         with d0.tx():
             assert isinstance(n2, Fn)
