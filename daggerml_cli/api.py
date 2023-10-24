@@ -199,8 +199,9 @@ def invoke_api(config, token, data):
 
     try:
         db = Repo.from_state(token) if token else Repo(config.REPO_PATH, config.USER, config.BRANCHREF)
-        op, kwargs = data
-        return api.get(op, no_such_op(op))(**kwargs)
+        op, *xs = data
+        args, kwargs = xs if len(xs) == 2 else [*xs, {}] if isinstance(xs[0], list) else [[], *xs]
+        return api.get(op, no_such_op(op))(*args, **kwargs)
     except Exception as e:
         raise Error.from_ex(e)
 

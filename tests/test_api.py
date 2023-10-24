@@ -1,11 +1,12 @@
 import unittest
+from functools import partial
 from tempfile import TemporaryDirectory
 
 from tabulate import tabulate
 
 from daggerml_cli import api
 from daggerml_cli.config import Config
-from daggerml_cli.repo import Error, Fnapp, Node, Literal, Ref, Repo, Resource
+from daggerml_cli.repo import Error, Node, Repo, Resource, unroll_datum
 
 
 def dump(repo, count=None):
@@ -14,6 +15,14 @@ def dump(repo, count=None):
         [rows.append([len(rows) + 1, k.to, k()]) for k in repo.cursor(db)]
     rows = rows[:min(count, len(rows))] if count is not None else rows
     print('\n' + tabulate(rows, tablefmt="simple_grid"))
+
+
+def begin(ctx, name, message):
+    def inner(op, *args, **kwargs):
+        return api.invoke_api(ctx, tok, [op, args, kwargs])
+    tok = api.invoke_api(ctx, None, ['begin', [name, message]])
+    inner.db = Repo.from_state(tok)
+    return inner
 
 
 class TestApiCreate(unittest.TestCase):
@@ -56,94 +65,65 @@ class TestApiBase(unittest.TestCase):
         ctx = self.CTX
 
         # dag 0
-        tok = api.invoke_api(ctx, None, ['begin', {'name': 'd0', 'message': 'dag 0'}])
+        d0 = begin(ctx, 'd0', 'dag 0')
         data = {'foo': 23, 'bar': {4, 6}, 'baz': [True, 3]}
-        res = api.invoke_api(ctx, tok, ['put_literal', {'data': data}])
-        res = api.invoke_api(ctx, tok, ['commit', {'result': res}])
+        res = d0('put_literal', data)
+        res = d0('commit', res)
 
         # dag 1
-        tok = api.invoke_api(ctx, None, ['begin', {'name': 'd1', 'message': 'dag 1'}])
-        res = api.invoke_api(ctx, tok, ['put_load', {'dag': 'd0'}])
-        with Repo.from_state(tok).tx():
+        d1 = begin(ctx, 'd1', 'dag 1')
+        res = d1('put_load', 'd0')
+        with d1.db.tx():
             assert isinstance(res(), Node)
             val = res().value()
-        tmp = [val, val, 2]
-        res = api.invoke_api(ctx, tok, ['put_literal', {'data': tmp}])
-        ref = res
-        res = api.invoke_api(ctx, tok, ['get_node', {'ref': ref}])
-        db = Repo.from_state(tok)
-        with db.tx():
-            result = db.get_datum(res.value)
-            assert result == [data, data, 2]
-        res = api.invoke_api(ctx, tok, ['commit', {'result': ref}])
+        ref = d1('put_literal', [val, val, 2])
+        res = d1('get_node', ref)
+        with d1.db.tx():
+            assert unroll_datum(res.value) == [data, data, 2]
+        res = d1('commit', ref)
 
     def test_fn(self):
         ctx = self.CTX
-        tok = api.invoke_api(ctx, None, ['begin', {'name': 'd0', 'message': 'dag 0'}])
-        n0 = api.invoke_api(ctx, tok, ['put_literal', {'data': Resource({'asdf', 2})}])
-        n1 = api.invoke_api(ctx, tok, ['put_literal', {'data': 1}])
+        d0 = begin(ctx, 'd0', 'dag 0')
+        n0 = d0('put_literal', Resource({'asdf', 2}))
+        n1 = d0('put_literal', 1)
         expr = [n0, n1]
-        n2 = api.invoke_api(
-            ctx,
-            tok,
-            ['put_fn', {'expr': expr, 'info': {'foo': 1}}]
-        )
+        n2 = d0('put_fn', expr, {'foo': 1})
         found = None
         try:
-            n2 = api.invoke_api(
-                ctx,
-                tok,
-                ['put_fn', {'expr': expr, 'info': {'foo': 2}}],
-            )
+            n2 = d0('put_fn', expr, {'foo': 2})
         except Error as e:
-            db = Repo.from_state(tok)
-            with db.tx():
+            with d0.db.tx():
                 found = e.context['found']
                 fnex = found.fnex()
                 assert fnex.info == {'foo': 1}
                 assert (fnex.value or fnex.error) is None
-        n2 = api.invoke_api(
-            ctx,
-            tok,
-            ['put_fn', {'expr': expr, 'info': {'foo': 2}, 'replacing': found}],
-        )
-        n4 = api.invoke_api(
-            ctx,
-            tok,
-            ['put_fn', {'expr': expr, 'value': {'foo': 2}, 'replacing': n2}],
-        )
-        api.invoke_api(ctx, tok, ['commit', {'result': n4}])
+        n2 = d0('put_fn', expr, {'foo': 2}, replacing=found)
+        n4 = d0('put_fn', expr, None, {'foo': 2}, replacing=n2)
+        d0('commit', n4)
 
     def test_fn_w_error(self):
         ctx = self.CTX
-        tok = api.invoke_api(ctx, None, ['begin', {'name': 'd0', 'message': 'dag 0'}])
-        n0 = api.invoke_api(ctx, tok, ['put_literal', {'data': Resource({'asdf', 2})}])
-        n1 = api.invoke_api(ctx, tok, ['put_literal', {'data': 1}])
+        d0 = begin(ctx, 'd0', 'dag 0')
+        n0 = d0('put_literal', Resource({'asdf', 2}))
+        n1 = d0('put_literal', 1)
+        expr = [n0, n1]
         error = Error('fooby', {'asdf': 23})
-        n2 = api.invoke_api(
-            ctx,
-            tok,
-            ['put_fn', {'expr': [n0, n1], 'error': error}]
-        )
-        n1 = api.invoke_api(ctx, tok, ['get_node', {'ref': n2}])
-        db = Repo.from_state(tok)
-        with db.tx():
-            assert n1.value is None
+        n2 = d0('put_fn', expr, None, None, error)
+        n1 = d0('get_node', n2)
+        with d0.db.tx():
+            assert unroll_datum(n1.value) is None
             assert n1.error == error
 
     def test_fn_w_value(self):
         ctx = self.CTX
-        tok = api.invoke_api(ctx, None, ['begin', {'name': 'd0', 'message': 'dag 0'}])
-        n0 = api.invoke_api(ctx, tok, ['put_literal', {'data': Resource({'asdf', 2})}])
-        n1 = api.invoke_api(ctx, tok, ['put_literal', {'data': 1}])
+        d0 = begin(ctx, 'd0', 'dag 0')
+        n0 = d0('put_literal', Resource({'asdf', 2}))
+        n1 = d0('put_literal', 1)
+        expr = [n0, n1]
         value = {'asdf': 23}
-        n2 = api.invoke_api(
-            ctx,
-            tok,
-            ['put_fn', {'expr': [n0, n1], 'value': value}]
-        )
-        n1 = api.invoke_api(ctx, tok, ['get_node', {'ref': n2}])
-        db = Repo.from_state(tok)
-        with db.tx():
-            assert isinstance(n1.value().value, dict)
-            assert db.get_datum(n1.value().value) == value
+        n2 = d0('put_fn', expr, None, value)
+        n1 = d0('get_node', n2)
+        with d0.db.tx():
+            assert isinstance(unroll_datum(n1.value), dict)
+            assert unroll_datum(n1.value) == value

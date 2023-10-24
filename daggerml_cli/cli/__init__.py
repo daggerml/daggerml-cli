@@ -4,10 +4,9 @@ import os
 from click import ClickException
 from daggerml_cli.__about__ import __version__
 from daggerml_cli.config import Config
-from daggerml_cli.repo import to_data, from_data, Error
+from daggerml_cli.repo import to_json, from_json, Error
 from functools import wraps
 from getpass import getuser
-from json import loads, dumps
 from pathlib import Path
 from socket import gethostname
 
@@ -238,9 +237,9 @@ def dag_group(ctx):
 def api_create_dag(ctx, name, message):
     try:
         cmd = ['begin', {'name': name, 'message': message}]
-        click.echo(dumps(to_data(api.invoke_api(ctx.obj, None, cmd))))
+        click.echo(to_json(api.invoke_api(ctx.obj, None, cmd)))
     except Exception as e:
-        click.echo(dumps(to_data(Error.from_ex(e))))
+        click.echo(to_json(Error.from_ex(e)))
 
 
 @click.argument('json')
@@ -249,9 +248,9 @@ def api_create_dag(ctx, name, message):
 @clickex
 def api_invoke(ctx, token, json):
     try:
-        click.echo(dumps(to_data(api.invoke_api(ctx.obj, token, from_data(loads(json))))))
+        click.echo(to_json(api.invoke_api(ctx.obj, from_json(token), from_json(json))))
     except Exception as e:
-        click.echo(dumps(to_data(Error.from_ex(e))))
+        click.echo(to_json(Error.from_ex(e)))
 
 
 @click.argument('name', shell_complete=complete(api.list_dag))

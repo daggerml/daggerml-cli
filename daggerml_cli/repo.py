@@ -1,7 +1,8 @@
+import json
 import os
 from contextlib import contextmanager
 from daggerml_cli.db import db_type, dbenv
-from daggerml_cli.pack import packb, packb64, register, unpackb, unpackb64
+from daggerml_cli.pack import packb, register, unpackb
 from daggerml_cli.util import now
 from dataclasses import dataclass, field, fields, is_dataclass
 from hashlib import md5
@@ -13,6 +14,14 @@ DATA_TYPE = {}
 
 
 register(set, lambda x, h: sorted(list(x), key=packb), lambda x: [tuple(x)])
+
+
+def from_json(text):
+    return from_data(json.loads(text))
+
+
+def to_json(obj):
+    return json.dumps(to_data(obj), separators=(',', ':'))
 
 
 def from_data(data):
@@ -41,6 +50,24 @@ def to_data(obj):
     if n in DATA_TYPE:
         return [n, *[to_data(getattr(obj, x.name)) for x in fields(obj)]]
     raise ValueError(f'no data encoding for type: {n}')
+
+
+def unroll_datum(value):
+    def get(value):
+        if isinstance(value, Ref):
+            return get(value())
+        if isinstance(value, Datum):
+            return get(value.value)
+        if isinstance(value, (type(None), str, bool, int, float, Resource)):
+            return value
+        if isinstance(value, list):
+            return [get(x) for x in value]
+        if isinstance(value, set):
+            return {get(x) for x in value}
+        if isinstance(value, dict):
+            return {k: get(v) for k, v in value.items()}
+        raise TypeError(f'unknown type: {type(value)}')
+    return get(value)
 
 
 def repo_type(cls=None, **kwargs):
@@ -219,12 +246,12 @@ class Repo:
     create: bool = False
 
     @classmethod
-    def from_state(cls, b64state):
-        return cls(*unpackb64(b64state))
+    def from_state(cls, state):
+        return cls(*state)
 
     @property
     def state(self):
-        return packb64([getattr(self, x.name) for x in fields(self)])
+        return [getattr(self, x.name) for x in fields(self)]
 
     def __post_init__(self):
         dbfile = str(os.path.join(self.path, 'data.mdb'))
@@ -502,23 +529,6 @@ class Repo:
                 return self(Datum({k: put(v) for k, v in value.items()}))
             raise TypeError(f'unknown type: {type(value)}')
         return put(value)
-
-    def get_datum(self, value):
-        def get(value):
-            if isinstance(value, Ref):
-                return get(value())
-            if isinstance(value, Datum):
-                return get(value.value)
-            if isinstance(value, (type(None), str, bool, int, float, Resource)):
-                return value
-            if isinstance(value, list):
-                return [get(x) for x in value]
-            if isinstance(value, set):
-                return {get(x) for x in value}
-            if isinstance(value, dict):
-                return {k: get(v) for k, v in value.items()}
-            raise TypeError(f'unknown type: {type(value)}')
-        return get(value)
 
     def put_node(self, node):
         node = self(node) if isinstance(node, Node) else node

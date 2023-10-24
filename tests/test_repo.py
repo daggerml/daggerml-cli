@@ -50,16 +50,6 @@ class TestRepo(unittest.TestCase):
             f2 = db.put_fn(expr, {'info': 200}, db.put_datum(444), replacing=f1)
             db.commit(Node(f2))
 
-            print()
-            db.gc()
-            dump(db)
-
-            pp(to_data(f1))
-            pp(from_data(to_data(f1)))
-
-            data = Resource({'foo': [1, 1.5], 'bar': {'zomg', True, None}, 'baz': {'baf': 'qux'}})
-            pp(to_data(data))
-            pp(from_data(to_data(data)))
-
-        # print()
-        # api.commit_log_graph(db=db)
+            # print()
+            # db.gc()
+            # dump(db)
