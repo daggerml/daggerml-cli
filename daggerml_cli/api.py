@@ -5,7 +5,7 @@ from shutil import rmtree
 from asciidag.graph import Graph as AsciiGraph
 from asciidag.node import Node as AsciiNode
 
-from daggerml_cli.repo import DEFAULT, Error, Fn, Literal, Load, Node, Ref, Repo, Resource, from_data, to_data
+from daggerml_cli.repo import DEFAULT, Error, Literal, Load, Node, Ref, Repo
 from daggerml_cli.util import makedirs
 
 ###############################################################################

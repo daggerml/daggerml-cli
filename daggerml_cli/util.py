@@ -3,8 +3,13 @@ from datetime import datetime, timezone
 
 
 def asserting(x, message=None):
-    if message:
+    if isinstance(message, str):
         assert x, message
+    elif message:
+        try:
+            assert x
+        except AssertionError:
+            raise message
     else:
         assert x
     return x
