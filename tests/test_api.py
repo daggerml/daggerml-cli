@@ -58,7 +58,7 @@ class TestApiBase(unittest.TestCase):
         def inner(op, *args, **kwargs):
             return api.invoke_api(ctx, tok, [op, args, kwargs])
         ctx = self.CTX if ctx is None else ctx
-        tok = api.invoke_api(ctx, None, ['begin', [name, message]])
+        tok = api.invoke_api(ctx, None, ['begin', [name, message], {}])
         inner.tx = Repo.from_state(tok).tx
         return inner
 
