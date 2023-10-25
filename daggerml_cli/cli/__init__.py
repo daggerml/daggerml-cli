@@ -1,18 +1,20 @@
-import click
-import daggerml_cli.api as api
 import os
-from click import ClickException
-from daggerml_cli.__about__ import __version__
-from daggerml_cli.config import Config
-from daggerml_cli.repo import to_json, from_json, Error
 from functools import wraps
 from getpass import getuser
 from pathlib import Path
 from socket import gethostname
 
+import click
+from click import ClickException
+
+from daggerml_cli import api
+from daggerml_cli.__about__ import __version__
+from daggerml_cli.config import Config
+from daggerml_cli.repo import Error, from_json, to_json
 
 DEFAULT_CONFIG = Config(
-    os.getenv('DML_CONFIG_DIR', os.path.join(str(Path.home()), '.local', 'dml')),
+    os.getenv('DML_CONFIG_DIR', os.path.join(
+        str(Path.home()), '.local', 'dml')),
     os.getenv('DML_PROJECT_DIR', '.dml'),
     os.getenv('DML_REPO'),
     os.getenv('DML_BRANCH'),
@@ -23,7 +25,8 @@ DEFAULT_CONFIG = Config(
 
 def set_config(ctx, *_):
     xs = {f'_{k.upper()}': v for k, v in ctx.params.items()}
-    ctx.obj = Config(**{k: v for k, v in xs.items() if hasattr(DEFAULT_CONFIG, k)})
+    ctx.obj = Config(**{k: v for k, v in xs.items()
+                     if hasattr(DEFAULT_CONFIG, k)})
 
 
 def clickex(f):
@@ -32,7 +35,7 @@ def clickex(f):
         try:
             return f(ctx, *args, **kwargs)
         except BaseException as e:
-            raise e if ctx.obj.DEBUG else ClickException(e)
+            raise (e if ctx.obj.DEBUG else ClickException(str(e))) from e
     return click.pass_context(inner)
 
 
@@ -151,7 +154,7 @@ def repo_path(ctx):
 
 @cli.group(name='project', no_args_is_help=True, help='Project management commands.')
 @clickex
-def project_group(ctx):
+def project_group(_):
     pass
 
 
@@ -226,7 +229,7 @@ def branch_rebase(ctx, branch):
 
 @cli.group(name='dag', no_args_is_help=True, help='DAG management commands.')
 @clickex
-def dag_group(ctx):
+def dag_group(_):
     pass
 
 
@@ -248,7 +251,8 @@ def api_create_dag(ctx, name, message):
 @clickex
 def api_invoke(ctx, token, json):
     try:
-        click.echo(to_json(api.invoke_api(ctx.obj, from_json(token), from_json(json))))
+        click.echo(to_json(api.invoke_api(
+            ctx.obj, from_json(token), from_json(json))))
     except Exception as e:
         click.echo(to_json(Error.from_ex(e)))
 
@@ -274,7 +278,7 @@ def dag_list(ctx):
 
 @cli.group(name='commit', no_args_is_help=True, help='Commit management commands.')
 @clickex
-def commit_group(ctx):
+def commit_group(_):
     pass
 
 

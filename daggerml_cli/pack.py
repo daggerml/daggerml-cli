@@ -1,9 +1,10 @@
-import msgpack
+from base64 import b64decode, b64encode
 from zlib import compress, decompress
-from base64 import b64encode, b64decode
-from daggerml_cli.util import fullname, sort_dict_recursively
+
+import msgpack
 from msgpack import ExtType
 
+from daggerml_cli.util import asserting, fullname, sort_dict_recursively
 
 NXT_CODE = 0
 EXT_CODE = {}
@@ -12,7 +13,7 @@ EXT_PACK = {}
 
 
 def next_code():
-    global NXT_CODE
+    global NXT_CODE  # noqa: PLW0603
     NXT_CODE = NXT_CODE + 1
     return NXT_CODE
 
@@ -25,14 +26,14 @@ def register(cls, pack, unpack):
     EXT_PACK[code] = [pack, unpack]
 
 
-def packb(x, hash=False):
+def packb(x, hash=False) -> bytes:
     def default(obj):
         code = EXT_CODE.get(fullname(obj))
         if code:
             data = EXT_PACK[code][0](obj, hash)
             return ExtType(code, packb(sort_dict_recursively(data)))
         raise TypeError(f'unknown type: {type(obj)}')
-    return msgpack.packb(x, default=default)
+    return asserting(msgpack.packb(x, default=default))
 
 
 def unpackb(x):

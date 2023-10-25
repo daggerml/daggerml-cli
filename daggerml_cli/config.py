@@ -1,8 +1,9 @@
 import os
-from daggerml_cli.util import readfile, writefile
-from daggerml_cli.repo import Ref
-from dataclasses import dataclass, replace, field
+from dataclasses import dataclass, field, replace
 from functools import wraps
+
+from daggerml_cli.repo import Ref
+from daggerml_cli.util import readfile, writefile
 
 
 class ConfigError(RuntimeError):
@@ -12,7 +13,7 @@ class ConfigError(RuntimeError):
 def config_property(f=None, **opts):
     def inner(f):
         @wraps(f)
-        def getter(self):
+        def getter(self) -> str:
             if base and getattr(self, priv) is None:
                 setattr(self, priv, readfile(self.get(base), *path))
             result = f(self) or getattr(self, priv, None)
@@ -39,12 +40,12 @@ def config_property(f=None, **opts):
 
 @dataclass
 class Config:
-    _CONFIG_DIR: str = None
-    _PROJECT_DIR: str = None
-    _REPO: str = None
-    _BRANCH: str = None
-    _USER: str = None
-    _REPO_PATH: str = None
+    _CONFIG_DIR: str | None = None
+    _PROJECT_DIR: str | None = None
+    _REPO: str | None = None
+    _BRANCH: str | None = None
+    _USER: str | None = None
+    _REPO_PATH: str | None = None
     _DEBUG: bool = False
     _writes: list = field(default_factory=list)
 
@@ -66,15 +67,15 @@ class Config:
     def PROJECT_DIR(self):
         pass
 
-    @config_property(path=['PROJECT_DIR', 'repo'], cmd='project init')
+    @config_property(path=['PROJECT_DIR', 'repo'], cmd='project init')  # type: ignore
     def REPO(self):
         pass
 
-    @config_property(path=['PROJECT_DIR', 'head'], cmd='branch use')
+    @config_property(path=['PROJECT_DIR', 'head'], cmd='branch use')  # type: ignore
     def BRANCH(self):
         pass
 
-    @config_property(path=['CONFIG_DIR', 'config', 'user'], cmd='config set user')
+    @config_property(path=['CONFIG_DIR', 'config', 'user'], cmd='config set user')  # type: ignore
     def USER(self):
         pass
 
@@ -84,11 +85,11 @@ class Config:
 
     @config_property
     def REPO_DIR(self):
-        return os.path.join(self.CONFIG_DIR, 'repo')
+        return os.path.join(self.CONFIG_DIR, 'repo')  # type: ignore
 
     @config_property
     def REPO_PATH(self):
-        return os.path.join(self.REPO_DIR, self.REPO)
+        return os.path.join(self.REPO_DIR, self.REPO)  # type: ignore
 
     def replace(self, **changes):
         return replace(self, **changes)
@@ -96,7 +97,7 @@ class Config:
     def __enter__(self):
         self._writes.append({})
 
-    def __exit__(self, type, value, trace):
+    def __exit__(self, type, *_):
         writes = self._writes.pop()
         if type is None:
             if len(self._writes):

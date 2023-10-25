@@ -122,8 +122,20 @@ ignore = [
   "FBT003",
   # Ignore checks for possible passwords
   "S105", "S106", "S107",
+  # Ignore possibly unsafe crypto
+  "S324",
   # Ignore complexity
   "C901", "PLR0911", "PLR0912", "PLR0913", "PLR0915",
+  # Ignore magic numbers
+  "PLR2004",
+  # Ignore printf style string format
+  "UP031",
+  # Function names can be uppercase
+  "N802",
+  # Unused function args
+  "ARG001",
+  # Line too long
+  "E501",
 ]
 unfixable = [
   # Don't touch unused imports
@@ -158,3 +170,8 @@ exclude_lines = [
   "if __name__ == .__main__.:",
   "if TYPE_CHECKING:",
 ]
+
+[tool.pyright]
+typeCheckingMode = "basic"
+reportOptionalMemberAccess = false
+reportOptionalCall = false

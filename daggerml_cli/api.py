@@ -5,8 +5,8 @@ from shutil import rmtree
 from asciidag.graph import Graph as AsciiGraph
 from asciidag.node import Node as AsciiNode
 
-from daggerml_cli.repo import DEFAULT, Error, Literal, Load, Node, Ref, Repo
-from daggerml_cli.util import makedirs
+from daggerml_cli.repo import DEFAULT, Error, Literal, Load, Ref, Repo
+from daggerml_cli.util import asserting, makedirs
 
 ###############################################################################
 # REPO ########################################################################
@@ -28,7 +28,7 @@ def list_repo(config):
 
 
 def list_other_repo(config):
-    return sorted([k for k in list_repo() if k != config.REPO])
+    return sorted([k for k in list_repo(config) if k != config.REPO])
 
 
 def create_repo(config, name):
@@ -37,7 +37,7 @@ def create_repo(config, name):
 
 
 def use_repo(config, name):
-    assert name in list_repo(config), f'no such repo: {name}'
+    assert name in list_repo(config), f"no such repo: {name}"
     config.REPO = name
 
 
@@ -61,9 +61,9 @@ def gc_repo(config):
 ###############################################################################
 
 
-def init_project(config, name, branch=Ref(DEFAULT).name):
+def init_project(config, name, branch=Ref(DEFAULT).name):  # noqa: B008
     if name is not None:
-        assert name in list_repo(config), f'repo not found: {name}'
+        assert name in list_repo(config), f"repo not found: {name}"
     config.REPO = name
     use_branch(config, branch)
 
@@ -81,7 +81,7 @@ def list_branch(config):
     if os.path.exists(config.REPO_PATH):
         db = Repo(config.REPO_PATH)
         with db.tx():
-            return sorted([k.name for k in db.heads()])
+            return sorted([k.name for k in db.heads() if k.name])
     return []
 
 
@@ -92,25 +92,25 @@ def list_other_branch(config):
 def create_branch(config, name):
     db = Repo(config.REPO_PATH, head=config.BRANCHREF)
     with db.tx(True):
-        db.create_branch(Ref(f'head/{name}'), db.head)
+        db.create_branch(Ref(f"head/{name}"), db.head)
     use_branch(config, name)
 
 
 def delete_branch(config, name):
     db = Repo(config.REPO_PATH, head=config.BRANCHREF)
     with db.tx(True):
-        db.delete_branch(Ref(f'head/{name}'))
+        db.delete_branch(Ref(f"head/{name}"))
 
 
 def use_branch(config, name):
-    assert name in list_branch(config), f'branch not found: {name}'
+    assert name in list_branch(config), f"branch not found: {name}"
     config.BRANCH = name
 
 
 def merge_branch(config, name):
     db = Repo(config.REPO_PATH, head=config.BRANCHREF)
     with db.tx(True):
-        ref = db.merge(db.head().commit, Ref(f'head/{name}')().commit)
+        ref = db.merge(db.head().commit, Ref(f"head/{name}")().commit)
         db.checkout(db.set_head(db.head, ref))
         return ref.name
 
@@ -118,7 +118,7 @@ def merge_branch(config, name):
 def rebase_branch(config, name):
     db = Repo(config.REPO_PATH, head=config.BRANCHREF)
     with db.tx(True):
-        ref = db.rebase(Ref(f'head/{name}')().commit, db.head().commit)
+        ref = db.rebase(Ref(f"head/{name}")().commit, db.head().commit)
         db.checkout(db.set_head(db.head, ref))
         return ref.name
 
@@ -159,50 +159,42 @@ def invoke_api(config, token, data):
         return f
 
     def no_such_op(name):
-        def inner(*args, **kwargs):
-            raise ValueError(f'no such op: {name}')
+        def inner(*_args, **_kwargs):
+            raise ValueError(f"no such op: {name}")
         return inner
 
     @api_method
-    def begin(name, message):
+    def begin(*, name=None, message=None, expr=None):
         with db.tx(True):
-            db.begin(name, message)
-            return db.state
+            db.begin(name=name, message=message, expr=expr)
+            return db
 
     @api_method
     def put_literal(data):
         with db.tx(True):
-            return db.put_node(Node(Literal(db.put_datum(data))))
+            return db.put_node(Literal(db.put_datum(data)))
 
     @api_method
     def put_load(dag):
         with db.tx(True):
-            return db.put_node(Node(Load(db.get_dag(dag))))
-
-    @api_method
-    def put_fn(expr, info=None, value=None, error=None, replacing=None):
-        with db.tx(True):
-            if value is not None:
-                value = db.put_datum(value)
-            fn = db.put_fn(expr, info, value, error, replacing)
-            return db.put_node(Node(fn)) if fn.value or fn.error else fn
+            return db.put_node(Load(asserting(db.get_dag(dag))))
 
     @api_method
     def commit(result):
         with db.tx(True):
-            db.commit(result)
+            return db.commit(result)
 
     @api_method
-    def get_node(ref):
+    def get_ref(ref):
         with db.tx():
             return ref()
 
     try:
-        db = Repo.from_state(token) if token else Repo(config.REPO_PATH, config.USER, config.BRANCHREF)
+        db = token if token else Repo(config.REPO_PATH, config.USER, config.BRANCHREF)
         op, args, kwargs = data
         return api.get(op, no_such_op(op))(*args, **kwargs)
     except Exception as e:
-        raise Error.from_ex(e)
+        raise Error.from_ex(e) from e
 
 
 ###############################################################################
@@ -227,9 +219,9 @@ def commit_log_graph(config):
         def walk_names(x, head=None):
             if x and x[0]:
                 k = names[x[0]] if x[0] in names else x[0].name
-                tag1 = ' HEAD' if head and head.to == db.head.to else ''
-                tag2 = f' {head.name}' if head else ''
-                names[x[0]] = f'{k}{tag1}{tag2}'
+                tag1 = " HEAD" if head and head.to == db.head.to else ""
+                tag2 = f" {head.name}" if head else ""
+                names[x[0]] = f"{k}{tag1}{tag2}"
                 [walk_names(p) for p in x[1]]
 
         def walk_nodes(x):
@@ -241,7 +233,7 @@ def commit_log_graph(config):
 
         names = {}
         nodes = {}
-        log = db.log('head')
+        log = dict(asserting(db.log("head")))
         ks = [db.head, *[k for k in log.keys() if k != db.head]]
         [walk_names(log[k], head=k) for k in ks]
         heads = [walk_nodes(log[k]) for k in ks]
@@ -249,4 +241,4 @@ def commit_log_graph(config):
 
 
 def revert_commit(config, commit):
-    raise NotImplementedError('not implemented')
+    raise NotImplementedError("not implemented")

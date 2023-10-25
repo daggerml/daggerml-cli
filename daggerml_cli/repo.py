@@ -1,19 +1,19 @@
 import json
 import os
 from contextlib import contextmanager
-from daggerml_cli.db import db_type, dbenv
-from daggerml_cli.pack import packb, register, unpackb
-from daggerml_cli.util import now
-from dataclasses import dataclass, field, fields, is_dataclass
+from dataclasses import dataclass, field, fields, is_dataclass, replace
 from hashlib import md5
 from uuid import uuid4
 
+from daggerml_cli.db import db_type, dbenv
+from daggerml_cli.pack import packb, register, unpackb
+from daggerml_cli.util import asserting, makedirs, now
 
 DEFAULT = 'head/main'
 DATA_TYPE = {}
 
 
-register(set, lambda x, h: sorted(list(x), key=packb), lambda x: [tuple(x)])
+register(set, lambda x, _: sorted(list(x), key=packb), lambda x: [tuple(x)])
 
 
 def from_json(text):
@@ -79,7 +79,7 @@ def repo_type(cls=None, **kwargs):
         f = [y.name for y in fields(x)]
         if hash:
             f = [y for y in f if y not in nohash]
-            f = [y for y in f if y in tohash] if tohash else f
+            f = [y for y in f if y in tohash] if tohash is not None else f
             if not len(f):
                 return uuid4().hex
         return [getattr(x, y) for y in f]
@@ -87,14 +87,15 @@ def repo_type(cls=None, **kwargs):
     def decorator(cls):
         DATA_TYPE[cls.__name__] = cls
         register(cls, packfn, lambda x: x)
-        return dataclass(**kwargs)(db_type(cls) if dbtype else cls)
+        return db_type(cls) if dbtype else cls
 
     return decorator(cls) if cls else decorator
 
 
-@repo_type(db=False, frozen=True, order=True)
+@repo_type(db=False)
+@dataclass(frozen=True, order=True)
 class Ref:
-    to: str
+    to: str | None = None
 
     @property
     def type(self):
@@ -109,10 +110,11 @@ class Ref:
 
 
 @repo_type(db=False)
+@dataclass
 class Error(Exception):
     message: str
     context: dict = field(default_factory=dict)
-    code: str = None
+    code: str | None = None
 
     def __post_init__(self):
         self.code = type(self).__name__ if self.code is None else self.code
@@ -123,135 +125,128 @@ class Error(Exception):
 
 
 @repo_type(db=False)
+@dataclass
 class Resource:
     data: dict
 
 
 @repo_type(hash=[])
-class Index:
-    commit: Ref  # -> commit
-
-
-@repo_type(hash=[])
+@dataclass
 class Head:
     commit: Ref  # -> commit
 
 
+@repo_type(hash=[])
+@dataclass
+class Index(Head):
+    pass
+
+
 @repo_type
+@dataclass
 class Commit:
     parents: list[Ref]  # -> commit
     tree: Ref  # -> tree
+    cache: Ref  # -> tree
     author: str
     committer: str
     message: str
-    dag: str = None
+    dag: str | None = None
     created: str = field(default_factory=now)
     modified: str = field(default_factory=now)
 
 
 @repo_type
+@dataclass
 class Tree:
     dags: dict[str, Ref]  # -> dag
 
 
-@repo_type
+@repo_type(hash=[])
+@dataclass
 class Dag:
     nodes: set[Ref]  # -> node
-    result: Ref  # -> node
+    result: Ref | None  # -> node
     error: Error | None
 
 
+@repo_type(hash=[])
+@dataclass
+class FnDag(Dag):
+    expr: list[Ref]  # -> node
+
+
 @repo_type(db=False)
+@dataclass
 class Literal:
     value: Ref  # -> datum
 
+    @property
+    def error(self):
+        pass
+
 
 @repo_type(db=False)
+@dataclass
 class Load:
-    dag: Ref  # -> dag
+    dag: Ref  # -> dag | fndag
 
     @property
     def value(self):
         return self.dag().result().value
 
+    @property
+    def error(self):
+        return self.dag().result().error
+
 
 @repo_type(db=False)
-class Fn:
+@dataclass
+class Fn(Load):
     expr: list[Ref]  # -> node
-    fnex: Ref  # -> fnex
-
-    @property
-    def value(self):
-        return self.fnex().value
-
-    @property
-    def error(self):
-        return self.fnex().error
-
-    @property
-    def info(self):
-        return self.fnex().info
 
 
 @repo_type
-class Fnex:
-    expr: list[Ref]  # -> datum
-    fnapp: Ref | None = None  # -> fnapp
-    info: dict | None = None
-    value: Ref | None = None  # -> datum
-    error: Error | None = None
-
-
-@repo_type(hash=['expr'])
-class Fnapp:
-    expr: list[Ref]  # -> datum
-    fnex: Ref | None = None  # -> fnex
-
-
-@repo_type
+@dataclass
 class Node:
-    node: Literal | Load | Fn
+    data: Literal | Load | Fn
 
     @property
     def value(self):
-        return self.node.value
+        return self.data.value
 
     @property
     def error(self):
-        return self.node.error
+        return self.data.error
 
 
 @repo_type
+@dataclass
 class Datum:
-    value: type(None) | str | bool | int | float | Resource | list | dict | set
+    value: None | str | bool | int | float | Resource | list | dict | set
 
 
 @dataclass
 class Ctx:
-    ref: Ref  # -> head | index
-    head: Head
+    head: Head | Index
     commit: Commit
     tree: Tree
+    cache: Tree
     dags: dict
-    dag: Dag
+    dag: FnDag | None
+    parent_dag: FnDag | None
 
 
 @dataclass
 class Repo:
     path: str
-    user: str = None
-    head: Ref = Ref(DEFAULT)  # -> head
-    index: Ref = Ref(None)  # -> index
-    dag: str = None
+    user: str = 'unknown'
+    head: Ref = field(default_factory=lambda: Ref(DEFAULT))  # -> head
+    index: Ref | None = None  # -> index
+    dag: Ref | None = None  # -> fndag | dag
+    parent_dag: Ref | None = None  # -> fndag | dag
+    cached_dag: Ref | None = None  # -> fndag
     create: bool = False
-
-    @classmethod
-    def from_state(cls, state):
-        return cls(*state)
-
-    @property
-    def state(self):
-        return [getattr(self, x.name) for x in fields(self)]
 
     def __post_init__(self):
         dbfile = str(os.path.join(self.path, 'data.mdb'))
@@ -265,6 +260,7 @@ class Repo:
             if not self.get('/init'):
                 commit = Commit(
                     [],
+                    self(Tree({})),
                     self(Tree({})),
                     self.user,
                     self.user,
@@ -297,42 +293,42 @@ class Repo:
                 Repo.curr = None
 
     def copy(self, path):
-        os.makedirs(path, mode=0o700, exist_ok=True)
-        self.env.copy(path)
+        self.env.copy(makedirs(path))
 
-    def ctx(self, ref, dag=None):
-        head = ref()
-        commit = head.commit() if head else None
-        tree = commit.tree() if commit else None
-        dags = tree.dags if tree else None
-        dag = dags[dag]() if dags and dag in dags else None
-        return Ctx(ref, head, commit, tree, dags, dag)
+    def ctx(self, ref):
+        head = asserting(ref())
+        commit = head.commit()
+        tree = commit.tree()
+        cache = commit.cache()
+        dags = tree.dags
+        dag = self.dag() if self.dag else None
+        parent_dag = self.parent_dag() if self.parent_dag else None
+        return Ctx(head, commit, tree, cache, dags, dag, parent_dag)
 
     def hash(self, obj):
         return md5(packb(obj, True)).hexdigest()
 
     def get(self, key):
         if key:
-            key = Ref(key) if isinstance(key, str) else key
+            key = key if isinstance(key, Ref) else Ref(key)
             if key.to:
                 obj = unpackb(Repo._tx[0].get(key.to.encode(), db=self.db(key.type)))
                 return obj
 
     def put(self, key, obj=None):
         key, obj = (key, obj) if obj else (obj, key)
-        key = Ref(None) if key is None else (Ref(key) if isinstance(key, str) else key)
-        if obj is not None:
-            db = key.type if key.to else obj.__class__.__name__.lower()
-            data = packb(obj)
-            key2 = key.to or f'{db}/{self.hash(obj)}'
-            comp = None
-            if key.to is None:
-                comp = Repo._tx[0].get(key2.encode(), db=self.db(db))
-                assert comp is None or comp == data, f'attempt to update immutable object: {key2}'
-            if key is None or comp is None:
-                Repo._tx[0].put(key2.encode(), data, db=self.db(db))
-            return Ref(key2)
-        return Ref(None)
+        assert obj is not None
+        key = key if isinstance(key, Ref) else Ref(key)
+        db = key.type if key.to else type(obj).__name__.lower()
+        data = packb(obj)
+        key2 = key.to or f'{db}/{self.hash(obj)}'
+        comp = None
+        if key.to is None:
+            comp = Repo._tx[0].get(key2.encode(), db=self.db(db))
+            assert comp in [None, data], f'attempt to update immutable object: {key2}'
+        if key is None or comp is None:
+            Repo._tx[0].put(key2.encode(), data, db=self.db(db))
+        return Ref(key2)
 
     def delete(self, key):
         key = Ref(key) if isinstance(key, str) else key
@@ -411,6 +407,7 @@ class Repo:
             if set(ab).issubset(aa):
                 return b
             pivot = max(set(aa).difference(ab), key=aa.index)()
+            assert len(pivot.parents), 'no merge base found'
             if len(pivot.parents) == 1:
                 return pivot.parents[0]
             a, b = pivot.parents
@@ -440,6 +437,8 @@ class Repo:
         return self(tree)
 
     def merge(self, c1, c2, author=None, message=None, created=None):
+        def merge_trees(base, a, b):
+            return self.patch(a, self.diff(base, a), self.diff(base, b))
         c0 = self.merge_base(c1, c2)
         if c1 == c2:
             return c2
@@ -447,17 +446,15 @@ class Repo:
             return c1
         if c0 == c1:
             return c2
-        d1 = self.diff(c0().tree, c1().tree)
-        d2 = self.diff(c0().tree, c2().tree)
         return self(Commit(
             [c1, c2],
-            self.patch(c1().tree, d1, d2),
+            merge_trees(c0().tree, c1().tree, c2().tree),
+            merge_trees(c0().cache, c1().cache, c2().cache),
             author or self.user,
             self.user,
             message or f'merge {c2.name} with {c1.name}',
             None,
-            created or now(),
-        ))
+            created or now()))
 
     def rebase(self, c1, c2):
         def replay(commit):
@@ -467,8 +464,10 @@ class Repo:
             p = c.parents
             assert len(p), f'commit has no parents: {commit.to}'
             if len(p) == 1:
-                x = replay(p[0])
-                c.tree = self.patch(x().tree, self.diff(p[0]().tree, commit().tree))
+                p, = p
+                x = replay(p)
+                c.tree = self.patch(x().tree, self.diff(p().tree, c.tree))
+                c.cache = self.patch(x().cache, self.diff(p().cache, c.cache))
                 c.parents, c.committer, c.modified = ([x], self.user, now())
                 return self(c)
             assert len(p) == 2, f'commit has more than two parents: {commit.to}'
@@ -476,9 +475,6 @@ class Repo:
             return self.merge(a, b, commit.author, commit.message, commit.created)
         c0 = self.merge_base(c1, c2)
         return c2 if c0 == c1 else c1 if c0 == c2 else replay(c2)
-
-    def squash(self, commit):
-        pass
 
     def create_branch(self, branch, ref):
         assert branch.type == 'head', f'unexpected branch type: {branch.type}'
@@ -500,17 +496,28 @@ class Repo:
         assert ref(), f'ref not found: {ref.to}'
         self.head = ref
 
-    def begin(self, dag, message):
-        ctx = self.ctx(self.head, dag)
-        ctx.dags[dag] = self(Dag(set(), Ref(None), None))
-        self.index = self(Index(self(Commit(
-            [ctx.head.commit],
-            self(ctx.tree),
-            self.user,
-            self.user,
-            message,
-            dag))))
-        self.dag = dag
+    def get_dag(self, dag):
+        return self.ctx(self.head).dags.get(dag)
+
+    def begin(self, *, name=None, message=None, expr=None):
+        if self.dag:
+            assert expr and not (name or message)
+            ctx = self.ctx(self.index)
+            self.parent_dag = self.dag
+            self.dag = self(FnDag(set(), None, None, expr))
+            self.cached_dag = ctx.cache.dags.get(self.hash(expr))
+        else:
+            assert name and message and not expr
+            ctx = self.ctx(self.head)
+            self.dag = ctx.dags[name] = self(Dag(set(), None, None))
+            self.index = self(Index(self(Commit(
+                [ctx.head.commit],
+                self(ctx.tree),
+                self(ctx.cache),
+                self.user,
+                self.user,
+                message,
+                name))))
 
     def put_datum(self, value):
         def put(value):
@@ -530,53 +537,42 @@ class Repo:
             raise TypeError(f'unknown type: {type(value)}')
         return put(value)
 
-    def put_node(self, node):
-        node = self(node) if isinstance(node, Node) else node
-        ctx = self.ctx(self.index, self.dag)
+    def put_node(self, data):
+        ctx = self.ctx(self.index)
+        node = self(Node(data))
         ctx.dag.nodes.add(node)
-        ctx.dags[self.dag] = self(ctx.dag)
+        self(self.dag, ctx.dag)
         ctx.commit.tree = self(ctx.tree)
         ctx.commit.created = ctx.commit.modified = now()
         self.index = self(self.index, Index(self(ctx.commit)))
         return node
 
-    def get_dag(self, dag_name):
-        return self.ctx(self.head, dag_name).dags.get(dag_name)
-
-    def put_fn(self, expr, info=None, value=None, error=None, replacing=None):
-        # if replacing is None, then either fnapp is None (it's new),
-        #   or you're passively looking for updates (=> info,error,value all None)
-        # otherwise, replacing == Fn
-        # calling this with replacing=None is kinda like the entrypoint
-        e = [x().value for x in expr]
-        k = 'fnapp/' + self.hash(Fnapp(e))
-        fnapp = self.get(k)
-        fnex = fnapp.fnex() if fnapp else None
-        ex = Error(
-            'replacing fn not found',
-            context={'found': Fn(expr, fnapp.fnex) if fnex else None})
-        if replacing is None and fnapp is not None:
-            if not (info == value == error == None):  # noqa: E711
-                raise ex
-            return Fn(expr, fnapp.fnex)
-        if fnex != (replacing and replacing.fnex()):  # either both are None, or the same fnexs
-            raise ex
-        fnex = self(Fnex(e, Ref(k), info, value, error))
-        if fnapp is not None:
-            self.delete(k)
-        self(Fnapp(e, fnex))
-        return Fn(expr, fnex)
-
-    def commit(self, res_or_err):
+    def commit(self, res_or_err, cache=None):
         result, error = (res_or_err, None) if isinstance(res_or_err, Ref) else (None, res_or_err)
-        ctx = self.ctx(self.index, self.dag)
+        assert isinstance(result, Ref) or isinstance(error, Error), 'required: result or error'
+        ctx = self.ctx(self.index)
+        assert ctx.dag and self.dag and self.head
         ctx.dag.result = result
         ctx.dag.error = error
-        ctx.tree.dags[self.dag] = self(ctx.dag)
-        ctx.commit.tree = self(ctx.tree)
-        ctx.commit.created = ctx.commit.modified = now()
-        commit = self.merge(self.head().commit, self(ctx.commit))
-        self.set_head(self.head, commit)
-        self.delete(self.index)
-        self.index = Ref(None)
-        self.dag = None
+        self(self.dag, ctx.dag)
+        if self.parent_dag:
+            if cache:
+                cache_key = self.hash(ctx.dag.expr)
+                cache_dag = ctx.cache.dags.get(cache_key)
+                replacing = cache == cache_dag
+                assert not cache_dag or replacing, 'invalid cache replacement'
+                ctx.cache.dags[cache_key] = self.dag
+                ctx.commit.cache = self(ctx.cache)
+                if replacing:
+                    ctx.commit.parents = [ctx.head.commit]
+                self.index = self(self.index, Index(self(ctx.commit)))
+            dag, self.dag = (self.dag, self.parent_dag)
+            self.parent_dag = self.cached_dag = None
+            return self.put_node(Fn(dag, dag().expr))
+        else:
+            ctx.commit.tree = self(ctx.tree)
+            ctx.commit.created = ctx.commit.modified = now()
+            commit = self.merge(self.head().commit, self(ctx.commit))
+            self.set_head(self.head, commit)
+            self.delete(self.index)
+            self.index = self.dag = None

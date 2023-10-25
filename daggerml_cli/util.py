@@ -8,8 +8,8 @@ def asserting(x, message=None):
     elif message:
         try:
             assert x
-        except AssertionError:
-            raise message
+        except AssertionError as e:
+            raise message from e
     else:
         assert x
     return x
@@ -24,7 +24,7 @@ def readfile(path, *paths):
     if path is not None:
         p = os.path.join(path, *paths)
         if os.path.exists(p):
-            with open(p, 'r') as f:
+            with open(p) as f:
                 result = f.read().strip()
                 return result or None
 
@@ -42,7 +42,7 @@ def writefile(contents, path, *paths):
 
 
 def fullname(obj):
-    if type(obj) != type:
+    if not isinstance(obj, type):
         return fullname(type(obj))
     return f'{obj.__module__}.{obj.__qualname__}'
 
