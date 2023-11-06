@@ -176,6 +176,16 @@ class FnDag(Dag):
     expr: list[Ref]  # -> node
 
 
+@repo_type(hash=[])
+@dataclass
+class CachedFnDag(Dag):
+    expr: list[Ref]  # -> node
+
+    @classmethod
+    def from_fndag(cls, fndag):
+        return cls(*[getattr(fndag, x.name) for x in fields(fndag)])
+
+
 @repo_type(db=False)
 @dataclass
 class Literal:
@@ -547,26 +557,28 @@ class Repo:
         self.index = self(self.index, Index(self(ctx.commit)))
         return node
 
-    def commit(self, res_or_err, cache=None):
+    def commit(self, res_or_err=None, cache=None):
         result, error = (res_or_err, None) if isinstance(res_or_err, Ref) else (None, res_or_err)
-        assert isinstance(result, Ref) or isinstance(error, Error), 'required: result or error'
+        use_cached = res_or_err is None and cache is None and self.cached_dag
         ctx = self.ctx(self.index)
-        assert ctx.dag and self.dag and self.head
-        ctx.dag.result = result
-        ctx.dag.error = error
-        self(self.dag, ctx.dag)
+        if not use_cached:
+            assert isinstance(result, Ref) or isinstance(error, Error), 'required: result or error'
+            ctx.dag.result = result
+            ctx.dag.error = error
+            self(self.dag, ctx.dag)
         if self.parent_dag:
             if cache:
                 cache_key = self.hash(ctx.dag.expr)
                 cache_dag = ctx.cache.dags.get(cache_key)
                 replacing = cache == cache_dag
                 assert not cache_dag or replacing, 'invalid cache replacement'
-                ctx.cache.dags[cache_key] = self.dag
+                ctx.cache.dags[cache_key] = self(CachedFnDag.from_fndag(self.dag()))
                 ctx.commit.cache = self(ctx.cache)
                 if replacing:
                     ctx.commit.parents = [ctx.head.commit]
                 self.index = self(self.index, Index(self(ctx.commit)))
-            dag, self.dag = (self.dag, self.parent_dag)
+            dag = self.cached_dag if use_cached else self.dag
+            self.dag = self.parent_dag
             self.parent_dag = self.cached_dag = None
             return self.put_node(Fn(dag, dag().expr))
         else:

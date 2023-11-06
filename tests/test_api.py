@@ -93,6 +93,9 @@ class TestApiBase(unittest.TestCase):
         n3 = fn('commit', n2)
         d0('commit', n3)
 
+    def test_fn_cached(self):
+        pass
+
 #   def test_fn_w_error(self):
 #       d0 = self.begin('d0', 'dag 0')
 #       n0 = d0('put_literal', Resource({'asdf', 2}))

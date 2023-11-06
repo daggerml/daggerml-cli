@@ -5,7 +5,7 @@ from tempfile import TemporaryDirectory
 import pytest
 from tabulate import tabulate
 
-from daggerml_cli.repo import Literal, Load, Ref, Repo, Resource, unroll_datum
+from daggerml_cli.repo import CachedFnDag, Literal, Load, Repo, Resource, unroll_datum
 
 
 def dump(repo, count=None):
@@ -37,7 +37,6 @@ class TestRepo(unittest.TestCase):
             db.begin(name='d0', message='1st dag')
             n0 = db.put_node(Literal(db.put_datum(Resource({'foo': 42}))))
             db.commit(n0)
-
             assert self.dag_result(self.get_dag(db, 'd0')) == Resource({'foo': 42})
 
             db.begin(name='d1', message='2nd dag')
@@ -46,26 +45,33 @@ class TestRepo(unittest.TestCase):
                 db.put_node(Literal(db.put_datum(['howdy', 1]))),
                 db.put_node(Literal(db.put_datum(2))),
             ]
-            # state changes here, parent_dag is set, subsequent put_node and commit
-            # are to the parent_dag not the d1 dag
-            db.begin(expr=expr)
-            n0 = db.put_node(Literal(db.put_datum('omg')))
-            # state changes again, parent_dag is unset and Fn node in d1 is returned
-            n1 = db.commit(n0, cache=True)
-            db.commit(n1)
-
+            db.begin(expr=expr)  # fn application, ops on db are now applied to the fndag
+            assert db.cached_dag is None
+            n0 = db.put_node(Literal(db.put_datum('omg')))  # add node to fndag
+            n1 = db.commit(n0, cache=True)  # commit fndag, cache it, and return Fn node
+            db.commit(n1)  # commit d1 dag with the Fn node as its result
             assert self.dag_result(self.get_dag(db, 'd1')) == 'omg'
 
             db.begin(name='d2', message='3rd dag')
-            db.begin(expr=expr)
-
+            db.begin(expr=expr)  # we should have a cached result now
+            assert isinstance(db.cached_dag(), CachedFnDag)
             assert self.dag_result(db.cached_dag) == 'omg'
-
-            n0 = db.put_node(Literal(db.put_datum('hello world')))
+            n0 = db.put_node(Literal(db.put_datum('hello world')))  # not using cached result
             with pytest.raises(AssertionError):
-                db.commit(n0, cache=True)
-            n1 = db.commit(n0, cache=db.cached_dag)
+                db.commit(n0, cache=True)  # can't commit a new cache value without compare and swap
+            n1 = db.commit(n0, cache=db.cached_dag)  # works with compare and swap
             db.commit(n1)
+
+            db.begin(name='d3', message='4rd dag')
+            db.begin(expr=expr)
+            assert isinstance(db.cached_dag(), CachedFnDag)
+            assert self.dag_result(db.cached_dag) == 'hello world'
+            n2 = db.commit()  # empty commit means use cached value
+            db.commit(n2)
+
+            assert self.dag_result(self.get_dag(db, 'd3')) == 'hello world'
+
+            # return
 
             print()
             db.gc()
