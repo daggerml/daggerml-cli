@@ -180,9 +180,9 @@ def invoke_api(config, token, data):
             return db.put_node(Load(asserting(db.get_dag(dag))))
 
     @api_method
-    def commit(result):
+    def commit(result=None, cache=None):
         with db.tx(True):
-            return db.commit(result)
+            return db.commit(res_or_err=result, cache=cache)
 
     @api_method
     def get_ref(ref):
