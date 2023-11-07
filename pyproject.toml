@@ -44,6 +44,7 @@ dml = "daggerml_cli.cli:cli"
 path = "daggerml_cli/__about__.py"
 
 [tool.hatch.envs.default]
+python = "3.11"
 dependencies = [
   "coverage[toml]>=6.5",
   "pytest",
