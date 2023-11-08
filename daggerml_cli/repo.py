@@ -70,11 +70,6 @@ def unroll_datum(value):
     return get(value)
 
 
-def encode_type(cls):
-    DATA_TYPE[cls.__name__] = cls
-    return cls
-
-
 def repo_type(cls=None, **kwargs):
     tohash = kwargs.pop('hash', None)
     nohash = kwargs.pop('nohash', [])
@@ -90,10 +85,9 @@ def repo_type(cls=None, **kwargs):
         return [getattr(x, y) for y in f]
 
     def decorator(cls):
-        register(cls, packfn, lambda x: x)
-        cls = db_type(cls) if dbtype else cls
         DATA_TYPE[cls.__name__] = cls
-        return cls
+        register(cls, packfn, lambda x: x)
+        return db_type(cls) if dbtype else cls
 
     return decorator(cls) if cls else decorator
 
@@ -253,7 +247,7 @@ class Ctx:
     parent_dag: FnDag | None
 
 
-@encode_type
+@repo_type(db=False)
 @dataclass
 class Repo:
     path: str
