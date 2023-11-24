@@ -516,7 +516,7 @@ class Repo:
             ctx = self.ctx(self.index)
             self.parent_dag = self.dag
             self.dag = self(FnDag(set(), None, None, expr))
-            self.cached_dag = ctx.cache.dags.get(self.hash(expr))
+            self.cached_dag = ctx.cache.dags.get(self.hash([x().value for x in expr]))
         else:
             assert name and message and not expr
             ctx = self.ctx(self.head)
@@ -569,7 +569,7 @@ class Repo:
             self(self.dag, ctx.dag)
         if self.parent_dag:
             if cache:
-                cache_key = self.hash(ctx.dag.expr)
+                cache_key = self.hash([x().value for x in ctx.dag.expr])
                 cache_dag = ctx.cache.dags.get(cache_key)
                 replacing = cache == cache_dag
                 assert not cache_dag or replacing, 'invalid cache replacement'
@@ -581,7 +581,7 @@ class Repo:
             dag = self.cached_dag if use_cached else self.dag
             self.dag = self.parent_dag
             self.parent_dag = self.cached_dag = None
-            return self.put_node(Fn(dag, dag().expr))
+            return self.put_node(Fn(dag=dag, expr=dag().expr))
         else:
             ctx.commit.tree = self(ctx.tree)
             ctx.commit.created = ctx.commit.modified = now()
