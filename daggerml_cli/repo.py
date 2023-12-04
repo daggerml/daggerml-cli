@@ -3,6 +3,7 @@ import os
 from contextlib import contextmanager
 from dataclasses import dataclass, field, fields, is_dataclass, replace
 from hashlib import md5
+from typing import NewType
 from uuid import uuid4
 
 from daggerml_cli.db import db_type, dbenv
@@ -11,6 +12,9 @@ from daggerml_cli.util import asserting, makedirs, now
 
 DEFAULT = 'head/main'
 DATA_TYPE = {}
+
+
+Repo = NewType('Repo', None)
 
 
 register(set, lambda x, _: sorted(list(x), key=packb), lambda x: [tuple(x)])
@@ -73,10 +77,11 @@ def unroll_datum(value):
 def repo_type(cls=None, **kwargs):
     tohash = kwargs.pop('hash', None)
     nohash = kwargs.pop('nohash', [])
+    ignore = kwargs.pop('ignore', [])
     dbtype = kwargs.pop('db', True)
 
     def packfn(x, hash):
-        f = [y.name for y in fields(x)]
+        f = [y.name for y in fields(x) if y.name not in ignore]
         if hash:
             f = [y for y in f if y not in nohash]
             f = [y for y in f if y in tohash] if tohash is not None else f
@@ -92,10 +97,11 @@ def repo_type(cls=None, **kwargs):
     return decorator(cls) if cls else decorator
 
 
-@repo_type(db=False)
+@repo_type(db=False, ignore=['repo'])
 @dataclass(frozen=True, order=True)
 class Ref:
     to: str | None = None
+    repo: Repo | None = field(default=None, compare=False, repr=False)
 
     @property
     def type(self):
@@ -106,7 +112,7 @@ class Ref:
         return self.to.split('/', 1)[1] if self.to else None
 
     def __call__(self):
-        return Repo.curr.get(self)
+        return self.repo.get(self)
 
 
 @repo_type(db=False)
@@ -266,6 +272,8 @@ class Repo:
             assert not dbfile_exists, f'repo exists: {dbfile}'
         else:
             assert dbfile_exists, f'repo not found: {dbfile}'
+        for ref in ['head', 'index', 'dag', 'parent_dag', 'cached_dag']:
+            setattr(self, ref, self.ref(getattr(self, ref, None), False))
         self.env, self.dbs = dbenv(self.path)
         with self.tx(self.create):
             if not self.get('/init'):
@@ -289,19 +297,17 @@ class Repo:
 
     @contextmanager
     def tx(self, write=False):
-        Repo._tx = Repo._tx if hasattr(Repo, '_tx') else []
+        self._tx = self._tx if hasattr(self, '_tx') else []
         try:
-            if not len(Repo._tx):
-                Repo._tx.append(self.env.begin(write=write, buffers=True).__enter__())
-                Repo.curr = self
+            if not len(self._tx):
+                self._tx.append(self.env.begin(write=write, buffers=True).__enter__())
             else:
-                Repo._tx.append(None)
+                self._tx.append(None)
             yield True
         finally:
-            tx = Repo._tx.pop()
+            tx = self._tx.pop()
             if tx:
                 tx.__exit__(None, None, None)
-                Repo.curr = None
 
     def copy(self, path):
         self.env.copy(makedirs(path))
@@ -319,34 +325,39 @@ class Repo:
     def hash(self, obj):
         return md5(packb(obj, True)).hexdigest()
 
+    def ref(self, to, wrap_none=True):
+        if to or wrap_none:
+            return Ref(to.to if isinstance(to, Ref) else to, self)
+
     def get(self, key):
         if key:
-            key = key if isinstance(key, Ref) else Ref(key)
+            key = self.ref(key)
             if key.to:
-                obj = unpackb(Repo._tx[0].get(key.to.encode(), db=self.db(key.type)))
+                opts = {Ref: dict(repo=self)}
+                obj = unpackb(self._tx[0].get(key.to.encode(), db=self.db(key.type)), opts)
                 return obj
 
     def put(self, key, obj=None):
         key, obj = (key, obj) if obj else (obj, key)
         assert obj is not None
-        key = key if isinstance(key, Ref) else Ref(key)
+        key = self.ref(key)
         db = key.type if key.to else type(obj).__name__.lower()
         data = packb(obj)
         key2 = key.to or f'{db}/{self.hash(obj)}'
         comp = None
         if key.to is None:
-            comp = Repo._tx[0].get(key2.encode(), db=self.db(db))
+            comp = self._tx[0].get(key2.encode(), db=self.db(db))
             assert comp in [None, data], f'attempt to update immutable object: {key2}'
         if key is None or comp is None:
-            Repo._tx[0].put(key2.encode(), data, db=self.db(db))
-        return Ref(key2)
+            self._tx[0].put(key2.encode(), data, db=self.db(db))
+        return self.ref(key2)
 
     def delete(self, key):
-        key = Ref(key) if isinstance(key, str) else key
-        Repo._tx[0].delete(key.to.encode(), db=self.db(key.type))
+        key = self.ref(key) if isinstance(key, str) else key
+        self._tx[0].delete(key.to.encode(), db=self.db(key.type))
 
     def cursor(self, db):
-        return map(lambda x: Ref(bytes(x[0]).decode()), iter(Repo._tx[0].cursor(db=self.db(db))))
+        return map(lambda x: self.ref(bytes(x[0]).decode()), iter(self._tx[0].cursor(db=self.db(db))))
 
     def walk(self, *key):
         result = set()

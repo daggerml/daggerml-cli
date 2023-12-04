@@ -1,4 +1,5 @@
 from base64 import b64decode, b64encode
+from functools import partial
 from zlib import compress, decompress
 
 import msgpack
@@ -36,11 +37,11 @@ def packb(x, hash=False) -> bytes:
     return asserting(msgpack.packb(x, default=default))
 
 
-def unpackb(x):
+def unpackb(x, opts=None):
     def ext_hook(code, data):
         cls = EXT_TYPE.get(code)
         if cls:
-            return cls(*EXT_PACK[code][1](unpackb(data)))
+            return cls(*EXT_PACK[code][1](unpackb(data, opts)), **(opts or {}).get(cls, {}))
         return ExtType(code, data)
     return msgpack.unpackb(x, ext_hook=ext_hook) if x is not None else None
 

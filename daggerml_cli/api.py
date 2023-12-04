@@ -92,14 +92,14 @@ def list_other_branch(config):
 def create_branch(config, name):
     db = Repo(config.REPO_PATH, head=config.BRANCHREF)
     with db.tx(True):
-        db.create_branch(Ref(f"head/{name}"), db.head)
+        db.create_branch(db.ref(f"head/{name}"), db.head)
     use_branch(config, name)
 
 
 def delete_branch(config, name):
     db = Repo(config.REPO_PATH, head=config.BRANCHREF)
     with db.tx(True):
-        db.delete_branch(Ref(f"head/{name}"))
+        db.delete_branch(db.ref(f"head/{name}"))
 
 
 def use_branch(config, name):
@@ -110,7 +110,7 @@ def use_branch(config, name):
 def merge_branch(config, name):
     db = Repo(config.REPO_PATH, head=config.BRANCHREF)
     with db.tx(True):
-        ref = db.merge(db.head().commit, Ref(f"head/{name}")().commit)
+        ref = db.merge(db.head().commit, db.ref(f"head/{name}")().commit)
         db.checkout(db.set_head(db.head, ref))
         return ref.name
 
@@ -118,7 +118,7 @@ def merge_branch(config, name):
 def rebase_branch(config, name):
     db = Repo(config.REPO_PATH, head=config.BRANCHREF)
     with db.tx(True):
-        ref = db.rebase(Ref(f"head/{name}")().commit, db.head().commit)
+        ref = db.rebase(db.ref(f"head/{name}")().commit, db.head().commit)
         db.checkout(db.set_head(db.head, ref))
         return ref.name
 
