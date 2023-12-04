@@ -233,6 +233,12 @@ def dag_group(_):
     pass
 
 
+@dag_group.command(name='server', help='Start a HTTP DAG server.')
+@clickex
+def dag_server(ctx):
+    api.server(ctx.obj)
+
+
 @click.argument('message')
 @click.argument('name')
 @dag_group.command(name='create', help='Create a new DAG.')

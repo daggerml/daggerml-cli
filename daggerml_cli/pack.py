@@ -1,5 +1,4 @@
 from base64 import b64decode, b64encode
-from functools import partial
 from zlib import compress, decompress
 
 import msgpack

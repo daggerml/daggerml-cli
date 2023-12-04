@@ -5,7 +5,7 @@ from tempfile import TemporaryDirectory
 import pytest
 from tabulate import tabulate
 
-from daggerml_cli.repo import CachedFnDag, Literal, Load, Repo, Resource, unroll_datum
+from daggerml_cli.repo import CachedFnDag, Literal, Load, Repo, Resource, from_data, to_data, unroll_datum
 
 
 def dump(repo, count=None):
@@ -36,6 +36,7 @@ class TestRepo(unittest.TestCase):
         with db.tx(True):
             db.begin(name='d0', message='1st dag')
             n0 = db.put_node(Literal(db.put_datum(Resource({'foo': 42}))))
+            print(f'{to_data(n0)=}')
             db.commit(n0)
             assert self.dag_result(self.get_dag(db, 'd0')) == Resource({'foo': 42})
 

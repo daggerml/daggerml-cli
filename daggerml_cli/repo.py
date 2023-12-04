@@ -1,7 +1,7 @@
 import json
 import os
 from contextlib import contextmanager
-from dataclasses import dataclass, field, fields, is_dataclass, replace
+from dataclasses import dataclass, field, fields, is_dataclass
 from hashlib import md5
 from typing import NewType
 from uuid import uuid4
@@ -44,6 +44,7 @@ def from_data(data):
 
 
 def to_data(obj):
+    obj = unpackb(packb(obj))
     n = obj.__class__.__name__
     if isinstance(obj, (type(None), str, bool, int, float)):
         return obj

@@ -1,11 +1,14 @@
+import asyncio
+import json
 import os
 from dataclasses import dataclass
 from shutil import rmtree
 
+import tornado
 from asciidag.graph import Graph as AsciiGraph
 from asciidag.node import Node as AsciiNode
 
-from daggerml_cli.repo import DEFAULT, Error, Literal, Load, Ref, Repo
+from daggerml_cli.repo import DEFAULT, Error, Literal, Load, Ref, Repo, from_data, from_json, to_data, to_json
 from daggerml_cli.util import asserting, makedirs
 
 ###############################################################################
@@ -164,6 +167,10 @@ def invoke_api(config, token, data):
         return inner
 
     @api_method
+    def noop(*_args, **_kwargs):
+        return db
+
+    @api_method
     def begin(*, name=None, message=None, expr=None):
         with db.tx(True):
             db.begin(name=name, message=message, expr=expr)
@@ -195,6 +202,33 @@ def invoke_api(config, token, data):
         return api.get(op, no_such_op(op))(*args, **kwargs)
     except Exception as e:
         raise Error.from_ex(e) from e
+
+
+###############################################################################
+# SERVER ######################################################################
+###############################################################################
+
+
+def server(config):
+    class MainHandler(tornado.web.RequestHandler):
+        def post(self):
+            token = from_json(self.request.headers.get('x-daggerml-token'))
+            data = from_json(self.request.body)
+            print(f'{token=}')
+            print(f'{data=}')
+            result = invoke_api(config, token, data)
+            self.write(to_json(result))
+
+    async def main():
+        app = tornado.web.Application([(r"/", MainHandler)])
+        sockets = tornado.netutil.bind_sockets(0, '127.0.0.1')
+        server = tornado.httpserver.HTTPServer(app)
+        server.add_sockets(sockets)
+        host, port = sockets[0].getsockname()[:2]
+        print(json.dumps({'host': host, 'port': port}, separators=(',', ':')))
+        await asyncio.Event().wait()
+
+    asyncio.run(main())
 
 
 ###############################################################################
