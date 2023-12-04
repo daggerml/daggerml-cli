@@ -1,6 +1,9 @@
 import asyncio
 import json
+import logging
 import os
+import sys
+import traceback
 from dataclasses import dataclass
 from shutil import rmtree
 
@@ -10,6 +13,8 @@ from asciidag.node import Node as AsciiNode
 
 from daggerml_cli.repo import DEFAULT, Error, Literal, Load, Ref, Repo, from_data, from_json, to_data, to_json
 from daggerml_cli.util import asserting, makedirs
+
+logger = logging.getLogger(__name__)
 
 ###############################################################################
 # REPO ########################################################################
@@ -194,7 +199,7 @@ def invoke_api(config, token, data):
     @api_method
     def get_ref(ref):
         with db.tx():
-            return ref()
+            return db.ref(ref)()
 
     try:
         db = token if token else Repo(config.REPO_PATH, config.USER, config.BRANCHREF)
@@ -212,12 +217,14 @@ def invoke_api(config, token, data):
 def server(config):
     class MainHandler(tornado.web.RequestHandler):
         def post(self):
-            token = from_json(self.request.headers.get('x-daggerml-token'))
-            data = from_json(self.request.body)
-            print(f'{token=}')
-            print(f'{data=}')
-            result = invoke_api(config, token, data)
-            self.write(to_json(result))
+            try:
+                headers, body = (self.request.headers, self.request.body)
+                token = from_json(headers.get('x-daggerml-token', 'null'))
+                data = from_json(body or 'null')
+                self.write(to_json(invoke_api(config, token, data)))
+            except Exception as e:
+                logger.error(e, stack_info=True, exc_info=True)
+                self.write(to_json(Error.from_ex(e)))
 
     async def main():
         app = tornado.web.Application([(r"/", MainHandler)])

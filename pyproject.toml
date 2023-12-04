@@ -30,6 +30,8 @@ dependencies = [
   "msgpack",
   "tabulate",
   "asciidag",
+  "asyncio",
+  "tornado",
 ]
 
 [project.urls]
