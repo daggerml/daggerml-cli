@@ -71,6 +71,25 @@ def unroll_datum(value):
 
 
 def repo_type(cls=None, **kwargs):
+    """
+    Teach MessagePack and LMDB how to serialize and deserialize classes
+
+    Some of these classes are content-addressed, some are not.
+    The content-addressed classes sometimes have extraneous fields that do not contribute to the id(entifier)
+    Under the hood, this allows
+
+    Parameters
+    ----------
+    cls: decorated class
+    hash: hashed fields
+    nohash: unhashed fields
+    db: whether or not to create a top-level database
+
+    Returns
+    -------
+    Decorated class
+
+    """
     tohash = kwargs.pop('hash', None)
     nohash = kwargs.pop('nohash', [])
     dbtype = kwargs.pop('db', True)

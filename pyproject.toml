@@ -7,7 +7,7 @@ name = "daggerml-cli"
 dynamic = ["version"]
 description = ''
 readme = "README.md"
-requires-python = ">=3.7"
+requires-python = ">=3.10"
 license = "MIT"
 keywords = []
 authors = [
@@ -16,9 +16,6 @@ authors = [
 classifiers = [
   "Development Status :: 4 - Beta",
   "Programming Language :: Python",
-  "Programming Language :: Python :: 3.7",
-  "Programming Language :: Python :: 3.8",
-  "Programming Language :: Python :: 3.9",
   "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: Implementation :: CPython",
@@ -44,7 +41,7 @@ dml = "daggerml_cli.cli:cli"
 path = "daggerml_cli/__about__.py"
 
 [tool.hatch.envs.default]
-python = "3.11"
+python = "3.10"
 dependencies = [
   "coverage[toml]>=6.5",
   "pytest",
