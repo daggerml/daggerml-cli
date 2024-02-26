@@ -1,5 +1,5 @@
 import unittest
-from pprint import pp
+from collections import Counter
 from tempfile import TemporaryDirectory
 
 import pytest
@@ -76,3 +76,45 @@ class TestRepo(unittest.TestCase):
             print()
             db.gc()
             dump(db)
+
+    def test_walk(self):
+        db = Repo(self.tmpdir, 'testy@test', create=True)
+        def walk_types(obj):
+            return Counter(x.type for x in db.walk(obj))
+        with db.tx(True):
+            db.begin(name='d0', message='1st dag')
+            n0 = db.put_node(Literal(db.put_datum({'foo': 42})))
+            db.commit(n0)
+            assert walk_types(self.get_dag(db, 'd0')) == {'dag': 1, 'datum': 2, 'node': 1}
+            assert walk_types(self.get_dag(db, 'd0')().result) == {'datum': 2, 'node': 1}
+            assert walk_types(self.get_dag(db, 'd0')().result().value) == {'datum': 2}
+
+    def test_walk_ordered(self):
+        db = Repo(self.tmpdir, 'testy@test', create=True)
+        def walk_types(obj, ordered=False):
+            f = db.walk_ordered if ordered else db.walk
+            return Counter(x.type for x in f(obj))
+        with db.tx(True):
+            db.begin(name='d0', message='1st dag')
+            n0 = db.put_node(Literal(db.put_datum({'foo': 42})))
+            db.commit(n0)
+            assert walk_types(self.get_dag(db, 'd0')) == {'dag': 1, 'datum': 2, 'node': 1}
+            assert walk_types(self.get_dag(db, 'd0')().result) == {'datum': 2, 'node': 1}
+            assert walk_types(self.get_dag(db, 'd0')().result().value) == {'datum': 2}
+            assert db.walk(self.get_dag(db, 'd0')) == set(db.walk_ordered(self.get_dag(db, 'd0')))
+            self.assertCountEqual(
+                list(db.walk(self.get_dag(db, 'd0'))),
+                db.walk_ordered(self.get_dag(db, 'd0')),
+            )
+
+    def test_dumps_loads(self):
+        d0 = Repo(self.tmpdir, 'testy@test', create=True)
+        with d0.tx(True):
+            d0.begin(name='d0', message='1st dag')
+            n0 = d0.put_node(Literal(d0.put_datum({'foo': 42})))
+            dump = d0.dumps(n0)
+        with TemporaryDirectory() as tmpd:
+            d1 = Repo(tmpd, 'testy@test', create=True)
+            with d1.tx(True):
+                n1 = d1.loads(dump)
+                assert unroll_datum(n1().value) == {'foo': 42}

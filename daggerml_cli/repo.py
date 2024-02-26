@@ -5,6 +5,8 @@ from dataclasses import dataclass, field, fields, is_dataclass, replace
 from hashlib import md5
 from uuid import uuid4
 
+from graphlib import TopologicalSorter
+
 from daggerml_cli.db import db_type, dbenv
 from daggerml_cli.pack import packb, register, unpackb
 from daggerml_cli.util import asserting, makedirs, now
@@ -377,12 +379,36 @@ class Repo:
                     result.add(x)
                     xs.append(x())
             elif isinstance(x, (list, set)):
-                xs += x
+                xs += [a for a in x if a not in result]
             elif isinstance(x, dict):
-                xs += x.values()
+                xs += [a for a in x.values() if a not in result]
             elif is_dataclass(x):
                 xs += [getattr(x, y.name) for y in fields(x)]
         return result
+
+    def walk_ordered(self, *key):
+        result = list()
+        xs = list(key)
+        while len(xs):
+            x = xs.pop(0)
+            if isinstance(x, Ref):
+                if x not in result:
+                    result.append(x)
+                    xs.append(x())
+            elif isinstance(x, (list, set)):
+                xs += [a for a in x if a not in result]
+            elif isinstance(x, dict):
+                xs += [a for a in x.values() if a not in result]
+            elif is_dataclass(x):
+                xs += [getattr(x, y.name) for y in fields(x)]
+        return result
+
+    def dumps(self, ref):
+        return to_json([x() for x in self.walk_ordered(ref)])
+
+    def loads(self, js):
+        ref, *_ = (self(x) for x in from_json(js))
+        return ref
 
     def heads(self):
         return [k for k in self.cursor('head')]
@@ -552,6 +578,8 @@ class Repo:
     def put_datum(self, value):
         def put(value):
             if isinstance(value, Ref):
+                if isinstance(value(), Node):
+                    value = value().value
                 assert isinstance(value(), Datum), f'not a datum: {value.to}'
                 return value
             if isinstance(value, Datum):

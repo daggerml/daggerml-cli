@@ -1,11 +1,13 @@
 import unittest
+from contextlib import contextmanager
+from dataclasses import dataclass, field, replace
 from tempfile import TemporaryDirectory
 
 from tabulate import tabulate
 
 from daggerml_cli import api
 from daggerml_cli.config import Config
-from daggerml_cli.repo import Node, Resource, unroll_datum
+from daggerml_cli.repo import Node, Ref, Repo, Resource, unroll_datum
 
 
 def dump(repo, count=None):
@@ -14,6 +16,43 @@ def dump(repo, count=None):
         [rows.append([len(rows) + 1, k.to, k()]) for k in repo.cursor(db)]
     rows = rows[:min(count, len(rows))] if count is not None else rows
     print('\n' + tabulate(rows, tablefmt="simple_grid"))
+
+@dataclass
+class BasicPyLib:
+    d0: TemporaryDirectory = field(default_factory=TemporaryDirectory)
+    d1: TemporaryDirectory = field(default_factory=TemporaryDirectory)
+    ctx: Config | None = None
+    token: Repo | None = None
+
+    @contextmanager
+    def init(self, *args):
+        with self.d0 as d0, self.d1 as d1:
+            self.ctx = Config(
+                _CONFIG_DIR=d0,
+                _PROJECT_DIR=d1,
+                _USER='user0',
+            )
+            api.create_repo(self.ctx, 'test')
+            api.use_repo(self.ctx, 'test')
+            api.init_project(self.ctx, 'test')
+            if len(args):
+                self = self.begin(*args)
+            yield self
+
+    def __call__(self, op, *args, **kwargs):
+        return api.invoke_api(self.ctx, self.token, [op, args, kwargs])
+
+    def begin(self, *args):
+        if self.token is None:
+            kw = dict(zip(['name', 'message'], args, strict=True))
+        else:
+            kw = {'expr': args}
+        token = api.invoke_api(self.ctx, self.token, ['begin', [], kw])
+        return replace(self, token=token)
+
+    @property
+    def tx(self):
+        return self.token.tx
 
 
 class TestApiCreate(unittest.TestCase):
@@ -55,6 +94,7 @@ class TestApiBase(unittest.TestCase):
     def wrap(self, tok):
         def inner(op, *args, **kwargs):
             return api.invoke_api(self.CTX, tok, [op, args, kwargs])
+        inner.repo = tok
         inner.tx = tok.tx
         inner.begin = lambda *expr: self.wrap(inner('begin', expr=expr))
         return inner
@@ -93,32 +133,48 @@ class TestApiBase(unittest.TestCase):
         n3 = fn('commit', n2)
         d0('commit', n3)
 
-    def test_fn_cached(self):
-        pass
+    # def test_fn_cached(self):
+    #     pass
 
-#   def test_fn_w_error(self):
-#       d0 = self.begin('d0', 'dag 0')
-#       n0 = d0('put_literal', Resource({'asdf', 2}))
-#       n1 = d0('put_literal', 1)
-#       expr = [n0, n1]
-#       error = Error('fooby', {'asdf': 23})
-#       n2 = d0('begin_fn', expr, None, None, error)
-#       n1 = d0('get_node', n2)
-#       with d0.tx():
-#           assert unroll_datum(n1.value) is None
-#           assert n1.error == error
-#           assert n1.error.code == 'Error'
-#           assert n1.error.message == 'fooby'
-#           assert n1.error.context == {'asdf': 23}
+    # def test_fn_w_error(self):
+    #     d0 = self.begin('d0', 'dag 0')
+    #     n0 = d0('put_literal', Resource({'asdf', 2}))
+    #     n1 = d0('put_literal', 1)
+    #     expr = [n0, n1]
+    #     error = Error('fooby', {'asdf': 23})
+    #     n2 = d0('begin_fn', expr, None, None, error)
+    #     n1 = d0('get_node', n2)
+    #     with d0.tx():
+    #         assert unroll_datum(n1.value) is None
+    #         assert n1.error == error
+    #         assert n1.error.code == 'Error'
+    #         assert n1.error.message == 'fooby'
+    #         assert n1.error.context == {'asdf': 23}
 
-#   def test_fn_w_value(self):
-#       d0 = self.begin('d0', 'dag 0')
-#       n0 = d0('put_literal', Resource({'asdf', 2}))
-#       n1 = d0('put_literal', 1)
-#       expr = [n0, n1]
-#       value = {'asdf': 23}
-#       n2 = d0('begin_fn', expr, None, value)
-#       n1 = d0('get_node', n2)
-#       with d0.tx():
-#           assert isinstance(unroll_datum(n1.value), dict)
-#           assert unroll_datum(n1.value) == value
+    # def test_fn_w_value(self):
+    #     d0 = self.begin('d0', 'dag 0')
+    #     n0 = d0('put_literal', Resource({'asdf', 2}))
+    #     n1 = d0('put_literal', 1)
+    #     expr = [n0, n1]
+    #     value = {'asdf': 23}
+    #     n2 = d0('begin_fn', expr, None, value)
+    #     n1 = d0('get_node', n2)
+    #     with d0.tx():
+    #         assert isinstance(unroll_datum(n1.value), dict)
+    #         assert unroll_datum(n1.value) == value
+
+    def test_dumps_loads(self):
+        raw = [{'asdf': 2}, 1]
+        with BasicPyLib().init('d0', 'dag 0') as d0:
+            n0 = d0('put_literal', raw[0])
+            n1 = d0('put_literal', raw[1])
+            n2 = d0('put_literal', [n0, n1])
+            dump = d0('dumps', n2)
+            d0('commit', n2)
+            with d0.tx():
+                assert isinstance(n2(), Node)
+        with BasicPyLib().init('d1', 'dag 1') as d1:
+            with d1.tx(True):
+                data = d1('loads', dump)
+                data = d1('unroll', data().value)
+        assert data == [{'asdf': 2}, 1]

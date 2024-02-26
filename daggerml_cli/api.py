@@ -5,7 +5,7 @@ from shutil import rmtree
 from asciidag.graph import Graph as AsciiGraph
 from asciidag.node import Node as AsciiNode
 
-from daggerml_cli.repo import DEFAULT, Error, Literal, Load, Ref, Repo
+from daggerml_cli.repo import DEFAULT, Error, Literal, Load, Ref, Repo, unroll_datum
 from daggerml_cli.util import asserting, makedirs
 
 ###############################################################################
@@ -175,6 +175,11 @@ def invoke_api(config, token, data):
             return db.put_node(Literal(db.put_datum(data)))
 
     @api_method
+    def unroll(datum_ref):
+        with db.tx():
+            return unroll_datum(datum_ref)
+
+    @api_method
     def put_load(dag):
         with db.tx(True):
             return db.put_node(Load(asserting(db.get_dag(dag))))
@@ -188,6 +193,16 @@ def invoke_api(config, token, data):
     def get_ref(ref):
         with db.tx():
             return ref()
+
+    @api_method
+    def dumps(data):
+        with db.tx():
+            return db.dumps(data)
+
+    @api_method
+    def loads(data):
+        with db.tx():
+            return db.loads(data)
 
     try:
         db = token if token else Repo(config.REPO_PATH, config.USER, config.BRANCHREF)
