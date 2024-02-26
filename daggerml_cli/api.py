@@ -150,64 +150,66 @@ def delete_dag(config, name):
 ###############################################################################
 
 
+def _invoke_method(f):
+    _, fname = f.__name__.split('_', 1)
+    _invoke_method.fn_map[fname] = f
+    return f
+_invoke_method.fn_map = {}
+
+@_invoke_method
+def invoke_begin(db, *, name=None, message=None, expr=None):
+    with db.tx(True):
+        db.begin(name=name, message=message, expr=expr)
+        return db
+
+@_invoke_method
+def invoke_put_literal(db, data):
+    with db.tx(True):
+        return db.put_node(Literal(db.put_datum(data)))
+
+@_invoke_method
+def invoke_unroll(db, datum_ref):
+    with db.tx():
+        return unroll_datum(datum_ref)
+
+@_invoke_method
+def invoke_put_load(db, dag):
+    with db.tx(True):
+        return db.put_node(Load(asserting(db.get_dag(dag))))
+
+@_invoke_method
+def invoke_commit(db, result=None, cache=None):
+    with db.tx(True):
+        return db.commit(res_or_err=result, cache=cache)
+
+@_invoke_method
+def invoke_get_ref(db, ref):
+    with db.tx():
+        return ref()
+
+@_invoke_method
+def invoke_dumps(db, data):
+    with db.tx():
+        return db.dumps(data)
+
+@_invoke_method
+def invoke_loads(db, data):
+    with db.tx():
+        return db.loads(data)
+
+
 def invoke_api(config, token, data):
     db = None
-    api = {}
-
-    def api_method(f):
-        api[f.__name__] = f
-        return f
 
     def no_such_op(name):
         def inner(*_args, **_kwargs):
             raise ValueError(f"no such op: {name}")
         return inner
 
-    @api_method
-    def begin(*, name=None, message=None, expr=None):
-        with db.tx(True):
-            db.begin(name=name, message=message, expr=expr)
-            return db
-
-    @api_method
-    def put_literal(data):
-        with db.tx(True):
-            return db.put_node(Literal(db.put_datum(data)))
-
-    @api_method
-    def unroll(datum_ref):
-        with db.tx():
-            return unroll_datum(datum_ref)
-
-    @api_method
-    def put_load(dag):
-        with db.tx(True):
-            return db.put_node(Load(asserting(db.get_dag(dag))))
-
-    @api_method
-    def commit(result=None, cache=None):
-        with db.tx(True):
-            return db.commit(res_or_err=result, cache=cache)
-
-    @api_method
-    def get_ref(ref):
-        with db.tx():
-            return ref()
-
-    @api_method
-    def dumps(data):
-        with db.tx():
-            return db.dumps(data)
-
-    @api_method
-    def loads(data):
-        with db.tx():
-            return db.loads(data)
-
     try:
         db = token if token else Repo(config.REPO_PATH, config.USER, config.BRANCHREF)
         op, args, kwargs = data
-        return api.get(op, no_such_op(op))(*args, **kwargs)
+        return _invoke_method.fn_map.get(op, no_such_op(op))(db, *args, **kwargs)
     except Exception as e:
         raise Error.from_ex(e) from e
 
