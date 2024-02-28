@@ -247,7 +247,9 @@ def api_create_dag(ctx, name, message):
 
 @click.argument('json')
 @click.argument('token')
-@dag_group.command(name='invoke', help='Invoke API with token returned by create and JSON command.')
+@dag_group.command(
+    name='invoke',
+    help=f'Invoke API with token returned by create and JSON command.\n\nops: {list(api._invoke_method.fn_map.keys())}')
 @clickex
 def api_invoke(ctx, token, json):
     try:

@@ -1,11 +1,11 @@
 import unittest
-from pprint import pp
+from collections import Counter
 from tempfile import TemporaryDirectory
 
 import pytest
 from tabulate import tabulate
 
-from daggerml_cli.repo import CachedFnDag, Literal, Load, Repo, Resource, unroll_datum
+from daggerml_cli.repo import CachedFnDag, Literal, Load, Node, Ref, Repo, Resource, unroll_datum
 
 
 def dump(repo, count=None):
@@ -76,3 +76,71 @@ class TestRepo(unittest.TestCase):
             print()
             db.gc()
             dump(db)
+
+    def test_walk(self):
+        db = Repo(self.tmpdir, 'testy@test', create=True)
+        def walk_types(obj):
+            return Counter(x.type for x in db.walk(obj))
+        with db.tx(True):
+            db.begin(name='d0', message='1st dag')
+            n0 = db.put_node(Literal(db.put_datum({'foo': 42})))
+            db.commit(n0)
+            assert walk_types(self.get_dag(db, 'd0')) == {'dag': 1, 'datum': 2, 'node': 1}
+            assert walk_types(self.get_dag(db, 'd0')().result) == {'datum': 2, 'node': 1}
+            assert walk_types(self.get_dag(db, 'd0')().result().value) == {'datum': 2}
+
+    def test_walk_ordered(self):
+        db = Repo(self.tmpdir, 'testy@test', create=True)
+        def walk_types(obj, ordered=False):
+            f = db.walk_ordered if ordered else db.walk
+            return Counter(x.type for x in f(obj))
+        with db.tx(True):
+            db.begin(name='d0', message='1st dag')
+            n0 = db.put_node(Literal(db.put_datum({'foo': 42})))
+            db.commit(n0)
+            assert walk_types(self.get_dag(db, 'd0')) == {'dag': 1, 'datum': 2, 'node': 1}
+            assert walk_types(self.get_dag(db, 'd0')().result) == {'datum': 2, 'node': 1}
+            assert walk_types(self.get_dag(db, 'd0')().result().value) == {'datum': 2}
+            assert db.walk(self.get_dag(db, 'd0')) == set(db.walk_ordered(self.get_dag(db, 'd0')))
+            self.assertCountEqual(
+                list(db.walk(self.get_dag(db, 'd0'))),
+                db.walk_ordered(self.get_dag(db, 'd0')),
+            )
+
+    def test_dumps_loads(self):
+        d0 = Repo(self.tmpdir, 'testy@test', create=True)
+        with d0.tx(True):
+            d0.begin(name='d0', message='1st dag')
+            n0 = d0.put_node(Literal(d0.put_datum({'foo': 42})))
+            dump = d0.dumps(n0)
+        with TemporaryDirectory() as tmpd:
+            d1 = Repo(tmpd, 'testy@test', create=True)
+            with d1.tx(True):
+                n1 = d1.loads(dump)
+                assert unroll_datum(n1().value) == {'foo': 42}
+
+    def test_datatypes(self):
+        db = Repo(self.tmpdir, 'testy@test', create=True)
+        with db.tx(True):
+            db.begin(name='d0', message='1st dag')
+            data = {
+                'int': 23,
+                'float': 12.43,
+                'bool': True,
+                'null': None,
+                'string': 'qwer',
+                'list': [3, 4, 5],
+                'map': {'a': 2, 'b': 'asdf'},
+                'set': {12, 13, 'a', 3.4},
+                'resource': Resource({'a': 1, 'b': 2}),
+            }
+            for k, v in data.items():
+                ref = db.put_node(Literal(db.put_datum(v)))
+                assert isinstance(ref, Ref)
+                node = ref()
+                assert isinstance(node, Node)
+                val = unroll_datum(node.value())
+                assert val == v, f'failed {k}'
+            # FIXME -- sets need to be hashable... See gh issue #11
+            with self.assertRaisesRegex(TypeError, "unhashable type: 'Resource'"):
+                {Resource({'a': 8, 'b': 2})}
