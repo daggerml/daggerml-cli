@@ -1,7 +1,7 @@
 import json
 import os
 from contextlib import contextmanager
-from dataclasses import dataclass, field, fields, is_dataclass, replace
+from dataclasses import InitVar, dataclass, field, fields, is_dataclass, replace
 from hashlib import md5
 from uuid import uuid4
 
@@ -278,17 +278,17 @@ class Repo:
     dag: Ref | None = None  # -> fndag | dag
     parent_dag: Ref | None = None  # -> fndag | dag
     cached_dag: Ref | None = None  # -> fndag
-    create: bool = False
+    create: InitVar[bool] = False
 
-    def __post_init__(self):
+    def __post_init__(self, create):
         dbfile = str(os.path.join(self.path, 'data.mdb'))
         dbfile_exists = os.path.exists(dbfile)
-        if self.create:
+        if create:
             assert not dbfile_exists, f'repo exists: {dbfile}'
         else:
             assert dbfile_exists, f'repo not found: {dbfile}'
         self.env, self.dbs = dbenv(self.path)
-        with self.tx(self.create):
+        with self.tx(create):
             if not self.get('/init'):
                 commit = Commit(
                     [],
@@ -403,11 +403,11 @@ class Repo:
                 xs += [getattr(x, y.name) for y in fields(x)]
         return result
 
-    def dumps(self, ref):
-        return to_json([x() for x in self.walk_ordered(ref)])
+    def dump(self, ref):
+        return [x() for x in self.walk_ordered(ref)]
 
-    def loads(self, js):
-        ref, *_ = (self(x) for x in from_json(js))
+    def load(self, js):
+        ref, *_ = (self(x) for x in js)
         return ref
 
     def heads(self):

@@ -107,16 +107,16 @@ class TestRepo(unittest.TestCase):
                 db.walk_ordered(self.get_dag(db, 'd0')),
             )
 
-    def test_dumps_loads(self):
+    def test_dump_load(self):
         d0 = Repo(self.tmpdir, 'testy@test', create=True)
         with d0.tx(True):
             d0.begin(name='d0', message='1st dag')
             n0 = d0.put_node(Literal(d0.put_datum({'foo': 42})))
-            dump = d0.dumps(n0)
+            dump = d0.dump(n0)
         with TemporaryDirectory() as tmpd:
             d1 = Repo(tmpd, 'testy@test', create=True)
             with d1.tx(True):
-                n1 = d1.loads(dump)
+                n1 = d1.load(dump)
                 assert unroll_datum(n1().value) == {'foo': 42}
 
     def test_datatypes(self):

@@ -127,6 +127,11 @@ def rebase_branch(config, name):
 # DAG #########################################################################
 ###############################################################################
 
+def get_dag(config, name):
+    db = Repo(config.REPO_PATH, head=config.BRANCHREF)
+    with db.tx(False):
+        return db.get_dag(name)
+
 
 def list_dag(config):
     if os.path.exists(config.REPO_PATH):
@@ -188,14 +193,14 @@ def invoke_get_ref(db, ref):
         return ref()
 
 @_invoke_method
-def invoke_dumps(db, data):
+def invoke_dump(db, data):
     with db.tx():
-        return db.dumps(data)
+        return db.dump(data)
 
 @_invoke_method
-def invoke_loads(db, data):
+def invoke_load(db, data):
     with db.tx():
-        return db.loads(data)
+        return db.load(data)
 
 
 def invoke_api(config, token, data):

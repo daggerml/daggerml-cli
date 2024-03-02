@@ -163,18 +163,18 @@ class TestApiBase(unittest.TestCase):
     #         assert isinstance(unroll_datum(n1.value), dict)
     #         assert unroll_datum(n1.value) == value
 
-    def test_dumps_loads(self):
+    def test_dump_load(self):
         raw = [{'asdf': 2}, 1]
         with BasicPyLib().init('d0', 'dag 0') as d0:
             n0 = d0('put_literal', raw[0])
             n1 = d0('put_literal', raw[1])
             n2 = d0('put_literal', [n0, n1])
-            dump = d0('dumps', n2)
+            dump = d0('dump', n2)
             d0('commit', n2)
             with d0.tx():
                 assert isinstance(n2(), Node)
         with BasicPyLib().init('d1', 'dag 1') as d1:
             with d1.tx(True):
-                data = d1('loads', dump)
+                data = d1('load', dump)
                 data = d1('unroll', data().value)
         assert data == [{'asdf': 2}, 1]

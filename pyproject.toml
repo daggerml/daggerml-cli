@@ -27,6 +27,7 @@ dependencies = [
   "msgpack",
   "tabulate",
   "asciidag",
+  "pyyaml",
 ]
 
 [project.urls]

@@ -6,11 +6,14 @@ from socket import gethostname
 
 import click
 from click import ClickException
+from yaml import safe_load as load_yaml
 
 from daggerml_cli import api
 from daggerml_cli.__about__ import __version__
 from daggerml_cli.config import Config
 from daggerml_cli.repo import Error, from_json, to_json
+
+_config_dir = str((Path.home() / '.local/dml').absolute())
 
 DEFAULT_CONFIG = Config(
     os.getenv('DML_CONFIG_DIR', os.path.join(
@@ -52,43 +55,45 @@ def complete(f, prelude=None):
 
 @click.option(
     '--user',
-    default=DEFAULT_CONFIG.get('USER'),
+    default=f'{getuser()}@{gethostname()}',
     help='Specify user name@host or email, etc.')
 @click.option(
     '--branch',
-    default=DEFAULT_CONFIG.get('BRANCH'),
     shell_complete=complete(api.list_branch, set_config),
     help='Specify a branch other than the project branch.')
 @click.option(
     '--repo-path',
     type=click.Path(),
-    default=DEFAULT_CONFIG.get('REPO_PATH'),
     help='Specify the path to a repo other than the project repo.')
 @click.option(
     '--repo',
-    default=DEFAULT_CONFIG.get('REPO'),
     shell_complete=complete(api.list_repo, set_config),
     help='Specify a repo other than the project repo.')
 @click.option(
     '--project-dir',
     type=click.Path(),
-    default=DEFAULT_CONFIG.get('PROJECT_DIR'),
+    default='.dml',
     help='Project directory location.')
 @click.option(
     '--config-dir',
     type=click.Path(),
-    default=DEFAULT_CONFIG.get('CONFIG_DIR'),
+    default=_config_dir,
     help='Config directory location.')
 @click.option(
     '--debug',
     is_flag=True,
     help='Enable debug output.')
+@click.option('--config', default='~/config.yml', type=click.Path())  # this allows us to change config path
 @click.group(
     no_args_is_help=True,
-    context_settings={'help_option_names': ['-h', '--help']})
+    context_settings={'help_option_names': ['-h', '--help'], 'auto_envvar_prefix': 'DML', 'show_default': True})
 @click.version_option(version=__version__, prog_name='dml')
 @clickex
-def cli(ctx, config_dir, project_dir, repo, branch, user, repo_path, debug):
+def cli(ctx, config_dir, project_dir, repo, branch, user, repo_path, debug, config):
+    if os.path.exists(config):
+        with open(config) as f:
+            config = load_yaml(f.read())
+        ctx.default_map = config
     set_config(ctx)
     ctx.with_resource(ctx.obj)
 
@@ -243,6 +248,13 @@ def api_create_dag(ctx, name, message):
         click.echo(to_json(api.invoke_api(ctx.obj, None, cmd)))
     except Exception as e:
         click.echo(to_json(Error.from_ex(e)))
+
+
+@click.argument('name')
+@dag_group.command(name='get', help='Get a DAG.')
+@clickex
+def api_get_dag(ctx, name):
+    click.echo(to_json(api.get_dag(ctx.obj, name)))
 
 
 @click.argument('json')
