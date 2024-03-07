@@ -133,36 +133,6 @@ class TestApiBase(unittest.TestCase):
         n3 = fn('commit', n2)
         d0('commit', n3)
 
-    # def test_fn_cached(self):
-    #     pass
-
-    # def test_fn_w_error(self):
-    #     d0 = self.begin('d0', 'dag 0')
-    #     n0 = d0('put_literal', Resource({'asdf', 2}))
-    #     n1 = d0('put_literal', 1)
-    #     expr = [n0, n1]
-    #     error = Error('fooby', {'asdf': 23})
-    #     n2 = d0('begin_fn', expr, None, None, error)
-    #     n1 = d0('get_node', n2)
-    #     with d0.tx():
-    #         assert unroll_datum(n1.value) is None
-    #         assert n1.error == error
-    #         assert n1.error.code == 'Error'
-    #         assert n1.error.message == 'fooby'
-    #         assert n1.error.context == {'asdf': 23}
-
-    # def test_fn_w_value(self):
-    #     d0 = self.begin('d0', 'dag 0')
-    #     n0 = d0('put_literal', Resource({'asdf', 2}))
-    #     n1 = d0('put_literal', 1)
-    #     expr = [n0, n1]
-    #     value = {'asdf': 23}
-    #     n2 = d0('begin_fn', expr, None, value)
-    #     n1 = d0('get_node', n2)
-    #     with d0.tx():
-    #         assert isinstance(unroll_datum(n1.value), dict)
-    #         assert unroll_datum(n1.value) == value
-
     def test_dump_load(self):
         raw = [{'asdf': 2}, 1]
         with BasicPyLib().init('d0', 'dag 0') as d0:

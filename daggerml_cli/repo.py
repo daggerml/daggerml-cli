@@ -280,7 +280,7 @@ class Repo:
     cached_dag: Ref | None = None  # -> fndag
     create: InitVar[bool] = False
 
-    def __post_init__(self, create):
+    def __post_init__(self, create=False):
         dbfile = str(os.path.join(self.path, 'data.mdb'))
         dbfile_exists = os.path.exists(dbfile)
         if create:
@@ -403,11 +403,11 @@ class Repo:
                 xs += [getattr(x, y.name) for y in fields(x)]
         return result
 
-    def dump(self, ref):
-        return [x() for x in self.walk_ordered(ref)]
+    def dump(self, ref: Ref) -> str:
+        return to_json([x() for x in self.walk_ordered(ref)])
 
     def load(self, js):
-        ref, *_ = (self(x) for x in js)
+        ref, *_ = (self(x) for x in from_json(js))
         return ref
 
     def heads(self):

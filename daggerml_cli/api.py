@@ -199,7 +199,7 @@ def invoke_dump(db, data):
 
 @_invoke_method
 def invoke_load(db, data):
-    with db.tx():
+    with db.tx(True):
         return db.load(data)
 
 
