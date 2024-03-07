@@ -3,6 +3,7 @@ import os
 from contextlib import contextmanager
 from dataclasses import InitVar, dataclass, field, fields, is_dataclass, replace
 from hashlib import md5
+from typing import Any, Dict
 from uuid import uuid4
 
 from graphlib import TopologicalSorter
@@ -146,9 +147,19 @@ class Error(Exception):
 
 
 @repo_type(db=False)
-@dataclass
+@dataclass(frozen=True)
 class Resource:
-    data: dict
+    _data: InitVar[str|None] = None
+
+    def __post_init__(self, data):
+        object.__setattr__(self, '_data', to_json(data))
+
+    @property
+    def data(self):
+        return from_json(self._data)
+
+    def __repr__(self):
+        return f'Resource({self.data!r})'
 
 
 @repo_type(hash=[])

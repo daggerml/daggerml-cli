@@ -5,7 +5,7 @@ from tempfile import TemporaryDirectory
 import pytest
 from tabulate import tabulate
 
-from daggerml_cli.repo import CachedFnDag, Literal, Load, Node, Ref, Repo, Resource, unroll_datum
+from daggerml_cli.repo import CachedFnDag, Literal, Load, Node, Ref, Repo, Resource, from_json, to_json, unroll_datum
 
 
 def dump(repo, count=None):
@@ -119,6 +119,11 @@ class TestRepo(unittest.TestCase):
                 n1 = d1.load(dump)
                 assert unroll_datum(n1().value) == {'foo': 42}
 
+    def test_resource_access(self):
+        data = {'a': 2, 'b': {1, 2, 3}}
+        resource = Resource(data)
+        assert resource.data == data
+
     def test_datatypes(self):
         db = Repo(self.tmpdir, 'testy@test', create=True)
         with db.tx(True):
@@ -133,14 +138,13 @@ class TestRepo(unittest.TestCase):
                 'map': {'a': 2, 'b': 'asdf'},
                 'set': {12, 13, 'a', 3.4},
                 'resource': Resource({'a': 1, 'b': 2}),
+                'composite': {'asdf': {2, Resource({'a': 8, 'b': 2})}}
             }
             for k, v in data.items():
+                assert from_json(to_json(v)) == v
                 ref = db.put_node(Literal(db.put_datum(v)))
                 assert isinstance(ref, Ref)
                 node = ref()
                 assert isinstance(node, Node)
                 val = unroll_datum(node.value())
                 assert val == v, f'failed {k}'
-            # FIXME -- sets need to be hashable... See gh issue #11
-            with self.assertRaisesRegex(TypeError, "unhashable type: 'Resource'"):
-                {Resource({'a': 8, 'b': 2})}
