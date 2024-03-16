@@ -164,7 +164,10 @@ _invoke_method.fn_map = {}
 @_invoke_method
 def invoke_begin(db, *, name=None, message=None, expr=None):
     with db.tx(True):
-        db.begin(name=name, message=message, expr=expr)
+        if expr is None:
+            db.begin(name=name, message=message)
+        else:
+            db.start_fn(expr=expr)
         return db
 
 @_invoke_method

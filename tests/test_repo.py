@@ -1,3 +1,4 @@
+import re
 import unittest
 from collections import Counter
 from tempfile import TemporaryDirectory
@@ -5,7 +6,19 @@ from tempfile import TemporaryDirectory
 import pytest
 from tabulate import tabulate
 
-from daggerml_cli.repo import CachedFnDag, Literal, Load, Node, Ref, Repo, Resource, from_json, to_json, unroll_datum
+from daggerml_cli.repo import (
+    CachedFnDag,
+    FnDag,
+    Literal,
+    Load,
+    Node,
+    Ref,
+    Repo,
+    Resource,
+    from_json,
+    to_json,
+    unroll_datum,
+)
 
 
 def dump(repo, count=None):
@@ -37,45 +50,42 @@ class TestRepo(unittest.TestCase):
             db.begin(name='d0', message='1st dag')
             n0 = db.put_node(Literal(db.put_datum(Resource({'foo': 42}))))
             db.commit(n0)
-            assert self.dag_result(self.get_dag(db, 'd0')) == Resource({'foo': 42})
 
-            db.begin(name='d1', message='2nd dag')
+    def test_cache_basic(self):
+        db = Repo(self.tmpdir, 'testy@test', create=True)
+        with db.tx(True):
             expr = [
-                db.put_node(Load(db.ctx(db.index).dags['d0'])),
-                db.put_node(Literal(db.put_datum(['howdy', 1]))),
-                db.put_node(Literal(db.put_datum(2))),
+                Literal(db.put_datum(Resource({'foo': 42}))),
+                Literal(db.put_datum(['howdy', 1])),
+                Literal(db.put_datum(2)),
             ]
-            db.begin(expr=expr)  # fn application, ops on db are now applied to the fndag
-            assert db.cached_dag is None
-            n0 = db.put_node(Literal(db.put_datum('omg')))  # add node to fndag
-            n1 = db.commit(n0, cache=True)  # commit fndag, cache it, and return Fn node
-            db.commit(n1)  # commit d1 dag with the Fn node as its result
-            assert self.dag_result(self.get_dag(db, 'd1')) == 'omg'
-
-            db.begin(name='d2', message='3rd dag')
-            db.begin(expr=expr)  # we should have a cached result now
-            assert isinstance(db.cached_dag(), CachedFnDag)
-            assert self.dag_result(db.cached_dag) == 'omg'
-            n0 = db.put_node(Literal(db.put_datum('hello world')))  # not using cached result
-            with pytest.raises(AssertionError):
-                db.commit(n0, cache=True)  # can't commit a new cache value without compare and swap
-            n1 = db.commit(n0, cache=db.cached_dag)  # works with compare and swap
-            db.commit(n1)
-
-            db.begin(name='d3', message='4rd dag')
-            db.begin(expr=expr)
-            assert isinstance(db.cached_dag(), CachedFnDag)
-            assert self.dag_result(db.cached_dag) == 'hello world'
-            n2 = db.commit()  # empty commit means use cached value
-            db.commit(n2)
-
-            assert self.dag_result(self.get_dag(db, 'd3')) == 'hello world'
-
-            # return
-
-            print()
-            db.gc()
-            dump(db)
+            db.begin(name='d0', message='1st dag')
+            with self.assertLogs('daggerml_cli.repo', level='DEBUG') as cm:
+                db.start_fn(expr=[db.put_node(x) for x in expr], cache=False)
+            assert re.match(r'.*starting new fndag.*', cm.output[0])
+            assert len(cm.output) == 1
+            assert isinstance(db.dag(), FnDag)
+            with self.assertLogs('daggerml_cli.repo', level='DEBUG') as cm:
+                n0 = db.commit(db.put_node(Literal(db.put_datum('omg'))))
+            assert re.match(r'.*commit called with FnDag.*', cm.output[0])
+            assert len(cm.output) == 1
+            assert isinstance(n0, Ref)
+            assert n0.type == 'node'
+            with self.assertLogs('daggerml_cli.repo', level='DEBUG') as cm:
+                db.start_fn(expr=[db.put_node(x) for x in expr], cache=True)  # fn application, ops on db are now applied to the fndag
+            assert re.match(r'.*starting new fndag.*', cm.output[0])
+            assert re.match(r'.*populating cache.*', cm.output[1])
+            assert isinstance(db.dag(), CachedFnDag)
+            with self.assertLogs('daggerml_cli.repo', level='DEBUG') as cm:
+                n0 = db.commit(db.put_node(Literal(db.put_datum('zomg'))), cache=True)
+            assert any(re.match(r'.*commit called with CachedFnDag.*', o) for o in cm.output)
+            assert isinstance(n0, Ref)
+            assert n0.type == 'node'
+            with self.assertLogs('daggerml_cli.repo', level='DEBUG') as cm:
+                n1 = db.start_fn(expr=[db.put_node(x) for x in expr], cache=True)  # we should have a cached result now
+            assert any(re.match(r'.*using cached dag: CachedFnDag.*', o) for o in cm.output)
+            assert n1 is not None
+            assert n1().value().value == 'zomg'
 
     def test_walk(self):
         db = Repo(self.tmpdir, 'testy@test', create=True)

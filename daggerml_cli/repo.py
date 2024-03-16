@@ -1,7 +1,8 @@
 import json
+import logging
 import os
 from contextlib import contextmanager
-from dataclasses import InitVar, dataclass, field, fields, is_dataclass, replace
+from dataclasses import InitVar, dataclass, field, fields, is_dataclass
 from hashlib import md5
 from typing import Any, Dict
 from uuid import uuid4
@@ -16,6 +17,7 @@ DEFAULT = 'head/main'
 DATA_TYPE = {}
 
 
+logger = logging.getLogger(__name__)
 register(set, lambda x, _: sorted(list(x), key=packb), lambda x: [tuple(x)])
 
 
@@ -206,12 +208,12 @@ class Dag:
 @dataclass
 class FnDag(Dag):
     expr: list[Ref]  # -> node
+    meta: Dict[str, Any] = field(default_factory=dict)
 
 
 @repo_type(hash=[])
 @dataclass
-class CachedFnDag(Dag):
-    expr: list[Ref]  # -> node
+class CachedFnDag(FnDag):
 
     @classmethod
     def from_fndag(cls, fndag):
@@ -288,7 +290,6 @@ class Repo:
     index: Ref | None = None  # -> index
     dag: Ref | None = None  # -> fndag | dag
     parent_dag: Ref | None = None  # -> fndag | dag
-    cached_dag: Ref | None = None  # -> fndag
     create: InitVar[bool] = False
 
     def __post_init__(self, create=False):
@@ -566,25 +567,18 @@ class Repo:
     def get_dag(self, dag):
         return self.ctx(self.head).dags.get(dag)
 
-    def begin(self, *, name=None, message=None, expr=None):
-        if self.dag:
-            assert expr and not (name or message)
-            ctx = self.ctx(self.index)
-            self.parent_dag = self.dag
-            self.dag = self(FnDag(set(), None, None, expr))
-            self.cached_dag = ctx.cache.dags.get(self.hash([x().value for x in expr]))
-        else:
-            assert name and message and not expr
-            ctx = self.ctx(self.head)
-            self.dag = ctx.dags[name] = self(Dag(set(), None, None))
-            self.index = self(Index(self(Commit(
-                [ctx.head.commit],
-                self(ctx.tree),
-                self(ctx.cache),
-                self.user,
-                self.user,
-                message,
-                name))))
+    def begin(self, *, name=None, message=None):
+        assert name and message
+        ctx = self.ctx(self.head)
+        self.dag = ctx.dags[name] = self(Dag(set(), None, None))
+        self.index = self(Index(self(Commit(
+            [ctx.head.commit],
+            self(ctx.tree),
+            self(ctx.cache),
+            self.user,
+            self.user,
+            message,
+            name))))
 
     def put_datum(self, value):
         def put(value):
@@ -616,34 +610,53 @@ class Repo:
         self.index = self(self.index, Index(self(ctx.commit)))
         return node
 
-    def commit(self, res_or_err=None, cache=None):
-        result, error = (res_or_err, None) if isinstance(res_or_err, Ref) else (None, res_or_err)
-        use_cached = res_or_err is None and cache is None and self.cached_dag
+    def start_fn(self, *, expr=None, cache: bool = False, retry: bool = False):
+        assert expr and self.dag
         ctx = self.ctx(self.index)
-        if not use_cached:
-            assert isinstance(result, Ref) or isinstance(error, Error), 'required: result or error'
-            ctx.dag.result = result
-            ctx.dag.error = error
-            self(self.dag, ctx.dag)
-        if self.parent_dag:
-            if cache:
+        cache_key = self.hash([x().value for x in expr])
+        cached_dag = ctx.cache.dags.get(cache_key)
+        if cache and cached_dag and not (retry and cached_dag().error):
+            # using a cached dag -- maybe still running
+            logger.debug('using cached dag: %r', cached_dag())
+            cached_dag = self(CachedFnDag.from_fndag(cached_dag()))
+            return self.put_node(Fn(dag=cached_dag, expr=expr))
+        logger.debug('starting new fndag')
+        dag = self(FnDag(set(), None, None, expr))
+        if cache:
+            logger.debug('populating cache')
+            dag = self(CachedFnDag.from_fndag(dag()))
+            ctx.cache.dags[cache_key] = dag
+            ctx.commit.cache = self(ctx.cache)
+            ctx.commit.parents = [ctx.head.commit]
+            self.index = self(self.index, Index(self(ctx.commit)))
+        self.parent_dag = self.dag
+        self.dag = dag
+
+    def commit(self, res_or_err, cache: bool = False):
+        result, error = (res_or_err, None) if isinstance(res_or_err, Ref) else (None, res_or_err)
+        ctx = self.ctx(self.index)
+        ctx.dag.result = result
+        ctx.dag.error = error
+        if isinstance(ctx.dag, FnDag):
+            logger.debug('commit called with FnDag')
+            dag = self(self.dag, ctx.dag)
+            if isinstance(ctx.dag, CachedFnDag):
+                logger.debug('commit called with CachedFnDag')
+                assert self.parent_dag is not None
                 cache_key = self.hash([x().value for x in ctx.dag.expr])
-                cache_dag = ctx.cache.dags.get(cache_key)
-                replacing = cache == cache_dag
-                assert not cache_dag or replacing, 'invalid cache replacement'
-                ctx.cache.dags[cache_key] = self(CachedFnDag.from_fndag(self.dag()))
+                if not cache:
+                    del ctx.cache.dags[cache_key]
                 ctx.commit.cache = self(ctx.cache)
-                if replacing:
-                    ctx.commit.parents = [ctx.head.commit]
+                ctx.commit.parents = [ctx.head.commit]
                 self.index = self(self.index, Index(self(ctx.commit)))
-            dag = self.cached_dag if use_cached else self.dag
             self.dag = self.parent_dag
-            self.parent_dag = self.cached_dag = None
+            self.parent_dag = None
             return self.put_node(Fn(dag=dag, expr=dag().expr))
-        else:
-            ctx.commit.tree = self(ctx.tree)
-            ctx.commit.created = ctx.commit.modified = now()
-            commit = self.merge(self.head().commit, self(ctx.commit))
-            self.set_head(self.head, commit)
-            self.delete(self.index)
-            self.index = self.dag = None
+        logger.debug('commit called on named dag')
+        dag = self(self.dag, ctx.dag)
+        ctx.commit.tree = self(ctx.tree)
+        ctx.commit.created = ctx.commit.modified = now()
+        commit = self.merge(self.head().commit, self(ctx.commit))
+        self.set_head(self.head, commit)
+        self.delete(self.index)
+        self.index = self.dag = None
