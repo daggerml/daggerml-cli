@@ -94,30 +94,40 @@ class TestApiBase(unittest.TestCase):
     def wrap(self, tok):
         def inner(op, *args, **kwargs):
             return api.invoke_api(self.CTX, tok, [op, args, kwargs])
-        inner.repo = tok
-        inner.tx = tok.tx
-        inner.begin = lambda *expr: self.wrap(inner('begin', expr=expr))
+        inner.tok = tok
+        inner.start_fn = lambda *expr: self.wrap(inner('start_fn', expr=expr))
         return inner
 
     def begin(self, name, message):
-        return self.wrap(api.invoke_api(self.CTX, None, ['begin', [], dict(name=name, message=message)]))
+        tok = api.begin_dag(self.CTX, name, message)
+        return self.wrap(tok)
+
+    @contextmanager
+    def tx(self, write=False):
+        db = Repo(self.CTX.REPO_PATH, self.CTX.USER, self.CTX.BRANCHREF)
+        with db.tx(write):
+            yield db
 
     def test_create_dag(self):
 
         # dag 0
         d0 = self.begin('d0', 'dag 0')
+        # d0 = api.begin_dag(self.CTX, 'd0', 'dag 0')
         data = {'foo': 23, 'bar': {4, 6}, 'baz': [True, 3]}
+        # n0 = api.invoke_api(self.CTX, d0, ['put_literal', [data], {}])
         n0 = d0('put_literal', data)
+        # api.invoke_api(self.CTX, d0, ['commit', [n0], {}])
         d0('commit', n0)
 
         # dag 1
+        # d0 = api.begin_dag(self.CTX, 'd1', 'dag 1')
         d1 = self.begin('d1', 'dag 1')
         n0 = d1('put_load', 'd0')
-        with d1.tx():
+        with self.tx():
             assert isinstance(n0(), Node)
-            val = n0().value()
+            val = n0().value
         n1 = d1('put_literal', [val, val, 2])
-        with d1.tx():
+        with self.tx():
             assert unroll_datum(n1().value) == [data, data, 2]
         d1('commit', n1)
 
@@ -125,26 +135,12 @@ class TestApiBase(unittest.TestCase):
         d0 = self.begin('d0', 'dag 0')
         n0 = d0('put_literal', Resource({'asdf': 2}))
         n1 = d0('put_literal', 1)
-        with d0.tx():
+        with self.tx():
             assert isinstance(n0(), Node)
             assert isinstance(n1(), Node)
-        fn = d0.begin(n0, n1)
+        fn = d0.start_fn(n0, n1)
         n2 = fn('put_literal', 128)
-        n3 = fn('commit', n2)
+        n3 = fn('commit', n2, d0)
         d0('commit', n3)
-
-    def test_dump_load(self):
-        raw = [{'asdf': 2}, 1]
-        with BasicPyLib().init('d0', 'dag 0') as d0:
-            n0 = d0('put_literal', raw[0])
-            n1 = d0('put_literal', raw[1])
-            n2 = d0('put_literal', [n0, n1])
-            dump = d0('dump', n2)
-            d0('commit', n2)
-            with d0.tx():
-                assert isinstance(n2(), Node)
-        with BasicPyLib().init('d1', 'dag 1') as d1:
-            with d1.tx(True):
-                data = d1('load', dump)
-                data = d1('unroll', data().value)
-        assert data == [{'asdf': 2}, 1]
+        resp = api.invoke_api(self.CTX, None, ['get_node_value', [n2], {}])
+        assert resp == 128

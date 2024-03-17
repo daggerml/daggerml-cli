@@ -150,6 +150,12 @@ def delete_dag(config, name):
             db.set_head(db.head, db(c.commit))
 
 
+def begin_dag(config, name, message):
+    db = Repo(config.REPO_PATH, head=config.BRANCHREF)
+    with db.tx(True):
+        return db.begin(name=name, message=message)
+
+
 ###############################################################################
 # API #########################################################################
 ###############################################################################
@@ -162,48 +168,29 @@ def _invoke_method(f):
 _invoke_method.fn_map = {}
 
 @_invoke_method
-def invoke_begin(db, *, name=None, message=None, expr=None):
+def invoke_start_fn(db, index, expr, cache: bool = False, retry: bool = False):
     with db.tx(True):
-        if expr is None:
-            db.begin(name=name, message=message)
-        else:
-            db.start_fn(expr=expr)
-        return db
+        return db.start_fn(expr=expr, index=index, cache=cache, retry=retry)
 
 @_invoke_method
-def invoke_put_literal(db, data):
+def invoke_put_literal(db, index, data):
     with db.tx(True):
-        return db.put_node(Literal(db.put_datum(data)))
+        return db.put_node(Literal(db.put_datum(data)), index=index)
 
 @_invoke_method
-def invoke_unroll(db, datum_ref):
+def invoke_put_load(db, index, dag):
+    with db.tx(True):
+        return db.put_node(Load(asserting(db.get_dag(dag))), index=index)
+
+@_invoke_method
+def invoke_commit(db, index, result=None, cache=None):
+    with db.tx(True):
+        return db.commit(res_or_err=result, index=index, cache=cache)
+
+@_invoke_method
+def invoke_get_node_value(db, _, node: Ref):
     with db.tx():
-        return unroll_datum(datum_ref)
-
-@_invoke_method
-def invoke_put_load(db, dag):
-    with db.tx(True):
-        return db.put_node(Load(asserting(db.get_dag(dag))))
-
-@_invoke_method
-def invoke_commit(db, result=None, cache=None):
-    with db.tx(True):
-        return db.commit(res_or_err=result, cache=cache)
-
-@_invoke_method
-def invoke_get_ref(db, ref):
-    with db.tx():
-        return ref()
-
-@_invoke_method
-def invoke_dump(db, data):
-    with db.tx():
-        return db.dump(data)
-
-@_invoke_method
-def invoke_load(db, data):
-    with db.tx(True):
-        return db.load(data)
+        return db.get_node_value(node)
 
 
 def invoke_api(config, token, data):
@@ -215,9 +202,10 @@ def invoke_api(config, token, data):
         return inner
 
     try:
-        db = token if token else Repo(config.REPO_PATH, config.USER, config.BRANCHREF)
+        # db = token if token else Repo(config.REPO_PATH, config.USER, config.BRANCHREF)
+        db = Repo(config.REPO_PATH, config.USER, config.BRANCHREF)
         op, args, kwargs = data
-        return _invoke_method.fn_map.get(op, no_such_op(op))(db, *args, **kwargs)
+        return _invoke_method.fn_map.get(op, no_such_op(op))(db, token, *args, **kwargs)
     except Exception as e:
         raise Error.from_ex(e) from e
 

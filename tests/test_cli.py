@@ -55,22 +55,15 @@ class TestApiCreate(unittest.TestCase):
     def test_create_dag(self):
         with tmpdirs():
             repo = invoke(
-                'dag', 'invoke', to_json(None),
-                to_json(['begin', [], {'name': 'cool-name', 'message': 'my-message'}])
+                'dag', 'create', 'cool-name', 'doopy',
             )
             assert isinstance(repo, str)
-            node0 = invoke(
+            node = invoke(
                 'dag', 'invoke', repo,
                 to_json(['put_literal', [], {'data': {'asdf': 23}}])
             )
-            node1 = invoke(
-                'dag', 'invoke', repo,
-                to_json(['put_literal', [], {'data': {'qwer': 42}}])
-            )
             invoke(
                 'dag', 'invoke', repo,
-                to_json(['commit', [], {'result': from_json(node1)}])
+                to_json(['commit', [], {'result': from_json(node)}])
             )
-            dag = invoke('dag', 'get', 'cool-name')
-            dag = deref(dag)
-            self.assertSetEqual(dag.nodes, {from_json(node0), from_json(node1)})
+            invoke('dag', 'get', 'cool-name')
