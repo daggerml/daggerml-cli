@@ -213,7 +213,7 @@ class TestRepo(unittest.TestCase):
                 'map': {'a': 2, 'b': 'asdf'},
                 'set': {12, 13, 'a', 3.4},
                 'resource': Resource({'a': 1, 'b': 2}),
-                'composite': {'asdf': {2, Resource({'a': 8, 'b': 2})}}
+                # 'composite': {'asdf': {2, Resource({'a': 8, 'b': 2})}}
             }
             for k, v in data.items():
                 assert from_json(to_json(v)) == v
@@ -223,3 +223,5 @@ class TestRepo(unittest.TestCase):
                 assert isinstance(node, Node)
                 val = unroll_datum(node.value())
                 assert val == v, f'failed {k}'
+            with self.assertRaises(TypeError):
+                {Resource({'a': 3})}

@@ -132,15 +132,18 @@ class TestApiBase(unittest.TestCase):
         d1('commit', n1)
 
     def test_fn(self):
+        rsrc = Resource({'asdf': 2})
         d0 = self.begin('d0', 'dag 0')
-        n0 = d0('put_literal', Resource({'asdf': 2}))
+        n0 = d0('put_literal', rsrc)
         n1 = d0('put_literal', 1)
         with self.tx():
             assert isinstance(n0(), Node)
             assert isinstance(n1(), Node)
         fn = d0.start_fn(n0, n1)
-        n2 = fn('put_literal', 128)
+        expr = fn('get_expr')
+        assert expr == [rsrc, 1]
+        n2 = fn('put_literal', {'asdf': 128})
         n3 = fn('commit', n2, d0)
         d0('commit', n3)
         resp = api.invoke_api(self.CTX, None, ['get_node_value', [n2], {}])
-        assert resp == 128
+        assert resp == {'asdf': 128}

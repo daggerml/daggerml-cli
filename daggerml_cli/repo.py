@@ -149,19 +149,9 @@ class Error(Exception):
 
 
 @repo_type(db=False)
-@dataclass(frozen=True)
+@dataclass
 class Resource:
-    _data: InitVar[str|None] = None
-
-    def __post_init__(self, data):
-        object.__setattr__(self, '_data', to_json(data))
-
-    @property
-    def data(self):
-        return from_json(self._data)
-
-    def __repr__(self):
-        return f'Resource({self.data!r})'
+    data: Dict[str,str]
 
 
 @repo_type(hash=[])
@@ -599,8 +589,8 @@ class Repo:
         self(index, Index(self(ctx.commit), dag=dag, parent_index=index().parent_index))
         return node
 
-    def get_node_value(self, node: Ref):
-        node = node()
+    def get_node_value(self, ref: Ref):
+        node = ref()
         assert isinstance(node, Node)
         if node.error is not None:
             return node.error

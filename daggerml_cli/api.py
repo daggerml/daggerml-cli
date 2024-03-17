@@ -192,6 +192,11 @@ def invoke_get_node_value(db, _, node: Ref):
     with db.tx():
         return db.get_node_value(node)
 
+@_invoke_method
+def invoke_get_expr(db, index):
+    with db.tx():
+        return [unroll_datum(x().value) for x in index().dag().expr]
+
 
 def invoke_api(config, token, data):
     db = None
