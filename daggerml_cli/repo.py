@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import traceback as tb
 from contextlib import contextmanager
 from dataclasses import InitVar, dataclass, field, fields, is_dataclass
 from hashlib import md5
@@ -143,7 +144,10 @@ class Error(Exception):
 
     @classmethod
     def from_ex(cls, ex):
-        return ex if isinstance(ex, Error) else cls(str(ex), {}, type(ex).__name__)
+        if isinstance(ex, Error):
+            return ex
+        formatted_tb = tb.format_exception(type(ex), value=ex, tb=ex.__traceback__)
+        return cls(str(ex), {'trace': formatted_tb}, type(ex).__name__)
 
 
 @repo_type(db=False)
@@ -230,7 +234,8 @@ class Load:
 
     @property
     def error(self):
-        return self.dag().result().error
+        dag = self.dag()
+        return dag.error
 
 
 @repo_type(db=False)
@@ -620,8 +625,9 @@ class Repo:
 
     def commit(self, res_or_err, index: Ref, cache: bool = False):
         result, error = (res_or_err, None) if isinstance(res_or_err, Ref) else (None, res_or_err)
-        assert result is not None or error is not None
+        assert result is not None or error is not None, 'both result and error are none'
         ctx = self.ctx(index)
+        assert (ctx.dag.result or ctx.dag.error) is None, 'dag has been committed already'
         ctx.dag.result = result
         ctx.dag.error = error
         dag = self(index().dag, ctx.dag)
