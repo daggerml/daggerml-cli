@@ -48,7 +48,7 @@ class TestRepo(unittest.TestCase):
         db = Repo(self.tmpdir, 'testy@test', create=True)
         with db.tx(True):
             dag = db.begin(name='d0', message='1st dag')
-            n0 = db.put_node(Literal(db.put_datum(Resource({'foo': 42}))), index=dag)
+            n0 = db.put_node(Literal(db.put_datum(Resource('a'))), index=dag)
             db.commit(n0, index=dag)
 
     def test_cache_basic(self):
@@ -56,7 +56,7 @@ class TestRepo(unittest.TestCase):
         with db.tx(True):
             dag = db.begin(name='d0', message='1st dag')
             expr = [
-                Literal(db.put_datum(Resource({'foo': 42}))),
+                Literal(db.put_datum(Resource(self.id()))),
                 Literal(db.put_datum(['howdy', 1])),
                 Literal(db.put_datum(2)),
             ]
@@ -86,7 +86,7 @@ class TestRepo(unittest.TestCase):
         with db.tx(True):
             dag = db.begin(name='d0', message='1st dag')
             expr = [
-                Literal(db.put_datum(Resource({'foo': 42}))),
+                Literal(db.put_datum(Resource(self.id()))),
                 Literal(db.put_datum(['howdy', 1])),
                 Literal(db.put_datum(2)),
             ]
@@ -110,7 +110,7 @@ class TestRepo(unittest.TestCase):
         with db.tx(True):
             dag = db.begin(name='d0', message='1st dag')
             expr = [
-                Literal(db.put_datum(Resource({'foo': 42}))),
+                Literal(db.put_datum(Resource(self.id()))),
                 Literal(db.put_datum(['howdy', 1])),
                 Literal(db.put_datum(2)),
             ]
@@ -131,7 +131,7 @@ class TestRepo(unittest.TestCase):
         db = Repo(self.tmpdir, 'testy@test', create=True)
         with db.tx(True):
             expr = [
-                Literal(db.put_datum(Resource({'foo': 42}))),
+                Literal(db.put_datum(Resource(self.id()))),
                 Literal(db.put_datum(['howdy', 1])),
                 Literal(db.put_datum(2)),
             ]
@@ -144,7 +144,7 @@ class TestRepo(unittest.TestCase):
             db.commit(node, index=dag)
         with db.tx(True):
             expr = [
-                Literal(db.put_datum(Resource({'foo': 42}))),
+                Literal(db.put_datum(Resource(self.id()))),
                 Literal(db.put_datum(['howdy', 1])),
                 Literal(db.put_datum(2)),
             ]
@@ -194,11 +194,6 @@ class TestRepo(unittest.TestCase):
                 db.walk_ordered(self.get_dag(db, 'd0')),
             )
 
-    def test_resource_access(self):
-        data = {'a': 2, 'b': {1, 2, 3}}
-        resource = Resource(data)
-        assert resource.data == data
-
     def test_datatypes(self):
         db = Repo(self.tmpdir, 'testy@test', create=True)
         with db.tx(True):
@@ -212,8 +207,8 @@ class TestRepo(unittest.TestCase):
                 'list': [3, 4, 5],
                 'map': {'a': 2, 'b': 'asdf'},
                 'set': {12, 13, 'a', 3.4},
-                'resource': Resource({'a': 1, 'b': 2}),
-                # 'composite': {'asdf': {2, Resource({'a': 8, 'b': 2})}}
+                'resource': Resource('qwer'),
+                'composite': {'asdf': {2, Resource('qwer')}},
             }
             for k, v in data.items():
                 assert from_json(to_json(v)) == v
@@ -223,5 +218,3 @@ class TestRepo(unittest.TestCase):
                 assert isinstance(node, Node)
                 val = unroll_datum(node.value())
                 assert val == v, f'failed {k}'
-            with self.assertRaises(TypeError):
-                {Resource({'a': 3})}

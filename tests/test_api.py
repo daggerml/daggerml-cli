@@ -132,7 +132,7 @@ class TestApiBase(unittest.TestCase):
         d1('commit', n1)
 
     def test_fn(self):
-        rsrc = Resource({'asdf': 2})
+        rsrc = Resource('asdf')
         d0 = self.begin('d0', 'dag 0')
         n0 = d0('put_literal', rsrc)
         n1 = d0('put_literal', 1)

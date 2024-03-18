@@ -149,9 +149,9 @@ class Error(Exception):
 
 
 @repo_type(db=False)
-@dataclass
+@dataclass(frozen=True, slots=True)
 class Resource:
-    data: Dict[str,str]
+    data: str
 
 
 @repo_type(hash=[])
