@@ -136,6 +136,8 @@ ignore = [
   "ARG001",
   # Line too long
   "E501",
+  # overwritten loop variable
+  "PLW2901"
 ]
 unfixable = [
   # Don't touch unused imports

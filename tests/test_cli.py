@@ -5,6 +5,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from click.testing import CliRunner
+from click.testing import Result as ClickResult
 
 from daggerml_cli.cli import cli, from_json, to_json
 
@@ -39,6 +40,7 @@ class TestApiCreate(unittest.TestCase):
         with tmpdirs(init=False) as (conf_dir, proj_dir):
             conf_dir, proj_dir = Path(conf_dir), Path(proj_dir)
             result = invoke('repo', 'create', 'foopy', raw=True)
+            assert isinstance(result, ClickResult)
             assert result.output == "Created repository: foopy\n"
             assert result.exit_code == 0
             assert os.path.isdir(conf_dir)
@@ -46,6 +48,7 @@ class TestApiCreate(unittest.TestCase):
             assert len(os.listdir(conf_dir)) > 0
             assert len(os.listdir(proj_dir)) == 0
             result = invoke('project', 'init', 'foopy', raw=True)
+            assert isinstance(result, ClickResult)
             assert result.output == "Initialized project with repo: foopy\n"
             assert result.exit_code == 0
             assert len(os.listdir(proj_dir)) > 0

@@ -7,8 +7,6 @@ from hashlib import md5
 from typing import Any, Dict
 from uuid import uuid4
 
-from graphlib import TopologicalSorter
-
 from daggerml_cli.db import db_type, dbenv
 from daggerml_cli.pack import packb, register, unpackb
 from daggerml_cli.util import asserting, makedirs, now

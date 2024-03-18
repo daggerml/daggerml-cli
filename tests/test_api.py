@@ -7,7 +7,7 @@ from tabulate import tabulate
 
 from daggerml_cli import api
 from daggerml_cli.config import Config
-from daggerml_cli.repo import Node, Ref, Repo, Resource, unroll_datum
+from daggerml_cli.repo import Node, Repo, Resource, unroll_datum
 
 
 def dump(repo, count=None):

@@ -1,16 +1,12 @@
-import re
+#!/usr/bin/env python3
 import unittest
 from collections import Counter
 from tempfile import TemporaryDirectory
 
-import pytest
 from tabulate import tabulate
 
 from daggerml_cli.repo import (
-    CachedFnDag,
-    FnDag,
     Literal,
-    Load,
     Node,
     Ref,
     Repo,
