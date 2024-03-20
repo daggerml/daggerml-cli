@@ -3,9 +3,8 @@ import logging
 import os
 import traceback as tb
 from contextlib import contextmanager
-from dataclasses import InitVar, dataclass, field, fields, is_dataclass
+from dataclasses import InitVar, dataclass, field, fields, is_dataclass, replace
 from hashlib import md5
-from typing import Any, Dict
 from uuid import uuid4
 
 from daggerml_cli.db import db_type, dbenv
@@ -165,9 +164,8 @@ class Head:
 @repo_type(hash=[])
 @dataclass
 class Index(Head):
-    ""
-    dag: Ref
-    parent_index: Ref|None = None
+    dag: Ref  # -> Dag|FnDag|CachedFnDag
+    parent_index: Ref|None = None  # -> index
 
 
 @repo_type
@@ -201,7 +199,7 @@ class Dag:
 @dataclass
 class FnDag(Dag):
     expr: list[Ref]  # -> node
-    meta: Dict[str, Any] = field(default_factory=dict)
+    meta: str = ''
 
 
 @repo_type(hash=[])
@@ -623,6 +621,18 @@ class Repo:
             dag = self(dag)
         return self(Index(self(ctx.commit), dag=dag, parent_index=index))
 
+    def get_fn_meta(self, fndag_ref: Ref) -> str:
+        fndag = fndag_ref()
+        assert isinstance(fndag, FnDag)
+        return fndag.meta
+
+    def update_fn_meta(self, fndag_ref: Ref, old_meta: str, new_meta: str) -> None:
+        fndag = fndag_ref()
+        assert isinstance(fndag, FnDag)
+        if fndag.meta != old_meta:
+            raise Error('old metadata', code='old-metadata')
+        self(fndag_ref, replace(fndag, meta=new_meta))
+
     def commit(self, res_or_err, index: Ref, cache: bool = False):
         result, error = (res_or_err, None) if isinstance(res_or_err, Ref) else (None, res_or_err)
         assert result is not None or error is not None, 'both result and error are none'
@@ -633,6 +643,7 @@ class Repo:
         dag = self(index().dag, ctx.dag)
         if isinstance(ctx.dag, FnDag):
             logger.debug('commit called with FnDag')
+            self.update_fn_meta(index().dag, ctx.dag.meta, '')
             parent_index = index().parent_index
             assert parent_index is not None
             if isinstance(ctx.dag, CachedFnDag):

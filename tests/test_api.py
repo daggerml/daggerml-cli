@@ -7,7 +7,7 @@ from tabulate import tabulate
 
 from daggerml_cli import api
 from daggerml_cli.config import Config
-from daggerml_cli.repo import Node, Repo, Resource, unroll_datum
+from daggerml_cli.repo import Error, Node, Repo, Resource, unroll_datum
 
 
 def dump(repo, count=None):
@@ -109,18 +109,12 @@ class TestApiBase(unittest.TestCase):
             yield db
 
     def test_create_dag(self):
-
         # dag 0
         d0 = self.begin('d0', 'dag 0')
-        # d0 = api.begin_dag(self.CTX, 'd0', 'dag 0')
         data = {'foo': 23, 'bar': {4, 6}, 'baz': [True, 3]}
-        # n0 = api.invoke_api(self.CTX, d0, ['put_literal', [data], {}])
         n0 = d0('put_literal', data)
-        # api.invoke_api(self.CTX, d0, ['commit', [n0], {}])
         d0('commit', n0)
-
         # dag 1
-        # d0 = api.begin_dag(self.CTX, 'd1', 'dag 1')
         d1 = self.begin('d1', 'dag 1')
         n0 = d1('put_load', 'd0')
         with self.tx():
@@ -147,3 +141,22 @@ class TestApiBase(unittest.TestCase):
         d0('commit', n3)
         resp = api.invoke_api(self.CTX, None, ['get_node_value', [n2], {}])
         assert resp == {'asdf': 128}
+
+    def test_fn_meta(self):
+        d0 = self.begin('d0', 'dag 0')
+        n0 = d0('put_literal', Resource('asdf'))
+        n1 = d0('put_literal', 1)
+        fn = d0.start_fn(n0, n1)
+        assert fn('get_fn_meta') == ''
+        assert fn('update_fn_meta', '', 'asdfqwer') is None
+        assert fn('get_fn_meta') == 'asdfqwer'
+        with self.assertRaisesRegex(Error, 'old metadata'):
+            assert fn('update_fn_meta', '', 'asdfqwer') is None
+        assert fn('get_fn_meta') == 'asdfqwer'
+        n2 = fn('put_literal', {'asdf': 128})
+        with self.tx():
+            dag_ref = fn.tok().dag
+        fn('commit', n2, d0)
+        with self.tx():
+            assert dag_ref().meta == ''
+            assert list(dag_ref().result().value().value.keys()) == ['asdf']

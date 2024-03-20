@@ -5,7 +5,7 @@ from shutil import rmtree
 from asciidag.graph import Graph as AsciiGraph
 from asciidag.node import Node as AsciiNode
 
-from daggerml_cli.repo import DEFAULT, Error, Literal, Load, Ref, Repo, unroll_datum
+from daggerml_cli.repo import DEFAULT, Error, FnDag, Literal, Load, Ref, Repo, unroll_datum
 from daggerml_cli.util import asserting, makedirs
 
 ###############################################################################
@@ -196,6 +196,22 @@ def invoke_get_node_value(db, _, node: Ref):
 def invoke_get_expr(db, index):
     with db.tx():
         return [unroll_datum(x().value) for x in index().dag().expr]
+
+@_invoke_method
+def invoke_get_fn_meta(db, index):
+    with db.tx():
+        assert isinstance(index, Ref), 'wtf index wasnt Ref'
+        assert index is not None, 'wtf index was None!'
+        assert index() is not None, 'wtf index() was None!'
+        fndag = index().dag
+        assert isinstance(fndag(), FnDag)
+        return db.get_fn_meta(fndag)
+
+@_invoke_method
+def invoke_update_fn_meta(db, index, old_meta: str, new_meta: str):
+    with db.tx(True):
+        fndag = index().dag
+        return db.update_fn_meta(fndag, old_meta, new_meta)
 
 
 def invoke_api(config, token, data):

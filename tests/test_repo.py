@@ -6,6 +6,7 @@ from tempfile import TemporaryDirectory
 from tabulate import tabulate
 
 from daggerml_cli.repo import (
+    Error,
     Literal,
     Node,
     Ref,
@@ -46,6 +47,27 @@ class TestRepo(unittest.TestCase):
             dag = db.begin(name='d0', message='1st dag')
             n0 = db.put_node(Literal(db.put_datum(Resource('a'))), index=dag)
             db.commit(n0, index=dag)
+
+    def test_update_fn_meta(self):
+        db = Repo(self.tmpdir, 'testy@test', create=True)
+        with db.tx(True):
+            dag = db.begin(name='d0', message='1st dag')
+            expr = [
+                Literal(db.put_datum(Resource(self.id()))),
+                Literal(db.put_datum(['howdy', 1])),
+                Literal(db.put_datum(2)),
+            ]
+            expr = [db.put_node(x, index=dag) for x in expr]
+            # start without cache
+            fndag = db.start_fn(expr=expr, index=dag, cache=False)
+            fndag = fndag().dag
+            assert db.get_fn_meta(fndag) == ''
+            assert db.get_fn_meta(fndag) == fndag().meta
+            assert db.update_fn_meta(fndag, '', 'asdf') is None
+            assert db.get_fn_meta(fndag) == 'asdf'
+            with self.assertRaisesRegex(Error, 'old metadata'):
+                assert db.update_fn_meta(fndag, 'wrong-value', 'qwer') is None
+            assert db.get_fn_meta(fndag) == 'asdf'
 
     def test_cache_basic(self):
         db = Repo(self.tmpdir, 'testy@test', create=True)

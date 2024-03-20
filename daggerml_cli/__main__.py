@@ -4,6 +4,5 @@
 import sys
 
 if __name__ == "__main__":
-    from daggerml_cli.cli import daggerml_cli
-
-    sys.exit(daggerml_cli())
+    from daggerml_cli.cli import cli
+    sys.exit(cli())
