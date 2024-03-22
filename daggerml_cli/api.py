@@ -168,24 +168,24 @@ def _invoke_method(f):
 _invoke_method.fn_map = {}
 
 @_invoke_method
-def invoke_start_fn(db, index, expr, cache: bool = False, retry: bool = False):
+def invoke_start_fn(db, index, dag, expr, cache: bool = False, retry: bool = False):
     with db.tx(True):
-        return db.start_fn(expr=expr, index=index, cache=cache, retry=retry)
+        return db.start_fn(index=index, dag=dag, expr=expr, cache=cache, retry=retry)
 
 @_invoke_method
-def invoke_put_literal(db, index, data):
+def invoke_put_literal(db, index, dag, data):
     with db.tx(True):
-        return db.put_node(Literal(db.put_datum(data)), index=index)
+        return db.put_node(Literal(db.put_datum(data)), index=index, dag=dag)
 
 @_invoke_method
-def invoke_put_load(db, index, dag):
+def invoke_put_load(db, index, dag, load_dag):
     with db.tx(True):
-        return db.put_node(Load(asserting(db.get_dag(dag))), index=index)
+        return db.put_node(Load(asserting(db.get_dag(load_dag))), index=index, dag=dag)
 
 @_invoke_method
-def invoke_commit(db, index, result=None, cache=None):
+def invoke_commit(db, index, dag, result, **kw):
     with db.tx(True):
-        return db.commit(res_or_err=result, index=index, cache=cache)
+        return db.commit(res_or_err=result, index=index, dag=dag, **kw)
 
 @_invoke_method
 def invoke_get_node_value(db, _, node: Ref):
@@ -193,24 +193,19 @@ def invoke_get_node_value(db, _, node: Ref):
         return db.get_node_value(node)
 
 @_invoke_method
-def invoke_get_expr(db, index):
+def invoke_get_expr(db, _, dag):
     with db.tx():
-        return [unroll_datum(x().value) for x in index().dag().expr]
+        return [unroll_datum(x().value) for x in dag().expr]
 
 @_invoke_method
-def invoke_get_fn_meta(db, index):
+def invoke_get_fn_meta(db, _, fndag):
     with db.tx():
-        assert isinstance(index, Ref), 'wtf index wasnt Ref'
-        assert index is not None, 'wtf index was None!'
-        assert index() is not None, 'wtf index() was None!'
-        fndag = index().dag
         assert isinstance(fndag(), FnDag)
         return db.get_fn_meta(fndag)
 
 @_invoke_method
-def invoke_update_fn_meta(db, index, old_meta: str, new_meta: str):
+def invoke_update_fn_meta(db, _, fndag, old_meta: str, new_meta: str):
     with db.tx(True):
-        fndag = index().dag
         return db.update_fn_meta(fndag, old_meta, new_meta)
 
 

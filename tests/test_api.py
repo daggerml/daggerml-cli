@@ -17,44 +17,6 @@ def dump(repo, count=None):
     rows = rows[:min(count, len(rows))] if count is not None else rows
     print('\n' + tabulate(rows, tablefmt="simple_grid"))
 
-@dataclass
-class BasicPyLib:
-    d0: TemporaryDirectory = field(default_factory=TemporaryDirectory)
-    d1: TemporaryDirectory = field(default_factory=TemporaryDirectory)
-    ctx: Config | None = None
-    token: Repo | None = None
-
-    @contextmanager
-    def init(self, *args):
-        with self.d0 as d0, self.d1 as d1:
-            self.ctx = Config(
-                _CONFIG_DIR=d0,
-                _PROJECT_DIR=d1,
-                _USER='user0',
-            )
-            api.create_repo(self.ctx, 'test')
-            api.use_repo(self.ctx, 'test')
-            api.init_project(self.ctx, 'test')
-            if len(args):
-                self = self.begin(*args)
-            yield self
-
-    def __call__(self, op, *args, **kwargs):
-        return api.invoke_api(self.ctx, self.token, [op, args, kwargs])
-
-    def begin(self, *args):
-        if self.token is None:
-            kw = dict(zip(['name', 'message'], args, strict=True))
-        else:
-            kw = {'expr': args}
-        token = api.invoke_api(self.ctx, self.token, ['begin', [], kw])
-        return replace(self, token=token)
-
-    @property
-    def tx(self):
-        return self.token.tx
-
-
 class TestApiCreate(unittest.TestCase):
 
     def test_create_dag(self):
@@ -95,12 +57,11 @@ class TestApiBase(unittest.TestCase):
         def inner(op, *args, **kwargs):
             return api.invoke_api(self.CTX, tok, [op, args, kwargs])
         inner.tok = tok
-        inner.start_fn = lambda *expr: self.wrap(inner('start_fn', expr=expr))
         return inner
 
     def begin(self, name, message):
-        tok = api.begin_dag(self.CTX, name, message)
-        return self.wrap(tok)
+        tok, dag = api.begin_dag(self.CTX, name, message)
+        return self.wrap(tok), dag
 
     @contextmanager
     def tx(self, write=False):
@@ -110,53 +71,51 @@ class TestApiBase(unittest.TestCase):
 
     def test_create_dag(self):
         # dag 0
-        d0 = self.begin('d0', 'dag 0')
+        d0, dag = self.begin('d0', 'dag 0')
         data = {'foo': 23, 'bar': {4, 6}, 'baz': [True, 3]}
-        n0 = d0('put_literal', data)
-        d0('commit', n0)
+        n0 = d0('put_literal', dag, data)
+        d0('commit', dag, n0)
         # dag 1
-        d1 = self.begin('d1', 'dag 1')
-        n0 = d1('put_load', 'd0')
+        d1, dag = self.begin('d1', 'dag 1')
+        n0 = d1('put_load', dag, 'd0')
         with self.tx():
             assert isinstance(n0(), Node)
             val = n0().value
-        n1 = d1('put_literal', [val, val, 2])
+        n1 = d1('put_literal', dag, [val, val, 2])
         with self.tx():
             assert unroll_datum(n1().value) == [data, data, 2]
-        d1('commit', n1)
+        d1('commit', dag, n1)
 
     def test_fn(self):
         rsrc = Resource('asdf')
-        d0 = self.begin('d0', 'dag 0')
-        n0 = d0('put_literal', rsrc)
-        n1 = d0('put_literal', 1)
+        d0, dag = self.begin('d0', 'dag 0')
+        n0 = d0('put_literal', dag, rsrc)
+        n1 = d0('put_literal', dag, 1)
         with self.tx():
             assert isinstance(n0(), Node)
             assert isinstance(n1(), Node)
-        fn = d0.start_fn(n0, n1)
-        expr = fn('get_expr')
+        fn = d0('start_fn', expr=[n0, n1], dag=dag)
+        expr = d0('get_expr', fn)
         assert expr == [rsrc, 1]
-        n2 = fn('put_literal', {'asdf': 128})
-        n3 = fn('commit', n2, d0)
-        d0('commit', n3)
+        n2 = d0('put_literal', fn, {'asdf': 128})
+        n3 = d0('commit', fn, n2, parent_dag=dag)
+        d0('commit', dag, n3)
         resp = api.invoke_api(self.CTX, None, ['get_node_value', [n2], {}])
         assert resp == {'asdf': 128}
 
     def test_fn_meta(self):
-        d0 = self.begin('d0', 'dag 0')
-        n0 = d0('put_literal', Resource('asdf'))
-        n1 = d0('put_literal', 1)
-        fn = d0.start_fn(n0, n1)
-        assert fn('get_fn_meta') == ''
-        assert fn('update_fn_meta', '', 'asdfqwer') is None
-        assert fn('get_fn_meta') == 'asdfqwer'
+        d0, dag = self.begin('d0', 'dag 0')
+        n0 = d0('put_literal', dag, Resource('asdf'))
+        n1 = d0('put_literal', dag, 1)
+        fn = d0('start_fn', dag, [n0, n1])
+        assert d0('get_fn_meta', fn) == ''
+        assert d0('update_fn_meta', fn, '', 'asdfqwer') is None
+        assert d0('get_fn_meta', fn) == 'asdfqwer'
         with self.assertRaisesRegex(Error, 'old metadata'):
-            assert fn('update_fn_meta', '', 'asdfqwer') is None
-        assert fn('get_fn_meta') == 'asdfqwer'
-        n2 = fn('put_literal', {'asdf': 128})
+            assert d0('update_fn_meta', fn, '', 'asdfqwer') is None
+        assert d0('get_fn_meta', fn) == 'asdfqwer'
+        n2 = d0('put_literal', fn, {'asdf': 128})
+        d0('commit', fn, n2, parent_dag=dag)
         with self.tx():
-            dag_ref = fn.tok().dag
-        fn('commit', n2, d0)
-        with self.tx():
-            assert dag_ref().meta == ''
-            assert list(dag_ref().result().value().value.keys()) == ['asdf']
+            assert fn().meta == ''
+            assert list(fn().result().value().value.keys()) == ['asdf']
