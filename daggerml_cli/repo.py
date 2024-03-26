@@ -193,6 +193,9 @@ class Dag:
     result: Ref | None  # -> node
     error: Error | None
 
+    def is_finished(self):
+        return (self.result or self.error) is not None
+
 
 @repo_type(hash=[])
 @dataclass
@@ -603,11 +606,15 @@ class Repo:
         ctx = Ctx.from_head(index, dag=dag)
         cache_key = self.hash([x().value for x in expr])
         cached_dag = ctx.cache.dags.get(cache_key)
-        if cache and cached_dag and not (retry and (cached_dag().result or cached_dag().error)):
-            # using a cached dag -- maybe still running
-            logger.debug('using cached dag: %r', cached_dag())
-            cached_dag = self(CachedFnDag.from_fndag(cached_dag()))
-            return self.put_node(Fn(dag=cached_dag, expr=expr), index=index, dag=dag)
+        # if cache and cached_dag and cached_dag().is_finished() and not retry:
+        if cache and cached_dag:
+            if cached_dag().is_finished() and not retry:
+                logger.debug('using finished cached dag: %r', cached_dag())
+                cached_dag = self(CachedFnDag.from_fndag(cached_dag()))
+                return self.put_node(Fn(dag=cached_dag, expr=expr), index=index, dag=dag)
+            if not cached_dag().is_finished():
+                logger.debug('returning unfinished cached dag: %r', cached_dag())
+                return cached_dag
         logger.debug('starting new fndag')
         fndag = FnDag(set(), None, None, expr)
         ctx.commit.parents = [ctx.head.commit]
@@ -643,8 +650,6 @@ class Repo:
         ctx.dag.error = error
         if isinstance(ctx.dag, FnDag):
             ctx.dag.meta = ''
-        self(dag, ctx.dag)
-        if isinstance(ctx.dag, FnDag):
             assert parent_dag is not None
             logger.debug('commit called with FnDag')
             if isinstance(ctx.dag, CachedFnDag):
@@ -654,12 +659,14 @@ class Repo:
                     del ctx.cache.dags[cache_key]
                 ctx.commit.cache = self(ctx.cache)
                 ctx.commit.modified = now()
+            self(dag, ctx.dag)
             self(index, Index(self(ctx.commit)))
             return self.put_node(Fn(dag=dag, expr=dag().expr), index=index, dag=parent_dag)
         assert parent_dag is None
         logger.debug('commit called on named dag')
         ctx.commit.tree = self(ctx.tree)
         ctx.commit.created = ctx.commit.modified = now()
+        self(dag, ctx.dag)
         commit = self.merge(self.head().commit, self(ctx.commit))
         self.set_head(self.head, commit)
         self.delete(index)
