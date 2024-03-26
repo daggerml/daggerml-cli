@@ -578,7 +578,7 @@ class Repo:
             self.user,
             message)
         index = self(Index(self(commit)))
-        return index, dag
+        return [index, dag]
 
     def put_node(self, data, index: Ref, dag: Ref):
         ctx = Ctx.from_head(index, dag=dag)
