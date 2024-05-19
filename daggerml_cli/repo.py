@@ -69,7 +69,7 @@ def unroll_datum(value):
             return {get(x) for x in value}
         if isinstance(value, dict):
             return {k: get(v) for k, v in value.items()}
-        raise TypeError(f'unknown type: {type(value)}')
+        raise TypeError(f'unroll_datum unknown type: {type(value)}')
     return get(value)
 
 
@@ -543,7 +543,7 @@ class Repo:
         return self(head, Head(commit))
 
     def checkout(self, ref):
-        assert ref.type in ['head'], f'unknown ref type: {ref.type}'
+        assert ref.type in ['head'], f'checkout unknown ref type: {ref.type}'
         assert ref(), f'ref not found: {ref.to}'
         self.head = ref
 
@@ -564,7 +564,7 @@ class Repo:
                 return self(Datum({put(x) for x in value}))
             if isinstance(value, dict):
                 return self(Datum({k: put(v) for k, v in value.items()}))
-            raise TypeError(f'unknown type: {type(value)}')
+            raise TypeError(f'repo put_datum unknown type: {type(value)}')
         return put(value)
 
     def get_dag(self, dag):
