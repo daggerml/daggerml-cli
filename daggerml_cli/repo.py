@@ -226,7 +226,7 @@ class Literal:
 @repo_type(db=False)
 @dataclass
 class Load:
-    dag: Ref  # -> dag | fndag
+    dag: Ref  # -> dag | fndag | cached_fndag
 
     @property
     def value(self):
@@ -404,7 +404,7 @@ class Repo:
                 xs += [a for a in x.values() if a not in result]
             elif is_dataclass(x):
                 xs += [getattr(x, y.name) for y in fields(x)]
-        return result
+        return list(reversed(result))
 
     def heads(self):
         return [k for k in self.cursor('head')]
@@ -595,13 +595,32 @@ class Repo:
 
     def get_node_value(self, ref: Ref):
         node = ref()
-        assert isinstance(node, Node)
+        assert isinstance(node, Node), f'invalid type: {type(node)}'
         if node.error is not None:
             return node.error
         val = node.value()
         assert isinstance(val, Datum)
         return unroll_datum(val)
 
+    def dump_dag(self, dag, path, name='main', *, create=False):
+        with self.tx():
+            objs = [(x, x()) for x in self.walk_ordered(dag)]
+        if create and not os.path.isdir(path):
+            makedirs(path)
+        other = Repo(path, create=create)
+        with other.tx(True):
+            *_, new_dag = (other.put(a, b) for a, b in objs)
+            ctx = Ctx.from_head(other.head)
+            dag = ctx.dags[name] = new_dag
+            commit = Commit(
+                [ctx.head.commit],
+                other(ctx.tree),
+                other(ctx.cache),
+                self.user,
+                self.user,
+                'auto-generated')
+            index = other(Index(other(commit)))
+        return [index, new_dag]
     def start_fn(self, *, expr, index: Ref, dag: Ref, cache: bool = False, retry: bool = False):
         ctx = Ctx.from_head(index, dag=dag)
         cache_key = self.hash([x().value for x in expr])

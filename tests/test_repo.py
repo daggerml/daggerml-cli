@@ -237,3 +237,20 @@ class TestRepo(unittest.TestCase):
                 assert isinstance(node, Node)
                 val = unroll_datum(node.value())
                 assert val == v, f'failed {k}'
+
+    def test_dag_dump(self):
+        rsrc = Resource('asdf')
+        db = Repo(self.tmpdir, 'testy@test', create=True)
+        with db.tx(True):
+            index, dag = db.begin(name='d0', message='1st dag')
+            node0 = db.put_node(Literal(db.put_datum(rsrc)), index=index, dag=dag)
+        with TemporaryDirectory() as tmpd:
+            new_index, new_dag = db.dump_dag(dag, tmpd, name='fn', create=True)
+            repo = Repo(tmpd)
+            with repo.tx(True):
+                assert repo.get_node_value(node0)  == rsrc
+                node1 = repo.put_node(Literal(repo.put_datum(23)), index=new_index, dag=new_dag)
+                assert repo.get_node_value(node1)  == 23
+        with db.tx():
+            with self.assertRaisesRegex(AssertionError, 'invalid type'):
+                db.get_node_value(node1)

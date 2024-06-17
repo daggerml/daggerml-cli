@@ -1,6 +1,7 @@
 import os
 import unittest
 from contextlib import contextmanager
+from dataclasses import dataclass
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -10,36 +11,42 @@ from click.testing import Result as ClickResult
 from daggerml_cli.cli import cli, from_json, to_json
 
 
-def invoke(*args, raw=False):
-    result = CliRunner().invoke(cli, args)
-    if raw:
-        return result
-    return result.output
+@dataclass
+class Api:
+    _config_dir: str
+    _project_dir: str
 
-def deref(ref):
-    res = invoke('dag', 'invoke', to_json(None), to_json(['get_ref', [from_json(ref)], {}]))
-    return from_json(res)
+    def invoke(self, *args, raw=False):
+        flags = ['--config-dir', self._config_dir, '--project-dir', self._project_dir]
+        result = CliRunner().invoke(cli, [*flags, *args])
+        if raw:
+            return result
+        return result.output
+
+    @property
+    def config_dir(self):
+        return Path(self._config_dir)
+
+    @property
+    def project_dir(self):
+        return Path(self._project_dir)
 
 
 @contextmanager
 def tmpdirs(*, init=True):
     with TemporaryDirectory() as tmpd0, TemporaryDirectory() as tmpd1:
-        old_env = dict(os.environ)
-        os.environ['DML_CONFIG_DIR'] = tmpd0
-        os.environ['DML_PROJECT_DIR'] = tmpd1
+        api = Api(tmpd0, tmpd1)
         if init:
-            invoke('repo', 'create', 'foopy')
-            invoke('project', 'init', 'foopy')
-        yield tmpd0, tmpd1
-        os.environ.clear()
-        os.environ.update(old_env)
+            api.invoke('repo', 'create', 'foopy')
+            api.invoke('project', 'init', 'foopy')
+        yield api
 
 class TestApiCreate(unittest.TestCase):
 
     def test_create_repo(self):
-        with tmpdirs(init=False) as (conf_dir, proj_dir):
-            conf_dir, proj_dir = Path(conf_dir), Path(proj_dir)
-            result = invoke('repo', 'create', 'foopy', raw=True)
+        with tmpdirs(init=False) as api:
+            conf_dir, proj_dir = api.config_dir, api.project_dir
+            result = api.invoke('repo', 'create', 'foopy', raw=True)
             assert isinstance(result, ClickResult)
             assert result.output == "Created repository: foopy\n"
             assert result.exit_code == 0
@@ -47,7 +54,7 @@ class TestApiCreate(unittest.TestCase):
             assert os.path.isdir(proj_dir)
             assert len(os.listdir(conf_dir)) > 0
             assert len(os.listdir(proj_dir)) == 0
-            result = invoke('project', 'init', 'foopy', raw=True)
+            result = api.invoke('project', 'init', 'foopy', raw=True)
             assert isinstance(result, ClickResult)
             assert result.output == "Initialized project with repo: foopy\n"
             assert result.exit_code == 0
@@ -56,17 +63,28 @@ class TestApiCreate(unittest.TestCase):
         assert not os.path.isdir(proj_dir)
 
     def test_create_dag(self):
-        with tmpdirs():
-            repo = invoke(
+        with tmpdirs() as api:
+            repo = api.invoke(
                 'dag', 'create', 'cool-name', 'doopy',
             )
             assert isinstance(repo, str)
-            node = invoke(
+            node = api.invoke(
                 'dag', 'invoke', repo,
                 to_json(['put_literal', [], {'data': {'asdf': 23}}])
             )
-            invoke(
+            api.invoke(
                 'dag', 'invoke', repo,
                 to_json(['commit', [], {'result': from_json(node)}])
             )
-            invoke('dag', 'get', 'cool-name')
+            api.invoke('dag', 'get', 'cool-name')
+
+    def test_repo_dump(self):
+        with tmpdirs() as to_api:
+            with tmpdirs() as from_api:
+                repo = from_api.invoke(
+                    'dag', 'create', 'cool-name', 'doopy',
+                )
+                node = from_api.invoke(
+                    'dag', 'invoke', repo,
+                    to_json(['put_literal', [], {'data': {'asdf': 23}}])
+                )
