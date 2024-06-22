@@ -9,6 +9,7 @@ from daggerml_cli.repo import (
     Ctx,
     Error,
     Literal,
+    Load,
     Node,
     Ref,
     Repo,
@@ -47,11 +48,11 @@ class TestRepo(unittest.TestCase):
         with db.tx(True):
             index, dag = db.begin(name='d0', message='1st dag')
             n0 = db.put_node(Literal(db.put_datum(Resource('a'))), index=index, dag=dag)
-            db.commit(n0, index=index, dag=dag)
+            db.commit(n0, index=index)
 
     def test_update_fn_meta(self):
         db = Repo(self.tmpdir, 'testy@test', create=True)
-        with db.tx(True):
+        with db.tx(True), TemporaryDirectory() as tmpd:
             index, dag = db.begin(name='d0', message='1st dag')
             expr = [
                 Literal(db.put_datum(Resource(self.id()))),
@@ -60,14 +61,17 @@ class TestRepo(unittest.TestCase):
             ]
             expr = [db.put_node(x, index=index, dag=dag) for x in expr]
             # start without cache
-            fndag = db.start_fn(expr=expr, dag=dag, index=index, cache=False)
-            assert db.get_fn_meta(fndag) == ''
-            assert db.get_fn_meta(fndag) == fndag().meta
-            assert db.update_fn_meta(fndag, '', 'asdf') is None
-            assert db.get_fn_meta(fndag) == 'asdf'
-            with self.assertRaisesRegex(Error, 'old metadata'):
-                assert db.update_fn_meta(fndag, 'wrong-value', 'qwer') is None
-            assert db.get_fn_meta(fndag) == 'asdf'
+            _fndag, fnidx = db.start_fn(expr=expr, index=index, cache=False, path=tmpd)
+            db2 = Repo(tmpd)
+            with db2.tx(True):
+                fndag = fnidx().dag
+                assert db2.get_fn_meta(fndag) == ''
+                assert db2.get_fn_meta(fndag) == fndag().meta
+                assert db2.update_fn_meta(fndag, '', 'asdf') is None
+                assert db2.get_fn_meta(fndag) == 'asdf'
+                with self.assertRaisesRegex(Error, 'old metadata'):
+                    assert db2.update_fn_meta(fndag, 'wrong-value', 'qwer') is None
+                assert db2.get_fn_meta(fndag) == 'asdf'
 
     def test_cache_basic(self):
         db = Repo(self.tmpdir, 'testy@test', create=True)
@@ -80,23 +84,26 @@ class TestRepo(unittest.TestCase):
             ]
             expr = [db.put_node(x, index=index, dag=dag) for x in expr]
             # start without cache
-            fndag = db.start_fn(expr=expr, dag=dag, index=index, cache=False)
-            assert fndag.type == 'fndag'
-            res = db.put_node(Literal(db.put_datum('omg')), index=index, dag=fndag)
-            node = db.commit(res, index=index, dag=fndag, parent_dag=dag)
+            with TemporaryDirectory() as tmpd:
+                fndag, fnidx = db.start_fn(expr=expr, index=index, cache=False, path=tmpd)
+                assert fndag.type == 'fndag'
+                res = db.put_node(Literal(db.put_datum('omg')), index=index, dag=fndag)
+                node = db.commit(res, index=index, parent_dag=dag)
             assert node.type == 'node'
             assert node().value().value == 'omg'
             # retry and get a cached dag instance
-            fndag = db.start_fn(expr=expr, dag=dag, index=index, cache=True)
-            assert fndag.type == 'cachedfndag'
-            node = db.put_node(Literal(db.put_datum('zmg')), index=index, dag=fndag)
-            node = db.commit(node, index=index, dag=fndag, parent_dag=dag, cache=True)
+            with TemporaryDirectory() as tmpd:
+                fndag, *_ = db.start_fn(expr=expr, index=index, cache=True, path=tmpd)
+                assert fndag.type == 'cachedfndag'
+                node = db.put_node(Literal(db.put_datum('zmg')), index=index, dag=fndag)
+                node = db.commit(node, index=index, parent_dag=dag, cache=True)
             assert node.type == 'node'
             assert node().value().value == 'zmg'
             # result should be cached
-            node = db.start_fn(expr=expr, dag=dag, index=index, cache=True)
-            assert node.type == 'node'
-            assert node().value().value == 'zmg'
+            with TemporaryDirectory() as tmpd:
+                node = db.start_fn(expr=expr, index=index, cache=True, path=tmpd)
+                assert node.type == 'node'
+                assert node().value().value == 'zmg'
 
     def test_cache_replace(self):
         db = Repo(self.tmpdir, 'testy@test', create=True)
@@ -109,17 +116,20 @@ class TestRepo(unittest.TestCase):
             ]
             expr = [db.put_node(x, index=index, dag=dag) for x in expr]
             # start a cached run
-            fndag = db.start_fn(expr=expr, dag=dag, index=index, cache=True)
-            assert fndag.type == 'cachedfndag'
-            node = db.put_node(Literal(db.put_datum('zomg')), index=index, dag=fndag)
-            node = db.commit(node, index, fndag, parent_dag=dag, cache=True)
-            # replace a cached result
-            fndag = db.start_fn(expr=expr, dag=dag, index=index, cache=True, retry=True)
-            node = db.put_node(Literal(db.put_datum(1)), index=index, dag=fndag)
-            node = db.commit(node, index, fndag, parent_dag=dag, cache=True)
+            with TemporaryDirectory() as tmpd:
+                fndag, *_ = db.start_fn(expr=expr, index=index, cache=True, path=tmpd)
+                assert fndag.type == 'cachedfndag'
+                node = db.put_node(Literal(db.put_datum('zomg')), index=index, dag=fndag)
+                node = db.commit(node, index, parent_dag=dag, cache=True)
+            with TemporaryDirectory() as tmpd:
+                # replace a cached result
+                fndag, *_ = db.start_fn(expr=expr, index=index, cache=True, retry=True, path=tmpd)
+                node = db.put_node(Literal(db.put_datum(1)), index=index, dag=fndag)
+                node = db.commit(node, index, parent_dag=dag, cache=True)
             assert node().value().value == 1
             # new result should be cached
-            node = db.start_fn(expr=expr, dag=dag, index=index, cache=True)  # we should have a cached result now
+            with TemporaryDirectory() as tmpd:
+                node = db.start_fn(expr=expr, index=index, cache=True, path=tmpd)
             assert node.type == 'node'
             assert node().value().value == 1
 
@@ -134,15 +144,17 @@ class TestRepo(unittest.TestCase):
             ]
             expr = [db.put_node(x, index=index, dag=dag) for x in expr]
             # start a cached run
-            fndag = db.start_fn(expr=expr, dag=dag, index=index, cache=True)
-            assert fndag.type == 'cachedfndag'
-            node = db.put_node(Literal(db.put_datum('zomg')), index=index, dag=fndag)
-            node = db.commit(node, index, fndag, parent_dag=dag, cache=False)
+            with TemporaryDirectory() as tmpd:
+                fndag, *_ = db.start_fn(expr=expr, index=index, cache=True, path=tmpd)
+                assert fndag.type == 'cachedfndag'
+                node = db.put_node(Literal(db.put_datum('zomg')), index=index, dag=fndag)
+                node = db.commit(node, index, parent_dag=dag, cache=False)
             assert node.type == 'node'
             assert node().value().value == 'zomg'
             # no result cached
-            fndag = db.start_fn(expr=expr, dag=dag, index=index, cache=True)
-            assert fndag.type == 'cachedfndag'
+            with TemporaryDirectory() as tmpd:
+                fndag, *_ = db.start_fn(expr=expr, index=index, cache=True, path=tmpd)
+                assert fndag.type == 'cachedfndag'
 
     def test_cache_newdag(self):
         db = Repo(self.tmpdir, 'testy@test', create=True)
@@ -156,10 +168,14 @@ class TestRepo(unittest.TestCase):
             assert dag.type == 'dag'
             # start a cached run
             expr = [db.put_node(x, index=index, dag=dag) for x in expr]
-            fndag = db.start_fn(expr=expr, dag=dag, index=index, cache=True)
-            node = db.put_node(Literal(db.put_datum('zomg')), index=index, dag=fndag)
-            node = db.commit(node, index, fndag, parent_dag=dag, cache=True)
-            db.commit(node, index=index, dag=dag)
+            with TemporaryDirectory() as tmpd:
+                fndag, fnidx = db.start_fn(expr=expr, index=index, cache=True, path=tmpd)
+                db2 = Repo(tmpd)
+                with db2.tx(True):
+                    node = db2.put_node(Literal(db2.put_datum('zomg')),
+                                        index=fnidx, dag=fndag)
+                    node = db2.commit(node, fnidx, parent_dag=dag, cache=True)
+            db.commit(node, index=index)
         with db.tx(True):
             expr = [
                 Literal(db.put_datum(Resource(self.id()))),
@@ -169,9 +185,10 @@ class TestRepo(unittest.TestCase):
             # new result should be cached
             index, dag = db.begin(name='d1', message='2nd dag')
             expr = [db.put_node(x, index=index, dag=dag) for x in expr]
-            node = db.start_fn(expr=expr, dag=dag, index=index, cache=True)
-            assert node.type == 'node'
-            assert node().value().value == 'zomg'
+            with TemporaryDirectory() as tmpd:
+                node = db.start_fn(expr=expr, index=index, cache=True, path=tmpd)
+                assert node.type == 'node'
+                assert node().value().value == 'zomg'
 
     def test_get_nodeval(self):
         data = {'asdf': 23}
@@ -189,7 +206,7 @@ class TestRepo(unittest.TestCase):
         with db.tx(True):
             index, dag = db.begin(name='d0', message='1st dag')
             n0 = db.put_node(Literal(db.put_datum({'foo': 42})), index=index, dag=dag)
-            db.commit(n0, index=index, dag=dag)
+            db.commit(n0, index=index)
             assert walk_types(self.get_dag(db, 'd0')) == {'dag': 1, 'datum': 2, 'node': 1}
             assert walk_types(self.get_dag(db, 'd0')().result) == {'datum': 2, 'node': 1}
             assert walk_types(self.get_dag(db, 'd0')().result().value) == {'datum': 2}
@@ -202,7 +219,7 @@ class TestRepo(unittest.TestCase):
         with db.tx(True):
             index, dag = db.begin(name='d0', message='1st dag')
             n0 = db.put_node(Literal(db.put_datum({'foo': 42})), index=index, dag=dag)
-            db.commit(n0, index=index, dag=dag)
+            db.commit(n0, index=index)
             _dag = self.get_dag(db, 'd0')
             assert walk_types(_dag) == {'dag': 1, 'datum': 2, 'node': 1}
             assert walk_types(_dag().result) == {'datum': 2, 'node': 1}
@@ -245,12 +262,31 @@ class TestRepo(unittest.TestCase):
             index, dag = db.begin(name='d0', message='1st dag')
             node0 = db.put_node(Literal(db.put_datum(rsrc)), index=index, dag=dag)
         with TemporaryDirectory() as tmpd:
-            new_index, new_dag = db.dump_dag(dag, tmpd, name='fn', create=True)
+            new_index = db.dump_dag(dag, tmpd, name='fn', create=True)
             repo = Repo(tmpd)
             with repo.tx(True):
                 assert repo.get_node_value(node0)  == rsrc
-                node1 = repo.put_node(Literal(repo.put_datum(23)), index=new_index, dag=new_dag)
+                node1 = repo.put_node(Literal(repo.put_datum(23)),
+                                      index=new_index, dag=new_index().dag)
                 assert repo.get_node_value(node1)  == 23
         with db.tx():
             with self.assertRaisesRegex(AssertionError, 'invalid type'):
                 db.get_node_value(node1)
+
+    def test_dag_dump_n_load(self):
+        rsrc = Resource('asdf')
+        db = Repo(self.tmpdir, 'testy@test', create=True)
+        with db.tx(True):
+            index, dag = db.begin(name='d0', message='1st dag')
+            node0 = db.put_node(Literal(db.put_datum(rsrc)), index=index, dag=dag)
+        with TemporaryDirectory() as tmpd:
+            new_index = db.dump_dag(dag, tmpd, name='fn', create=True)
+            repo = Repo(tmpd)
+            with repo.tx(True):
+                new_dag = new_index().dag
+                node1 = repo.put_node(Literal(repo.put_datum(23)),
+                                      index=new_index, dag=new_dag)
+                repo.commit(node1, new_index)
+            final_dag = db.load_dag(tmpd, new_dag)
+        with db.tx():
+            assert db.get_node_value(final_dag().result) == 23

@@ -164,7 +164,7 @@ class Head:
 @repo_type(hash=[])
 @dataclass
 class Index(Head):
-    pass
+    dag: Ref
 
 
 @repo_type
@@ -280,6 +280,8 @@ class Ctx:
         tree = commit.tree()
         cache = commit.cache()
         dags = tree.dags
+        if dag is None and isinstance(head, Index):
+            dag = head.dag
         if isinstance(dag, Ref):
             dag = dag()
         return cls(head, commit, tree, cache, dags, dag)
@@ -294,6 +296,7 @@ class Repo:
     create: InitVar[bool] = False
 
     def __post_init__(self, create=False):
+        self._tx = []
         dbfile = str(os.path.join(self.path, 'data.mdb'))
         dbfile_exists = os.path.exists(dbfile)
         if create:
@@ -323,19 +326,19 @@ class Repo:
 
     @contextmanager
     def tx(self, write=False):
-        Repo._tx = Repo._tx if hasattr(Repo, '_tx') else []
+        old_curr = getattr(Repo, 'curr', None)
         try:
-            if not len(Repo._tx):
-                Repo._tx.append(self.env.begin(write=write, buffers=True).__enter__())
+            if not len(self._tx):
+                self._tx.append(self.env.begin(write=write, buffers=True).__enter__())
                 Repo.curr = self
             else:
-                Repo._tx.append(None)
+                self._tx.append(None)
             yield True
         finally:
-            tx = Repo._tx.pop()
+            Repo.curr = old_curr
+            tx = self._tx.pop()
             if tx:
                 tx.__exit__(None, None, None)
-                Repo.curr = None
 
     def copy(self, path):
         self.env.copy(makedirs(path))
@@ -347,7 +350,7 @@ class Repo:
         if key:
             key = key if isinstance(key, Ref) else Ref(key)
             if key.to:
-                obj = unpackb(Repo._tx[0].get(key.to.encode(), db=self.db(key.type)))
+                obj = unpackb(self._tx[0].get(key.to.encode(), db=self.db(key.type)))
                 return obj
 
     def put(self, key, obj=None):
@@ -359,18 +362,18 @@ class Repo:
         key2 = key.to or f'{db}/{self.hash(obj)}'
         comp = None
         if key.to is None:
-            comp = Repo._tx[0].get(key2.encode(), db=self.db(db))
+            comp = self._tx[0].get(key2.encode(), db=self.db(db))
             assert comp in [None, data], f'attempt to update immutable object: {key2}'
         if key is None or comp is None:
-            Repo._tx[0].put(key2.encode(), data, db=self.db(db))
+            self._tx[0].put(key2.encode(), data, db=self.db(db))
         return Ref(key2)
 
     def delete(self, key):
         key = Ref(key) if isinstance(key, str) else key
-        Repo._tx[0].delete(key.to.encode(), db=self.db(key.type))
+        self._tx[0].delete(key.to.encode(), db=self.db(key.type))
 
     def cursor(self, db):
-        return map(lambda x: Ref(bytes(x[0]).decode()), iter(Repo._tx[0].cursor(db=self.db(db))))
+        return map(lambda x: Ref(bytes(x[0]).decode()), iter(self._tx[0].cursor(db=self.db(db))))
 
     def walk(self, *key):
         result = set()
@@ -570,9 +573,11 @@ class Repo:
     def get_dag(self, dag):
         return Ctx.from_head(self.head).dags.get(dag)
 
-    def begin(self, *, name, message):
+    def begin(self, *, name, message, dag=None):
         ctx = Ctx.from_head(self.head)
-        dag = ctx.dags[name] = self(Dag(set(), None, None))
+        if dag is None:
+            dag = self(Dag(set(), None, None))
+        ctx.dags[name] = dag
         commit = Commit(
             [ctx.head.commit],
             self(ctx.tree),
@@ -580,17 +585,17 @@ class Repo:
             self.user,
             self.user,
             message)
-        index = self(Index(self(commit)))
+        index = self(Index(self(commit), dag))
         return [index, dag]
 
     def put_node(self, data, index: Ref, dag: Ref):
-        ctx = Ctx.from_head(index, dag=dag)
+        ctx = Ctx.from_head(index)
         node = self(Node(data))
         ctx.dag.nodes.add(node)
         self(dag, ctx.dag)
         ctx.commit.tree = self(ctx.tree)
         ctx.commit.created = ctx.commit.modified = now()
-        self(index, Index(self(ctx.commit)))
+        self(index, Index(self(ctx.commit), dag))
         return node
 
     def get_node_value(self, ref: Ref):
@@ -610,18 +615,18 @@ class Repo:
         other = Repo(path, create=create)
         with other.tx(True):
             *_, new_dag = (other.put(a, b) for a, b in objs)
-            ctx = Ctx.from_head(other.head)
-            dag = ctx.dags[name] = new_dag
-            commit = Commit(
-                [ctx.head.commit],
-                other(ctx.tree),
-                other(ctx.cache),
-                self.user,
-                self.user,
-                'auto-generated')
-            index = other(Index(other(commit)))
-        return [index, new_dag]
-    def start_fn(self, *, expr, index: Ref, dag: Ref, cache: bool = False, retry: bool = False):
+            return other.begin(name=name, message='auto-generated', dag=new_dag)[0]
+
+    def load_dag(self, path, dag):
+        other = Repo(path)
+        with other.tx():
+            objs = [(x, x()) for x in other.walk_ordered(dag)]
+        with self.tx(True):
+            *_, new_dag = (self.put(a, b) for a, b in objs)
+        return new_dag
+
+    def start_fn(self, *, expr, index, cache=False, retry=False, path=None):
+        dag = index().dag
         ctx = Ctx.from_head(index, dag=dag)
         cache_key = self.hash([x().value for x in expr])
         cached_dag = ctx.cache.dags.get(cache_key)
@@ -645,8 +650,9 @@ class Repo:
         else:
             fndag = self(fndag)
         ctx.commit.modified = now()
-        self(index, Index(self(ctx.commit)))
-        return fndag
+        self(index, Index(self(ctx.commit), fndag))
+        out = self.dump_dag(fndag, path, create=True)
+        return fndag, out
 
     def get_fn_meta(self, fndag_ref: Ref) -> str:
         fndag = fndag_ref()
@@ -660,7 +666,8 @@ class Repo:
             raise Error('old metadata', code='old-metadata')
         self(fndag_ref, replace(fndag, meta=new_meta))
 
-    def commit(self, res_or_err, index: Ref, dag: Ref, parent_dag: Ref|None = None, cache: bool = False):
+    def commit(self, res_or_err, index: Ref, parent_dag: Ref|None = None, cache: bool = False):
+        dag = index().dag
         result, error = (res_or_err, None) if isinstance(res_or_err, Ref) else (None, res_or_err)
         assert result is not None or error is not None, 'both result and error are none'
         ctx = Ctx.from_head(index, dag=dag)
@@ -679,7 +686,7 @@ class Repo:
                 ctx.commit.cache = self(ctx.cache)
                 ctx.commit.modified = now()
             self(dag, ctx.dag)
-            self(index, Index(self(ctx.commit)))
+            self(index, Index(self(ctx.commit), dag))
             return self.put_node(Fn(dag=dag, expr=dag().expr), index=index, dag=parent_dag)
         assert parent_dag is None
         logger.debug('commit called on named dag')

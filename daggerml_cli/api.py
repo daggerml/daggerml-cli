@@ -168,9 +168,9 @@ def _invoke_method(f):
 _invoke_method.fn_map = {}
 
 @_invoke_method
-def invoke_start_fn(db, index, dag, expr, cache: bool = False, retry: bool = False):
+def invoke_start_fn(db, index, dag, expr, cache=False, retry=False, path=None):
     with db.tx(True):
-        return db.start_fn(index=index, dag=dag, expr=expr, cache=cache, retry=retry)
+        return db.start_fn(index=index, dag=dag, expr=expr, cache=cache, retry=retry, path=path)
 
 @_invoke_method
 def invoke_put_literal(db, index, dag, data):
