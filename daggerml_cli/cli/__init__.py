@@ -152,6 +152,20 @@ def repo_path(ctx):
     click.echo(api.repo_path(ctx.obj))
 
 
+@repo_group.command(name='dump_ref', help='dump a ref and all its dependencies to json')
+@clickex
+def dag_dump_ref(ctx, ref):
+    dump = api.dump_ref(ctx.obj, ref)
+    click.echo(dump)
+
+
+@repo_group.command(name='load_ref', help='load a ref and all its dependencies into the db')
+@clickex
+def load_dump_ref(ctx, js):
+    ref = api.load_ref(ctx.obj, js)
+    click.echo(to_json(ref))
+
+
 ###############################################################################
 # PROJECT #####################################################################
 ###############################################################################

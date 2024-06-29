@@ -77,14 +77,3 @@ class TestApiCreate(unittest.TestCase):
                 to_json(['commit', [], {'result': from_json(node)}])
             )
             api.invoke('dag', 'get', 'cool-name')
-
-    def test_repo_dump(self):
-        with tmpdirs() as to_api:
-            with tmpdirs() as from_api:
-                repo = from_api.invoke(
-                    'dag', 'create', 'cool-name', 'doopy',
-                )
-                node = from_api.invoke(
-                    'dag', 'invoke', repo,
-                    to_json(['put_literal', [], {'data': {'asdf': 23}}])
-                )

@@ -155,7 +155,7 @@ ban-relative-imports = "all"
 "tests/**/*" = ["PLR2004", "S101", "TID252"]
 
 [tool.coverage.run]
-source_pkgs = ["daggerml_cli", "tests"]
+source_pkgs = ["daggerml_cli"]
 branch = true
 parallel = true
 omit = [

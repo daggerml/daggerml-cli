@@ -5,7 +5,7 @@ from shutil import rmtree
 from asciidag.graph import Graph as AsciiGraph
 from asciidag.node import Node as AsciiNode
 
-from daggerml_cli.repo import DEFAULT, Error, FnDag, Literal, Load, Ref, Repo, unroll_datum
+from daggerml_cli.repo import DEFAULT, Error, Fn, FnDag, Literal, Load, Node, Ref, Repo, unroll_datum
 from daggerml_cli.util import asserting, makedirs
 
 ###############################################################################
@@ -54,6 +54,18 @@ def gc_repo(config):
     db = Repo(config.REPO_PATH)
     with db.tx(True):
         return db.gc()
+
+
+def dump_ref(config, ref):
+    db = Repo(config.REPO_PATH, head=config.BRANCHREF)
+    with db.tx():
+        return db.dump_ref(ref)
+
+
+def load_ref(config, ref):
+    db = Repo(config.REPO_PATH, head=config.BRANCHREF)
+    with db.tx(True):
+        return db.load_ref(ref)
 
 
 ###############################################################################
@@ -150,10 +162,11 @@ def delete_dag(config, name):
             db.set_head(db.head, db(c.commit))
 
 
-def begin_dag(config, name, message):
+def begin_dag(config, name, message, dag_dump=None):
     db = Repo(config.REPO_PATH, head=config.BRANCHREF)
     with db.tx(True):
-        return db.begin(name=name, message=message)
+        dag = None if dag_dump is None else db.load_ref(dag_dump)
+        return db.begin(name=name, message=message, dag=dag)
 
 
 ###############################################################################
@@ -168,24 +181,37 @@ def _invoke_method(f):
 _invoke_method.fn_map = {}
 
 @_invoke_method
-def invoke_start_fn(db, index, dag, expr, cache=False, retry=False, path=None):
+def invoke_start_fn(db, index, expr, use_cache=False):
     with db.tx(True):
-        return db.start_fn(index=index, dag=dag, expr=expr, cache=cache, retry=retry, path=path)
+        return db.start_fn(index=index, expr=expr, use_cache=use_cache)
 
 @_invoke_method
-def invoke_put_literal(db, index, dag, data):
+def invoke_get_fn_result(db, index, waiter_ref):
     with db.tx(True):
-        return db.put_node(Literal(db.put_datum(data)), index=index, dag=dag)
+        return db.get_fn_result(index, waiter_ref)
 
 @_invoke_method
-def invoke_put_load(db, index, dag, load_dag):
+def invoke_populate_cache(db, index: Ref, fn_node: Ref):
     with db.tx(True):
-        return db.put_node(Load(asserting(db.get_dag(load_dag))), index=index, dag=dag)
+        _fn = fn_node()
+        assert isinstance(_fn, Node)
+        assert isinstance(_fn.data, Fn)
+        db.populate_cache(index, _fn.data.dag)
 
 @_invoke_method
-def invoke_commit(db, index, dag, result, **kw):
+def invoke_put_literal(db, index, data):
     with db.tx(True):
-        return db.commit(res_or_err=result, index=index, dag=dag, **kw)
+        return db.put_node(Literal(db.put_datum(data)), index=index)
+
+@_invoke_method
+def invoke_put_load(db, index, load_dag):
+    with db.tx(True):
+        return db.put_node(Load(asserting(db.get_dag(load_dag))), index=index)
+
+@_invoke_method
+def invoke_commit(db, index, result, **kw):
+    with db.tx(True):
+        return db.commit(res_or_err=result, index=index, **kw)
 
 @_invoke_method
 def invoke_get_node_value(db, _, node: Ref):
@@ -193,19 +219,22 @@ def invoke_get_node_value(db, _, node: Ref):
         return db.get_node_value(node)
 
 @_invoke_method
-def invoke_get_expr(db, _, dag):
+def invoke_get_expr(db, index):
     with db.tx():
-        return [unroll_datum(x().value) for x in dag().expr]
+        return [unroll_datum(x().value) for x in index().dag().expr]
 
 @_invoke_method
-def invoke_get_fn_meta(db, _, fndag):
+def invoke_get_fn_meta(db, index=None, fndag=None):
     with db.tx():
+        if fndag is None:
+            fndag = index().dag
         assert isinstance(fndag(), FnDag)
         return db.get_fn_meta(fndag)
 
 @_invoke_method
-def invoke_update_fn_meta(db, _, fndag, old_meta: str, new_meta: str):
+def invoke_update_fn_meta(db, index, old_meta: str, new_meta: str):
     with db.tx(True):
+        fndag = index().dag
         return db.update_fn_meta(fndag, old_meta, new_meta)
 
 

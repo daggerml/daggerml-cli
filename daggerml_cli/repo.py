@@ -5,6 +5,7 @@ import traceback as tb
 from contextlib import contextmanager
 from dataclasses import InitVar, dataclass, field, fields, is_dataclass, replace
 from hashlib import md5
+from typing import List
 from uuid import uuid4
 
 from daggerml_cli.db import db_type, dbenv
@@ -129,6 +130,17 @@ class Ref:
 
     def __call__(self):
         return Repo.curr.get(self)
+
+
+@repo_type
+@dataclass
+class FnWaiter:
+    expr: List[Ref]  # -> [Node]
+    fndag: Ref  # -> FnDag
+    dump: str|None = None
+
+    def is_finished(self):
+        return self.fndag().is_finished()
 
 
 @repo_type(db=False)
@@ -315,7 +327,7 @@ class Repo:
                     'initial commit',
                 )
                 self(self.head, Head(self(commit)))
-                self('/init', uuid4().hex)
+                self('/init', '00000000000000000000000000000000')  # so we all have a common root
             self.checkout(self.head)
 
     def __call__(self, key, obj=None):
@@ -586,16 +598,16 @@ class Repo:
             self.user,
             message)
         index = self(Index(self(commit), dag))
-        return [index, dag]
+        return index
 
-    def put_node(self, data, index: Ref, dag: Ref):
+    def put_node(self, data, index: Ref):
         ctx = Ctx.from_head(index)
         node = self(Node(data))
         ctx.dag.nodes.add(node)
-        self(dag, ctx.dag)
+        self(ctx.head.dag, ctx.dag)
         ctx.commit.tree = self(ctx.tree)
         ctx.commit.created = ctx.commit.modified = now()
-        self(index, Index(self(ctx.commit), dag))
+        self(index, Index(self(ctx.commit), ctx.head.dag))
         return node
 
     def get_node_value(self, ref: Ref):
@@ -607,52 +619,57 @@ class Repo:
         assert isinstance(val, Datum)
         return unroll_datum(val)
 
-    def dump_dag(self, dag, path, name='main', *, create=False):
-        with self.tx():
-            objs = [(x, x()) for x in self.walk_ordered(dag)]
-        if create and not os.path.isdir(path):
-            makedirs(path)
-        other = Repo(path, create=create)
-        with other.tx(True):
-            *_, new_dag = (other.put(a, b) for a, b in objs)
-            return other.begin(name=name, message='auto-generated', dag=new_dag)[0]
+    def dump_ref(self, ref):
+        objs = [[x, x()] for x in self.walk_ordered(ref)]
+        return to_json(objs)
 
-    def load_dag(self, path, dag):
-        other = Repo(path)
-        with other.tx():
-            objs = [(x, x()) for x in other.walk_ordered(dag)]
-        with self.tx(True):
-            *_, new_dag = (self.put(a, b) for a, b in objs)
+    def load_ref(self, ref_dump):
+        *_, new_dag = (self.put(a, b) for a, b in from_json(ref_dump))
         return new_dag
 
-    def start_fn(self, *, expr, index, cache=False, retry=False, path=None):
+    def start_fn(self, *, expr, index, use_cache=False):
         dag = index().dag
         ctx = Ctx.from_head(index, dag=dag)
-        cache_key = self.hash([x().value for x in expr])
-        cached_dag = ctx.cache.dags.get(cache_key)
-        # if cache and cached_dag and cached_dag().is_finished() and not retry:
-        if cache and cached_dag:
-            if cached_dag().is_finished() and not retry:
-                logger.debug('using finished cached dag: %r', cached_dag())
-                cached_dag = self(CachedFnDag.from_fndag(cached_dag()))
-                return self.put_node(Fn(dag=cached_dag, expr=expr), index=index, dag=dag)
-            if not cached_dag().is_finished():
-                logger.debug('returning unfinished cached dag: %r', cached_dag())
-                return cached_dag
-        logger.debug('starting new fndag')
-        fndag = FnDag(set(), None, None, expr)
-        ctx.commit.parents = [ctx.head.commit]
-        if cache:
-            logger.debug('populating cache')
-            fndag = self(CachedFnDag.from_fndag(fndag))
-            ctx.cache.dags[cache_key] = fndag
-            ctx.commit.cache = self(ctx.cache)
-        else:
-            fndag = self(fndag)
+        fndag = None
+        if use_cache:
+            cache_key = self.hash([x().value for x in expr])
+            fndag = ctx.cache.dags.get(cache_key)
+            # if cache and fndag and fndag().is_finished() and not retry:
+            if fndag and fndag().is_finished():
+                logger.debug('using finished cached dag: %r', fndag())
+                fndag = self(CachedFnDag.from_fndag(fndag()))
+            logger.debug('did not find a finished cached dag -- set dag to %r', fndag)
+        if fndag is None:
+            logger.debug('starting new fndag')
+            fndag = self(FnDag(set(), None, None, expr))
+            ctx.commit.parents = [ctx.head.commit]
+            ctx.commit.modified = now()
+            self(index, Index(self(ctx.commit), ctx.head.dag))
+        out = self.dump_ref(fndag)
+        waiter = FnWaiter(expr, fndag, dump=out)
+        return waiter
+
+    def populate_cache(self, index, fn_node):
+        dag = fn_node().data.dag
+        cache_key = self.hash([x().value for x in dag().expr])
+        ctx = Ctx.from_head(index)
+        ctx.cache.dags[cache_key] = self(CachedFnDag.from_fndag(dag()))
+        ctx.commit.cache = self(ctx.cache)
         ctx.commit.modified = now()
-        self(index, Index(self(ctx.commit), fndag))
-        out = self.dump_dag(fndag, path, create=True)
-        return fndag, out
+        commit = self(ctx.commit)
+        if isinstance(ctx.head, Index):
+            head = Index(commit, ctx.head.dag)
+            self(index, head)
+            return
+        self.set_head(self.head, commit)
+
+    def get_fn_result(self, index, waiter):
+        # waiter = waiter()
+        assert isinstance(waiter, FnWaiter)
+        if not waiter.is_finished():
+            return
+        fn = Fn(dag=waiter.fndag, expr=waiter.expr)
+        return self.put_node(fn, index=index)
 
     def get_fn_meta(self, fndag_ref: Ref) -> str:
         fndag = fndag_ref()
@@ -666,33 +683,18 @@ class Repo:
             raise Error('old metadata', code='old-metadata')
         self(fndag_ref, replace(fndag, meta=new_meta))
 
-    def commit(self, res_or_err, index: Ref, parent_dag: Ref|None = None, cache: bool = False):
-        dag = index().dag
+    def commit(self, res_or_err, index: Ref):
         result, error = (res_or_err, None) if isinstance(res_or_err, Ref) else (None, res_or_err)
         assert result is not None or error is not None, 'both result and error are none'
+        dag = index().dag
         ctx = Ctx.from_head(index, dag=dag)
         assert (ctx.dag.result or ctx.dag.error) is None, 'dag has been committed already'
         ctx.dag.result = result
         ctx.dag.error = error
-        if isinstance(ctx.dag, FnDag):
-            ctx.dag.meta = ''
-            assert parent_dag is not None
-            logger.debug('commit called with FnDag')
-            if isinstance(ctx.dag, CachedFnDag):
-                logger.debug('commit called with CachedFnDag')
-                cache_key = self.hash([x().value for x in ctx.dag.expr])
-                if not cache:
-                    del ctx.cache.dags[cache_key]
-                ctx.commit.cache = self(ctx.cache)
-                ctx.commit.modified = now()
-            self(dag, ctx.dag)
-            self(index, Index(self(ctx.commit), dag))
-            return self.put_node(Fn(dag=dag, expr=dag().expr), index=index, dag=parent_dag)
-        assert parent_dag is None
-        logger.debug('commit called on named dag')
         ctx.commit.tree = self(ctx.tree)
         ctx.commit.created = ctx.commit.modified = now()
-        self(dag, ctx.dag)
+        dag_ref = self(dag, ctx.dag)
         commit = self.merge(self.head().commit, self(ctx.commit))
         self.set_head(self.head, commit)
         self.delete(index)
+        return dag_ref
