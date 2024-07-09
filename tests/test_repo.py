@@ -47,7 +47,7 @@ class FnStart:
         self.waiter = self.repo.start_fn(
             expr=self.expr, index=self.index, use_cache=self.cache
         )
-        self.dump = self.waiter.dump
+        self.dump = self.waiter().dump
         if self.dump is not None:
             self._tmpd = TemporaryDirectory()
             self.tmpd = self._tmpd.__enter__()

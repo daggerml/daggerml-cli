@@ -628,17 +628,18 @@ class Repo:
         return new_dag
 
     def start_fn(self, *, expr, index, use_cache=False):
+        datum_expr = [x().value for x in expr]
         dag = index().dag
         ctx = Ctx.from_head(index, dag=dag)
         fndag = None
         if use_cache:
-            cache_key = self.hash([x().value for x in expr])
+            cache_key = self.hash(datum_expr)
             fndag = ctx.cache.dags.get(cache_key)
             # if cache and fndag and fndag().is_finished() and not retry:
-            if fndag and fndag().is_finished():
+            if fndag is not None:
+                assert fndag().is_finished(), f"cached {fndag = } was not finished!"
                 logger.debug('using finished cached dag: %r', fndag())
                 fndag = self(CachedFnDag.from_fndag(fndag()))
-            logger.debug('did not find a finished cached dag -- set dag to %r', fndag)
         if fndag is None:
             logger.debug('starting new fndag')
             fndag = self(FnDag(set(), None, None, expr))
@@ -646,11 +647,18 @@ class Repo:
             ctx.commit.modified = now()
             self(index, Index(self(ctx.commit), ctx.head.dag))
         out = self.dump_ref(fndag)
-        waiter = FnWaiter(expr, fndag, dump=out)
+        waiter = self(FnWaiter(expr, fndag, dump=out))
         return waiter
 
-    def populate_cache(self, index, fn_node):
-        dag = fn_node().data.dag
+    def populate_cache(self, index, waiter):
+        waiter = waiter()
+        if isinstance(waiter, FnWaiter):
+            dag = waiter.fndag
+        elif isinstance(waiter, Node):
+            dag = waiter.data.dag
+        else:
+            msg = f'invalid type passed to populate_cache ({type(waiter)})'
+            raise ValueError(msg)
         cache_key = self.hash([x().value for x in dag().expr])
         ctx = Ctx.from_head(index)
         ctx.cache.dags[cache_key] = self(CachedFnDag.from_fndag(dag()))
@@ -664,7 +672,7 @@ class Repo:
         self.set_head(self.head, commit)
 
     def get_fn_result(self, index, waiter):
-        # waiter = waiter()
+        waiter = waiter()
         assert isinstance(waiter, FnWaiter)
         if not waiter.is_finished():
             return

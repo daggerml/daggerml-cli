@@ -183,7 +183,9 @@ _invoke_method.fn_map = {}
 @_invoke_method
 def invoke_start_fn(db, index, expr, use_cache=False):
     with db.tx(True):
-        return db.start_fn(index=index, expr=expr, use_cache=use_cache)
+        fn = db.start_fn(index=index, expr=expr, use_cache=use_cache)
+        dump = fn().dump
+        return [fn, dump]
 
 @_invoke_method
 def invoke_get_fn_result(db, index, waiter_ref):
@@ -191,12 +193,9 @@ def invoke_get_fn_result(db, index, waiter_ref):
         return db.get_fn_result(index, waiter_ref)
 
 @_invoke_method
-def invoke_populate_cache(db, index: Ref, fn_node: Ref):
+def invoke_populate_cache(db, index: Ref, waiter: Ref):
     with db.tx(True):
-        _fn = fn_node()
-        assert isinstance(_fn, Node)
-        assert isinstance(_fn.data, Fn)
-        db.populate_cache(index, _fn.data.dag)
+        db.populate_cache(index, waiter)
 
 @_invoke_method
 def invoke_put_literal(db, index, data):
