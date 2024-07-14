@@ -28,7 +28,7 @@ class SimpleApi:
         return api.invoke_api(self.ctx, self.token, [op, args, kwargs])
 
     @classmethod
-    def begin(cls, name, message, ctx=None, dag_dump=None, dirlist=None):
+    def begin(cls, name=None, message=None, ctx=None, dag_dump=None):
         tmpdirs = []
         if ctx is None:
             tmpdirs = [TemporaryDirectory(), TemporaryDirectory()]
@@ -40,7 +40,7 @@ class SimpleApi:
             api.create_repo(ctx, 'test')
             api.use_repo(ctx, 'test')
             api.init_project(ctx, 'test')
-        tok = api.begin_dag(ctx, name, message, dag_dump=dag_dump)
+        tok = api.begin_dag(ctx, name=name, message=message, dag_dump=dag_dump)
         return cls(tok, ctx, tmpdirs)
 
     @contextmanager
@@ -50,13 +50,19 @@ class SimpleApi:
             yield db
 
     def cleanup(self):
-        for x in self.tmpdir_ctx:
+        for x in self.tmpdirs:
             x.__exit__(None, None, None)
 
     def start_fn(self, expr, use_cache=False):
         waiter, dump = self('start_fn', expr, use_cache=use_cache)
         fnapi = SimpleApi.begin('dag', 'message', dag_dump=dump)
         return waiter, fnapi
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *x):
+        self.cleanup()
 
 
 class TestApiCreate(unittest.TestCase):
@@ -81,69 +87,69 @@ class TestApiBase(unittest.TestCase):
 
     def test_create_dag(self):
         # dag 0
-        d0 = SimpleApi.begin('d0', 'dag 0')
-        data = {'foo': 23, 'bar': {4, 6}, 'baz': [True, 3]}
-        n0 = d0('put_literal', data)
-        d0('commit', n0)
-        # dag 1
-        d1 = SimpleApi.begin('d0', 'dag 0', ctx=d0.ctx)
-        n0 = d1('put_load', 'd0')
-        with d1.tx():
-            assert isinstance(n0(), Node)
-            val = n0().value
-        n1 = d1('put_literal', [val, val, 2])
-        with d1.tx():
-            assert unroll_datum(n1().value) == [data, data, 2]
-        d1('commit', n1)
+        with SimpleApi.begin(name='d0', message='dag 0') as d0:
+            data = {'foo': 23, 'bar': {4, 6}, 'baz': [True, 3]}
+            n0 = d0('put_literal', data)
+            d0('commit', n0)
+            # dag 1
+            d1 = SimpleApi.begin(name='d1', message='dag 1', ctx=d0.ctx)
+            n0 = d1('put_load', 'd0')
+            with d1.tx():
+                assert isinstance(n0(), Node)
+                val = n0().value
+            n1 = d1('put_literal', [val, val, 2])
+            with d1.tx():
+                assert unroll_datum(n1().value) == [data, data, 2]
+            d1('commit', n1)
 
     def test_fn(self):
-        d0 = SimpleApi.begin('d0', 'dag 0')
-        rsrc = Resource('asdf')
-        n0 = d0('put_literal', rsrc)
-        n1 = d0('put_literal', 1)
-        with d0.tx():
-            assert isinstance(n0(), Node)
-            assert isinstance(n1(), Node)
-        waiter, fnapi = d0.start_fn(expr=[n0, n1])
-        with d0.tx():
-            assert isinstance(waiter(), FnWaiter)
-        expr = fnapi('get_expr')
-        assert expr == [rsrc, 1]
-        n2 = fnapi('put_literal', {'asdf': 128})
-        n3 = fnapi('commit', n2)
-        dump = api.dump_ref(fnapi.ctx, n3)
-        api.load_ref(d0.ctx, dump)
-        x = d0('get_fn_result', waiter)
-        d0('commit', x)
-        resp = d0('get_node_value', x)
-        assert resp == {'asdf': 128}
+        with SimpleApi.begin('d0', 'dag 0') as d0:
+            rsrc = Resource('asdf')
+            n0 = d0('put_literal', rsrc)
+            n1 = d0('put_literal', 1)
+            with d0.tx():
+                assert isinstance(n0(), Node)
+                assert isinstance(n1(), Node)
+            waiter, fnapi = d0.start_fn(expr=[n0, n1])
+            with d0.tx():
+                assert isinstance(waiter(), FnWaiter)
+            expr = fnapi('get_expr')
+            assert expr == [rsrc, 1]
+            n2 = fnapi('put_literal', {'asdf': 128})
+            n3 = fnapi('commit', n2)
+            dump = api.dump_ref(fnapi.ctx, n3)
+            api.load_ref(d0.ctx, dump)
+            x = d0('get_fn_result', waiter)
+            d0('commit', x)
+            resp = d0('get_node_value', x)
+            assert resp == {'asdf': 128}
 
     def test_fn_meta(self):
-        d0 = SimpleApi.begin('d0', 'dag 0')
-        n0 = d0('put_literal', Resource('asdf'))
-        n1 = d0('put_literal', 1)
-        waiter, fndb = d0.start_fn(expr=[n0, n1])
-        assert fndb('get_fn_meta') == ''
-        assert fndb('update_fn_meta', '', 'asdfqwer') is None
-        assert fndb('get_fn_meta') == 'asdfqwer'
-        with self.assertRaisesRegex(Error, 'old metadata'):
+        with SimpleApi.begin('d0', 'dag 0') as d0:
+            n0 = d0('put_literal', Resource('asdf'))
+            n1 = d0('put_literal', 1)
+            waiter, fndb = d0.start_fn(expr=[n0, n1])
+            assert fndb('get_fn_meta') == ''
             assert fndb('update_fn_meta', '', 'asdfqwer') is None
-        assert fndb('get_fn_meta') == 'asdfqwer'
+            assert fndb('get_fn_meta') == 'asdfqwer'
+            with self.assertRaisesRegex(Error, 'old metadata'):
+                assert fndb('update_fn_meta', '', 'asdfqwer') is None
+            assert fndb('get_fn_meta') == 'asdfqwer'
 
     def test_cache(self):
-        d0 = SimpleApi.begin('d0', 'dag 0')
-        waiter, fnapi = d0.start_fn(expr=[d0('put_literal', Resource('asdf')),
-                                          d0('put_literal', 1)],
-                                    use_cache=True)
-        assert d0('get_fn_result', waiter) is None
-        fndag = fnapi('commit', fnapi('put_literal', 2))
-        dump = api.dump_ref(fnapi.ctx, fndag)
-        api.load_ref(d0.ctx, dump)
-        n1 = d0('get_fn_result', waiter)
-        assert d0('get_node_value', n1) == 2
-        d0('populate_cache', waiter)
-        waiter, fnapi = d0.start_fn(expr=[d0('put_literal', Resource('asdf')),
-                                          d0('put_literal', 1)],
-                                    use_cache=True)
-        n2 = d0('get_fn_result', waiter)
-        assert d0('get_node_value', n2) == 2
+        with SimpleApi.begin('d0', 'dag 0') as d0:
+            waiter, fnapi = d0.start_fn(expr=[d0('put_literal', Resource('asdf')),
+                                              d0('put_literal', 1)],
+                                        use_cache=True)
+            assert d0('get_fn_result', waiter) is None
+            fndag = fnapi('commit', fnapi('put_literal', 2))
+            dump = api.dump_ref(fnapi.ctx, fndag)
+            api.load_ref(d0.ctx, dump)
+            n1 = d0('get_fn_result', waiter)
+            assert d0('get_node_value', n1) == 2
+            d0('populate_cache', waiter)
+            waiter, fnapi = d0.start_fn(expr=[d0('put_literal', Resource('asdf')),
+                                              d0('put_literal', 1)],
+                                        use_cache=True)
+            n2 = d0('get_fn_result', waiter)
+            assert d0('get_node_value', n2) == 2

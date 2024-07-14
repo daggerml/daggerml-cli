@@ -162,7 +162,7 @@ def delete_dag(config, name):
             db.set_head(db.head, db(c.commit))
 
 
-def begin_dag(config, name, message, dag_dump=None):
+def begin_dag(config, *, name=None, message, dag_dump=None):
     db = Repo(config.REPO_PATH, head=config.BRANCHREF)
     with db.tx(True):
         dag = None if dag_dump is None else db.load_ref(dag_dump)
@@ -200,7 +200,10 @@ def invoke_populate_cache(db, index: Ref, waiter: Ref):
 @_invoke_method
 def invoke_put_literal(db, index, data):
     with db.tx(True):
-        return db.put_node(Literal(db.put_datum(data)), index=index)
+        from daggerml_cli.repo import Index
+        assert isinstance(index(), Index)
+        datum = db.put_datum(data)
+        return db.put_node(Literal(datum), index=index)
 
 @_invoke_method
 def invoke_put_load(db, index, load_dag):
@@ -208,9 +211,9 @@ def invoke_put_load(db, index, load_dag):
         return db.put_node(Load(asserting(db.get_dag(load_dag))), index=index)
 
 @_invoke_method
-def invoke_commit(db, index, result, **kw):
+def invoke_commit(db, index, result):
     with db.tx(True):
-        return db.commit(res_or_err=result, index=index, **kw)
+        return db.commit(res_or_err=result, index=index)
 
 @_invoke_method
 def invoke_get_node_value(db, _, node: Ref):

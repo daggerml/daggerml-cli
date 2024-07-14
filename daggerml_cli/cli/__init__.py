@@ -152,10 +152,11 @@ def repo_path(ctx):
     click.echo(api.repo_path(ctx.obj))
 
 
+@click.argument('ref', type=str)
 @repo_group.command(name='dump-ref', help='dump a ref and all its dependencies to json')
 @clickex
 def dag_dump_ref(ctx, ref):
-    dump = api.dump_ref(ctx.obj, ref)
+    dump = api.dump_ref(ctx.obj, from_json(ref))
     click.echo(dump)
 
 
@@ -260,7 +261,7 @@ def dag_group(_):
 @clickex
 def api_create_dag(ctx, name, message, dag_dump=None):
     try:
-        idx = api.begin_dag(ctx.obj, name, message, dag_dump=dag_dump)
+        idx = api.begin_dag(ctx.obj, name=name, message=message, dag_dump=dag_dump)
         click.echo(to_json(idx))
     except Exception as e:
         click.echo(to_json(Error.from_ex(e)))

@@ -5,7 +5,7 @@ import traceback as tb
 from contextlib import contextmanager
 from dataclasses import InitVar, dataclass, field, fields, is_dataclass, replace
 from hashlib import md5
-from typing import List
+from typing import List, Optional
 from uuid import uuid4
 
 from daggerml_cli.db import db_type, dbenv
@@ -164,7 +164,14 @@ class Error(Exception):
 @repo_type(db=False)
 @dataclass(frozen=True, slots=True)
 class Resource:
-    data: str
+    id: str
+
+    def __post_init__(self):
+        if not isinstance(self.id, str):
+            msg = f'Resource instantiated with invalid {self.id = }'
+            raise ValueError(msg)
+        if self.id.endswith('/'):
+            raise Error('invalid resource ID (ends with "/")', code='type-error')
 
 
 @repo_type(hash=[])
@@ -585,7 +592,10 @@ class Repo:
     def get_dag(self, dag):
         return Ctx.from_head(self.head).dags.get(dag)
 
-    def begin(self, *, name, message, dag=None):
+    def begin(self, *, message, name=None, dag=None):
+        if (name or dag) is None:
+            msg = 'either dag or a name is required'
+            raise ValueError(msg)
         ctx = Ctx.from_head(self.head)
         if dag is None:
             dag = self(Dag(set(), None, None))
