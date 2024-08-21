@@ -181,11 +181,12 @@ def _invoke_method(f):
 _invoke_method.fn_map = {}
 
 @_invoke_method
-def invoke_start_fn(db, index, expr, use_cache=False):
+def invoke_start_fn(db, index, expr):
     with db.tx(True):
-        fn = db.start_fn(index=index, expr=expr, use_cache=use_cache)
+        fn = db.start_fn(expr=expr)
         dump = fn().dump
-        return [fn, dump]
+        cache_key = fn().cache_key
+        return [fn, cache_key, dump]
 
 @_invoke_method
 def invoke_get_fn_result(db, index, waiter_ref):
@@ -223,21 +224,8 @@ def invoke_get_node_value(db, _, node: Ref):
 @_invoke_method
 def invoke_get_expr(db, index):
     with db.tx():
-        return [unroll_datum(x().value) for x in index().dag().expr]
-
-@_invoke_method
-def invoke_get_fn_meta(db, index=None, fndag=None):
-    with db.tx():
-        if fndag is None:
-            fndag = index().dag
-        assert isinstance(fndag(), FnDag)
-        return db.get_fn_meta(fndag)
-
-@_invoke_method
-def invoke_update_fn_meta(db, index, old_meta: str, new_meta: str):
-    with db.tx(True):
-        fndag = index().dag
-        return db.update_fn_meta(fndag, old_meta, new_meta)
+        expr = index().dag().expr().value()
+        return [unroll_datum(x().value) for x in expr.value]
 
 
 def invoke_api(config, token, data):

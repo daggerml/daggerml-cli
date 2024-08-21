@@ -92,7 +92,6 @@ def repo_type(cls=None, **kwargs):
     Returns
     -------
     Decorated class
-
     """
     tohash = kwargs.pop('hash', None)
     nohash = kwargs.pop('nohash', [])
@@ -137,6 +136,7 @@ class Ref:
 class FnWaiter:
     expr: List[Ref]  # -> [Node]
     fndag: Ref  # -> FnDag
+    cache_key: str
     dump: str|None = None
 
     def is_finished(self):
@@ -216,20 +216,10 @@ class Dag:
         return (self.result or self.error) is not None
 
 
-@repo_type(hash=[])
+@repo_type(hash=['expr'])
 @dataclass
 class FnDag(Dag):
-    expr: list[Ref]  # -> node
-    meta: str = ''
-
-
-@repo_type(hash=[])
-@dataclass
-class CachedFnDag(FnDag):
-
-    @classmethod
-    def from_fndag(cls, fndag):
-        return cls(*[getattr(fndag, x.name) for x in fields(fndag)])
+    expr: Ref  # -> node(expr)
 
 
 @repo_type(db=False)
@@ -244,8 +234,14 @@ class Literal:
 
 @repo_type(db=False)
 @dataclass
+class Expr(Literal):
+    pass
+
+
+@repo_type(db=False)
+@dataclass
 class Load:
-    dag: Ref  # -> dag | fndag | cached_fndag
+    dag: Ref  # -> dag | fndag
 
     @property
     def value(self):
@@ -266,7 +262,7 @@ class Fn(Load):
 @repo_type
 @dataclass
 class Node:
-    data: Literal | Load | Fn
+    data: Literal | Expr | Load | Fn
 
     @property
     def value(self):
@@ -337,8 +333,8 @@ class Repo:
                 self('/init', '00000000000000000000000000000000')  # so we all have a common root
             self.checkout(self.head)
 
-    def __call__(self, key, obj=None):
-        return self.put(key, obj)
+    def __call__(self, key, obj=None, *, return_on_error=False) -> Ref:
+        return self.put(key, obj, return_on_error=return_on_error)
 
     def db(self, type):
         return self.dbs[type] if type else None
@@ -372,7 +368,7 @@ class Repo:
                 obj = unpackb(self._tx[0].get(key.to.encode(), db=self.db(key.type)))
                 return obj
 
-    def put(self, key, obj=None):
+    def put(self, key, obj=None, *, return_on_error=False) -> Ref:
         key, obj = (key, obj) if obj else (obj, key)
         assert obj is not None
         key = key if isinstance(key, Ref) else Ref(key)
@@ -382,7 +378,11 @@ class Repo:
         comp = None
         if key.to is None:
             comp = self._tx[0].get(key2.encode(), db=self.db(db))
-            assert comp in [None, data], f'attempt to update immutable object: {key2}'
+            if comp not in [None, data]:
+                if return_on_error:
+                    return Ref(key2)
+                msg = f'attempt to update immutable object: {key2}'
+                raise AssertionError(msg)
         if key is None or comp is None:
             self._tx[0].put(key2.encode(), data, db=self.db(db))
         return Ref(key2)
@@ -637,49 +637,14 @@ class Repo:
         *_, new_dag = (self.put(a, b) for a, b in from_json(ref_dump))
         return new_dag
 
-    def start_fn(self, *, expr, index, use_cache=False):
-        datum_expr = [x().value for x in expr]
-        dag = index().dag
-        ctx = Ctx.from_head(index, dag=dag)
-        fndag = None
-        if use_cache:
-            cache_key = self.hash(datum_expr)
-            fndag = ctx.cache.dags.get(cache_key)
-            # if cache and fndag and fndag().is_finished() and not retry:
-            if fndag is not None:
-                assert fndag().is_finished(), f"cached {fndag = } was not finished!"
-                logger.debug('using finished cached dag: %r', fndag())
-                fndag = self(CachedFnDag.from_fndag(fndag()))
-        if fndag is None:
-            logger.debug('starting new fndag')
-            fndag = self(FnDag(set(), None, None, expr))
-            ctx.commit.parents = [ctx.head.commit]
-            ctx.commit.modified = now()
-            self(index, Index(self(ctx.commit), ctx.head.dag))
+    def start_fn(self, *, expr):
+        expr_datum = self.put_datum([x().value for x in expr])
+        expr_node = self(Node(Expr(expr_datum)))
+        fndag = self(FnDag(set([expr_node]), None, None, expr_node), return_on_error=True)
+        assert fndag.to is not None
         out = self.dump_ref(fndag)
-        waiter = self(FnWaiter(expr, fndag, dump=out))
+        waiter = self(FnWaiter(expr, fndag, fndag.to, dump=out))
         return waiter
-
-    def populate_cache(self, index, waiter):
-        waiter = waiter()
-        if isinstance(waiter, FnWaiter):
-            dag = waiter.fndag
-        elif isinstance(waiter, Node):
-            dag = waiter.data.dag
-        else:
-            msg = f'invalid type passed to populate_cache ({type(waiter)})'
-            raise ValueError(msg)
-        cache_key = self.hash([x().value for x in dag().expr])
-        ctx = Ctx.from_head(index)
-        ctx.cache.dags[cache_key] = self(CachedFnDag.from_fndag(dag()))
-        ctx.commit.cache = self(ctx.cache)
-        ctx.commit.modified = now()
-        commit = self(ctx.commit)
-        if isinstance(ctx.head, Index):
-            head = Index(commit, ctx.head.dag)
-            self(index, head)
-            return
-        self.set_head(self.head, commit)
 
     def get_fn_result(self, index, waiter):
         waiter = waiter()
@@ -688,18 +653,6 @@ class Repo:
             return
         fn = Fn(dag=waiter.fndag, expr=waiter.expr)
         return self.put_node(fn, index=index)
-
-    def get_fn_meta(self, fndag_ref: Ref) -> str:
-        fndag = fndag_ref()
-        assert isinstance(fndag, FnDag)
-        return fndag.meta
-
-    def update_fn_meta(self, fndag_ref: Ref, old_meta: str, new_meta: str) -> None:
-        fndag = fndag_ref()
-        assert isinstance(fndag, FnDag)
-        if fndag.meta != old_meta:
-            raise Error('old metadata', code='old-metadata')
-        self(fndag_ref, replace(fndag, meta=new_meta))
 
     def commit(self, res_or_err, index: Ref):
         result, error = (res_or_err, None) if isinstance(res_or_err, Ref) else (None, res_or_err)

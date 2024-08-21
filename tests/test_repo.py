@@ -9,7 +9,10 @@ from tabulate import tabulate
 
 from daggerml_cli.repo import (
     Ctx,
+    Datum,
     Error,
+    Expr,
+    FnDag,
     Literal,
     Node,
     Ref,
@@ -34,8 +37,7 @@ def dump(repo, count=None):
 class FnStart:
     repo: Any
     expr: Any
-    index: Any
-    cache: bool = False
+    create: bool = False
     fndb: Repo = field(init=False)
     fndag: Ref = field(init=False)
     fnidx: Ref = field(init=False)
@@ -45,10 +47,10 @@ class FnStart:
 
     def __post_init__(self):
         self.waiter = self.repo.start_fn(
-            expr=self.expr, index=self.index, use_cache=self.cache
+            expr=self.expr
         )
         self.dump = self.waiter().dump
-        if self.dump is not None:
+        if self.create:
             self._tmpd = TemporaryDirectory()
             self.tmpd = self._tmpd.__enter__()
             self.fndb = Repo(self.tmpd, create=True)
@@ -86,41 +88,58 @@ class TestRepo(unittest.TestCase):
             n0 = db.put_node(Literal(db.put_datum(Resource('a'))), index=index)
             db.commit(n0, index=index)
 
-    def test_update_fn_meta(self):
+    def test_fndag_id(self):
+        expr = [Resource(self.id()), ['howdy', 1], 2]
+        db = Repo(self.tmpdir, 'testy@test', create=True)
+        with db.tx(True):
+            expr_datum = db.put_datum([x for x in expr])
+            expr_node = db(Node(Expr(expr_datum)))
+            fndag = db(FnDag(set([expr_node]), None, None, expr_node), return_on_error=True)
+            dag0_id = fndag.to
+        # same expr => same ID
+        with TemporaryDirectory() as tmpd:
+            db = Repo(tmpd, 'testy@test', create=True)
+            with db.tx(True):
+                expr_datum = db.put_datum([x for x in expr])
+                expr_node = db(Node(Expr(expr_datum)))
+                fndag = db(FnDag(set([expr_node]), None, None, expr_node), return_on_error=True)
+                dag1_id = fndag.to
+        assert dag0_id == dag1_id
+        # different expr => different ID
+        with TemporaryDirectory() as tmpd:
+            db = Repo(tmpd, 'testy@test', create=True)
+            with db.tx(True):
+                expr_datum = db.put_datum([x for x in [*expr, 4]])
+                expr_node = db(Node(Expr(expr_datum)))
+                fndag = db(FnDag(set([expr_node]), None, None, expr_node), return_on_error=True)
+                dag1_id = fndag.to
+        assert dag0_id != dag1_id
+
+    def test_dag_id(self):
+        expr = [Resource(self.id()), ['howdy', 1], 2]
         db = Repo(self.tmpdir, 'testy@test', create=True)
         with db.tx(True):
             index = db.begin(name='d0', message='1st dag')
-            expr = [
-                Literal(db.put_datum(Resource(self.id()))),
-                Literal(db.put_datum(['howdy', 1])),
-                Literal(db.put_datum(2)),
-            ]
-            expr = [db.put_node(x, index=index) for x in expr]
-            # start without cache
-            fns = FnStart(db, expr, index, False)
-        with fns, fns.fndb.tx(True):
-            db2 = fns.fndb
-            fndag = fns.fnidx().dag
-            assert db2.get_fn_meta(fndag) == ''
-            assert db2.get_fn_meta(fndag) == fndag().meta
-            assert db2.update_fn_meta(fndag, '', 'asdf') is None
-            assert db2.get_fn_meta(fndag) == 'asdf'
-            with self.assertRaisesRegex(Error, 'old metadata'):
-                assert db2.update_fn_meta(fndag, 'wrong-value', 'qwer') is None
-            assert db2.get_fn_meta(fndag) == 'asdf'
+            _expr = [db.put_node(Literal(db.put_datum(x)), index=index) for x in expr]
+            with FnStart(db, _expr, create=True) as fns:
+                fnid = fns.fndag.to
+        with TemporaryDirectory() as tmpd:
+            db = Repo(tmpd, 'testy@test', create=True)
+            with db.tx(True):
+                index = db.begin(name='d0', message='1st dag')
+                _expr = [db.put_node(Literal(db.put_datum(x)), index=index) for x in expr]
+                with FnStart(db, _expr, create=True) as fns:
+                    fnid2 = fns.fndag.to
+        assert fnid == fnid2
 
     def test_cache_newdag(self):
+        expr = [Resource(self.id()), ['howdy', 1], 2]
         db = Repo(self.tmpdir, 'testy@test', create=True)
         with db.tx(True):
-            expr = [
-                Literal(db.put_datum(Resource(self.id()))),
-                Literal(db.put_datum(['howdy', 1])),
-                Literal(db.put_datum(2)),
-            ]
             index = db.begin(name='d0', message='1st dag')
+            _expr = [db.put_node(Literal(db.put_datum(x)), index=index) for x in expr]
             # start a cached run
-            expr = [db.put_node(x, index=index) for x in expr]
-            fns = FnStart(db, expr, index, True)
+            fns = FnStart(db, _expr, create=True)
         with fns, fns.fndb.tx(True):
             node = fns.fndb.put_node(
                 Literal(fns.fndb.put_datum('zomg')),
@@ -131,22 +150,20 @@ class TestRepo(unittest.TestCase):
         with db.tx(True):
             db.load_ref(dump)
             result = db.get_fn_result(index, fns.waiter)
-            db.populate_cache(index, result)
             db.commit(result, index)
-        with db.tx(True):
-            expr = [
-                Literal(db.put_datum(Resource(self.id()))),
-                Literal(db.put_datum(['howdy', 1])),
-                Literal(db.put_datum(2)),
-            ]
+
             # new result should be cached
             index = db.begin(name='d1', message='2nd dag')
-            expr = [db.put_node(x, index=index) for x in expr]
-            waiter = db.start_fn(expr=expr, index=index, use_cache=True)
+            _expr = [db.put_node(Literal(db.put_datum(x)), index=index) for x in expr]
+            waiter = db.start_fn(expr=_expr)
             node = db.get_fn_result(index, waiter)
             assert isinstance(node, Ref)
             assert node.type == 'node'
             assert node().value().value == 'zomg'
+            # different expr should not
+            _expr = [db.put_node(Literal(db.put_datum(x)), index=index) for x in [*expr, 5]]
+            waiter = db.start_fn(expr=_expr)
+            assert db.get_fn_result(index, waiter) is None
 
     def test_get_nodeval(self):
         data = {'asdf': 23}

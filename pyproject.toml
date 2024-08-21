@@ -7,7 +7,7 @@ name = "daggerml-cli"
 dynamic = ["version"]
 description = ''
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.6"
 license = "MIT"
 keywords = []
 authors = [
@@ -16,6 +16,11 @@ authors = [
 classifiers = [
   "Development Status :: 4 - Beta",
   "Programming Language :: Python",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.6",
+  "Programming Language :: Python :: 3.7",
+  "Programming Language :: Python :: 3.8",
+  "Programming Language :: Python :: 3.9",
   "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: Implementation :: CPython",
@@ -28,6 +33,8 @@ dependencies = [
   "tabulate",
   "asciidag",
   "pyyaml",
+  "dataclasses; python_version < '3.7'",
+  "importlib_metadata; python_version < '3.8'",
 ]
 
 [project.urls]

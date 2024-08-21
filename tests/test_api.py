@@ -53,8 +53,8 @@ class SimpleApi:
         for x in self.tmpdirs:
             x.__exit__(None, None, None)
 
-    def start_fn(self, expr, use_cache=False):
-        waiter, dump = self('start_fn', expr, use_cache=use_cache)
+    def start_fn(self, expr):
+        waiter, cache_key, dump = self('start_fn', expr)
         fnapi = SimpleApi.begin('dag', 'message', dag_dump=dump)
         return waiter, fnapi
 
@@ -124,32 +124,17 @@ class TestApiBase(unittest.TestCase):
             resp = d0('get_node_value', x)
             assert resp == {'asdf': 128}
 
-    def test_fn_meta(self):
-        with SimpleApi.begin('d0', 'dag 0') as d0:
-            n0 = d0('put_literal', Resource('asdf'))
-            n1 = d0('put_literal', 1)
-            waiter, fndb = d0.start_fn(expr=[n0, n1])
-            assert fndb('get_fn_meta') == ''
-            assert fndb('update_fn_meta', '', 'asdfqwer') is None
-            assert fndb('get_fn_meta') == 'asdfqwer'
-            with self.assertRaisesRegex(Error, 'old metadata'):
-                assert fndb('update_fn_meta', '', 'asdfqwer') is None
-            assert fndb('get_fn_meta') == 'asdfqwer'
-
     def test_cache(self):
         with SimpleApi.begin('d0', 'dag 0') as d0:
             waiter, fnapi = d0.start_fn(expr=[d0('put_literal', Resource('asdf')),
-                                              d0('put_literal', 1)],
-                                        use_cache=True)
+                                              d0('put_literal', 1)])
             assert d0('get_fn_result', waiter) is None
             fndag = fnapi('commit', fnapi('put_literal', 2))
             dump = api.dump_ref(fnapi.ctx, fndag)
             api.load_ref(d0.ctx, dump)
             n1 = d0('get_fn_result', waiter)
             assert d0('get_node_value', n1) == 2
-            d0('populate_cache', waiter)
             waiter, fnapi = d0.start_fn(expr=[d0('put_literal', Resource('asdf')),
-                                              d0('put_literal', 1)],
-                                        use_cache=True)
+                                              d0('put_literal', 1)])
             n2 = d0('get_fn_result', waiter)
             assert d0('get_node_value', n2) == 2
