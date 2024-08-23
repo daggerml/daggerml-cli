@@ -147,6 +147,8 @@ class TestSpecials(unittest.TestCase):
     def call(api, expr):
         waiter, fnapi = api.start_fn(expr=expr)
         n1 = api('get_fn_result', waiter)
+        if isinstance(n1, Error):
+            raise n1
         return api('get_node_value', n1)
 
     def test_len_list(self):
@@ -161,7 +163,7 @@ class TestSpecials(unittest.TestCase):
             rsrc = d0('put_literal', Resource('/daggerml/len'))
             assert self.call(d0, [rsrc, n0]) == 3
 
-    def test_keys(self):
+    def test_keys_map(self):
         with SimpleApi.begin('d0', 'dag 0') as d0:
             n0 = d0('put_literal', {'a': 1, 'c': 48, 'b': 2})
             rsrc = d0('put_literal', Resource('/daggerml/keys'))
@@ -178,10 +180,23 @@ class TestSpecials(unittest.TestCase):
             n0 = d0('put_literal', [1, 2])
             rsrc = d0('put_literal', Resource('/daggerml/get'))
             assert self.call(d0, [rsrc, n0, d0('put_literal', 0)]) == 1
-            assert isinstance(self.call(d0, [rsrc, n0, d0('put_literal', 2)]), Error)
+            with self.assertRaises(Error):
+                self.call(d0, [rsrc, n0, d0('put_literal', 2)])
 
     def test_error(self):
         with SimpleApi.begin('d0', 'dag 0') as d0:
             n0 = d0('put_literal', [1, 2])
             rsrc = d0('put_literal', Resource('/daggerml/asdfqwefr'))
-            assert isinstance(self.call(d0, [rsrc, n0]), Error)
+            with self.assertRaises(Error):
+                self.call(d0, [rsrc, n0])
+
+    def test_type(self):
+        with SimpleApi.begin('d0', 'dag 0') as d0:
+            rsrc = d0('put_literal', Resource('/daggerml/type'))
+            def doit(x):
+                n0 = d0('put_literal', x)
+                return self.call(d0, [rsrc, n0])
+            assert doit({'a': 2}) == 'dict'
+            assert doit(['a', 2]) == 'list'
+            assert doit('a') == 'str'
+            assert doit(2) == 'int'

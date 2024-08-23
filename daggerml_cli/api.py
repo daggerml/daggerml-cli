@@ -5,7 +5,7 @@ from shutil import rmtree
 from asciidag.graph import Graph as AsciiGraph
 from asciidag.node import Node as AsciiNode
 
-from daggerml_cli.repo import DEFAULT, Error, Literal, Load, Ref, Repo, unroll_datum
+from daggerml_cli.repo import DEFAULT, Error, Literal, Load, Node, Ref, Repo, unroll_datum
 from daggerml_cli.util import asserting, makedirs
 
 ###############################################################################
@@ -191,7 +191,10 @@ def invoke_start_fn(db, index, expr):
 @_invoke_method
 def invoke_get_fn_result(db, index, waiter_ref):
     with db.tx(True):
-        return db.get_fn_result(index, waiter_ref)
+        result = db.get_fn_result(index, waiter_ref)
+        if isinstance(result, Ref) and result().error is not None:
+            return result().error
+        return result
 
 @_invoke_method
 def invoke_put_literal(db, index, data):

@@ -650,12 +650,10 @@ class Repo:
                     case '/daggerml/len':
                         coll, = cdr
                         coll = coll().value().value
-                        assert isinstance(coll, (dict, set, list)), f'REEEEE {type(coll) = }'
                         result = len(coll)
                     case '/daggerml/keys':
                         coll, = cdr
                         coll = coll().value().value
-                        assert isinstance(coll, (dict)), f'REEEEE {type(coll) = }'
                         result = sorted(coll.keys())
                     case '/daggerml/get':
                         coll, key = cdr
@@ -672,6 +670,10 @@ class Repo:
                         else:
                             msg = f'Key {key} not in collection.'
                             raise Error(msg, code='keyerror')
+                    case '/daggerml/type':
+                        item, = cdr
+                        item = item().value().value
+                        result = str(type(item).__name__)
                     case _:
                         error = Error(f'unrecognized db execution ID: {car.id}', code='value')
             except Exception as e:
