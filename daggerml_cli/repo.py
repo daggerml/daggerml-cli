@@ -3,9 +3,9 @@ import logging
 import os
 import traceback as tb
 from contextlib import contextmanager
-from dataclasses import InitVar, dataclass, field, fields, is_dataclass, replace
+from dataclasses import InitVar, dataclass, field, fields, is_dataclass
 from hashlib import md5
-from typing import List, Optional
+from typing import List
 from uuid import uuid4
 
 from daggerml_cli.db import db_type, dbenv
@@ -136,7 +136,6 @@ class Ref:
 class FnWaiter:
     expr: List[Ref]  # -> [Node]
     fndag: Ref  # -> FnDag
-    cache_key: str
     dump: str|None = None
 
     def is_finished(self):
@@ -191,7 +190,6 @@ class Index(Head):
 class Commit:
     parents: list[Ref]  # -> commit
     tree: Ref  # -> tree
-    cache: Ref  # -> tree
     author: str
     committer: str
     message: str
@@ -284,7 +282,6 @@ class Ctx:
     head: Head | Index
     commit: Commit
     tree: Tree
-    cache: Tree
     dags: dict
     dag: Dag | None
 
@@ -293,13 +290,12 @@ class Ctx:
         head = asserting(ref())
         commit = head.commit()
         tree = commit.tree()
-        cache = commit.cache()
         dags = tree.dags
         if dag is None and isinstance(head, Index):
             dag = head.dag
         if isinstance(dag, Ref):
             dag = dag()
-        return cls(head, commit, tree, cache, dags, dag)
+        return cls(head, commit, tree, dags, dag)
 
 
 @repo_type(db=False)
@@ -523,7 +519,6 @@ class Repo:
         return self(Commit(
             [c1, c2],
             merge_trees(c0().tree, c1().tree, c2().tree),
-            merge_trees(c0().cache, c1().cache, c2().cache),
             author or self.user,
             self.user,
             message or f'merge {c2.name} with {c1.name}',
@@ -540,7 +535,6 @@ class Repo:
                 p, = p
                 x = replay(p)
                 c.tree = self.patch(x().tree, self.diff(p().tree, c.tree))
-                c.cache = self.patch(x().cache, self.diff(p().cache, c.cache))
                 c.parents, c.committer, c.modified = ([x], self.user, now())
                 return self(c)
             assert len(p) == 2, f'commit has more than two parents: {commit.to}'
@@ -603,7 +597,6 @@ class Repo:
         commit = Commit(
             [ctx.head.commit],
             self(ctx.tree),
-            self(ctx.cache),
             self.user,
             self.user,
             message)
@@ -643,7 +636,50 @@ class Repo:
         fndag = self(FnDag(set([expr_node]), None, None, expr_node), return_on_error=True)
         assert fndag.to is not None
         out = self.dump_ref(fndag)
-        waiter = self(FnWaiter(expr, fndag, fndag.to, dump=out))
+        waiter = self(FnWaiter(expr, fndag, dump=out))
+        # FIXME: send this to a general purpose execution thing
+        # check for db executor
+        car, *cdr = expr
+        car = car().value().value
+        assert isinstance(car, Resource), f'XXXXXXX {type(car) = }'
+        if car.id.startswith('/daggerml') and not fndag().is_finished():
+            result = error = None
+            nodes = [expr_node]
+            try:
+                match car.id:
+                    case '/daggerml/len':
+                        coll, = cdr
+                        coll = coll().value().value
+                        assert isinstance(coll, (dict, set, list)), f'REEEEE {type(coll) = }'
+                        result = len(coll)
+                    case '/daggerml/keys':
+                        coll, = cdr
+                        coll = coll().value().value
+                        assert isinstance(coll, (dict)), f'REEEEE {type(coll) = }'
+                        result = sorted(coll.keys())
+                    case '/daggerml/get':
+                        coll, key = cdr
+                        coll = coll().value().value
+                        key = key().value().value
+                        if isinstance(coll, dict) and key in coll.keys():
+                            result = coll[key]
+                        elif isinstance(coll, dict):
+                            error = Error(f'Key: {key} not in collection', code='key')
+                        elif isinstance(coll, list) and 0 <= key < len(coll):
+                            result = coll[key]
+                        elif isinstance(coll, list):
+                            error = Error(f'index: {key} is out of bounds for len: {len(coll)}', code='index')
+                        else:
+                            msg = f'Key {key} not in collection.'
+                            raise Error(msg, code='keyerror')
+                    case _:
+                        error = Error(f'unrecognized db execution ID: {car.id}', code='value')
+            except Exception as e:
+                error = Error.from_ex(e)
+            if result is not None:
+                result = self(Node(Literal(self.put_datum(result))))
+                nodes.append(result)
+            self(fndag, FnDag(set(nodes), result, error, expr_node))
         return waiter
 
     def get_fn_result(self, index, waiter):

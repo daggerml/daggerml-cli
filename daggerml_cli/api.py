@@ -5,7 +5,7 @@ from shutil import rmtree
 from asciidag.graph import Graph as AsciiGraph
 from asciidag.node import Node as AsciiNode
 
-from daggerml_cli.repo import DEFAULT, Error, Fn, FnDag, Literal, Load, Node, Ref, Repo, unroll_datum
+from daggerml_cli.repo import DEFAULT, Error, Literal, Load, Ref, Repo, unroll_datum
 from daggerml_cli.util import asserting, makedirs
 
 ###############################################################################
@@ -185,18 +185,13 @@ def invoke_start_fn(db, index, expr):
     with db.tx(True):
         fn = db.start_fn(expr=expr)
         dump = fn().dump
-        cache_key = fn().cache_key
+        cache_key = fn().fndag.to
         return [fn, cache_key, dump]
 
 @_invoke_method
 def invoke_get_fn_result(db, index, waiter_ref):
     with db.tx(True):
         return db.get_fn_result(index, waiter_ref)
-
-@_invoke_method
-def invoke_populate_cache(db, index: Ref, waiter: Ref):
-    with db.tx(True):
-        db.populate_cache(index, waiter)
 
 @_invoke_method
 def invoke_put_literal(db, index, data):
@@ -224,8 +219,12 @@ def invoke_get_node_value(db, _, node: Ref):
 @_invoke_method
 def invoke_get_expr(db, index):
     with db.tx():
-        expr = index().dag().expr().value()
-        return [unroll_datum(x().value) for x in expr.value]
+        return index().dag().expr
+
+@_invoke_method
+def invoke_unroll(db, index, node):
+    with db.tx():
+        return unroll_datum(node().value())
 
 
 def invoke_api(config, token, data):

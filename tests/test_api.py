@@ -1,6 +1,6 @@
 import unittest
 from contextlib import contextmanager
-from dataclasses import dataclass, field, fields, replace
+from dataclasses import dataclass, field
 from tempfile import TemporaryDirectory
 
 from tabulate import tabulate
@@ -114,7 +114,8 @@ class TestApiBase(unittest.TestCase):
             with d0.tx():
                 assert isinstance(waiter(), FnWaiter)
             expr = fnapi('get_expr')
-            assert expr == [rsrc, 1]
+            assert expr.type == 'node'
+            assert d0('unroll', expr) == [rsrc, 1]
             n2 = fnapi('put_literal', {'asdf': 128})
             n3 = fnapi('commit', n2)
             dump = api.dump_ref(fnapi.ctx, n3)
@@ -138,3 +139,49 @@ class TestApiBase(unittest.TestCase):
                                               d0('put_literal', 1)])
             n2 = d0('get_fn_result', waiter)
             assert d0('get_node_value', n2) == 2
+
+
+class TestSpecials(unittest.TestCase):
+
+    @staticmethod
+    def call(api, expr):
+        waiter, fnapi = api.start_fn(expr=expr)
+        n1 = api('get_fn_result', waiter)
+        return api('get_node_value', n1)
+
+    def test_len_list(self):
+        with SimpleApi.begin('d0', 'dag 0') as d0:
+            n0 = d0('put_literal', [1, 2])
+            rsrc = d0('put_literal', Resource('/daggerml/len'))
+            assert self.call(d0, [rsrc, n0]) == 2
+
+    def test_len_map(self):
+        with SimpleApi.begin('d0', 'dag 0') as d0:
+            n0 = d0('put_literal', {'a': 1, 'c': 48, 'b': 2})
+            rsrc = d0('put_literal', Resource('/daggerml/len'))
+            assert self.call(d0, [rsrc, n0]) == 3
+
+    def test_keys(self):
+        with SimpleApi.begin('d0', 'dag 0') as d0:
+            n0 = d0('put_literal', {'a': 1, 'c': 48, 'b': 2})
+            rsrc = d0('put_literal', Resource('/daggerml/keys'))
+            assert self.call(d0, [rsrc, n0]) == ['a', 'b', 'c']
+
+    def test_get_list(self):
+        with SimpleApi.begin('d0', 'dag 0') as d0:
+            n0 = d0('put_literal', [1, 2])
+            rsrc = d0('put_literal', Resource('/daggerml/get'))
+            assert self.call(d0, [rsrc, n0, d0('put_literal', 0)]) == 1
+
+    def test_get_map(self):
+        with SimpleApi.begin('d0', 'dag 0') as d0:
+            n0 = d0('put_literal', [1, 2])
+            rsrc = d0('put_literal', Resource('/daggerml/get'))
+            assert self.call(d0, [rsrc, n0, d0('put_literal', 0)]) == 1
+            assert isinstance(self.call(d0, [rsrc, n0, d0('put_literal', 2)]), Error)
+
+    def test_error(self):
+        with SimpleApi.begin('d0', 'dag 0') as d0:
+            n0 = d0('put_literal', [1, 2])
+            rsrc = d0('put_literal', Resource('/daggerml/asdfqwefr'))
+            assert isinstance(self.call(d0, [rsrc, n0]), Error)
