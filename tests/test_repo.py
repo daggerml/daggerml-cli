@@ -8,6 +8,7 @@ from typing import Any
 from tabulate import tabulate
 
 from daggerml_cli.repo import (
+    Commit,
     Ctx,
     Datum,
     Error,
@@ -245,3 +246,39 @@ class TestRepo(unittest.TestCase):
                 dump2 = repo.dump_ref(ref)
         assert ref == dag
         assert dump == dump2
+
+class TestGit(unittest.TestCase):
+
+    def setUp(self):
+        self.tmpdir_ctx = TemporaryDirectory()
+        self.tmpdir = self.tmpdir_ctx.__enter__()
+
+    def tearDown(self):
+        self.tmpdir_ctx.__exit__(None, None, None)
+
+    def test_squash(self):
+        db = Repo(self.tmpdir, 'test@test', create=True)
+        def run_commit(name, value):
+            idx = db.begin(name=name, message=f'{name = }')
+            n = db.put_node(Literal(db.put_datum(value)), index=idx)
+            db.commit(n, index=idx)
+
+        def get_commits():
+            commits = []
+            for obj in db.objects():
+                if isinstance(obj(), Commit):
+                    commits.append(obj)
+            return commits
+
+        with db.tx(True):
+            run_commit('d0', 2)
+            c0 = db.head().commit
+            run_commit('d1', 'asx')
+            run_commit('d2',  'qwejlk')
+            db.gc()
+            n0 = len(get_commits())
+            comm = db.squash(c0, db.head().commit)
+            db.set_head(db.head, comm)
+            db.gc()
+            n1 = len(get_commits())
+            assert n1 < n0

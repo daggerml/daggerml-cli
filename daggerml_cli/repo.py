@@ -525,6 +525,7 @@ class Repo:
             created or now()))
 
     def rebase(self, c1, c2):
+        c0 = self.merge_base(c1, c2)
         def replay(commit):
             if commit == c0:
                 return c1
@@ -540,8 +541,36 @@ class Repo:
             assert len(p) == 2, f'commit has more than two parents: {commit.to}'
             a, b = (replay(x) for x in p)
             return self.merge(a, b, commit.author, commit.message, commit.created)
-        c0 = self.merge_base(c1, c2)
         return c2 if c0 == c1 else c1 if c0 == c2 else replay(c2)
+
+    def squash(self, c1, c2):
+        c0 = self.merge_base(c1, c2)
+        assert c0 == c1, 'cannot squash from non ancestor'
+        c = c1()
+        c.tree = self.patch(c.tree, self.diff(c.tree, c2().tree))
+        c.parents = [c1]
+        c.committer = c2().committer
+        c.created = now()
+        def reparent(commit, old_parent, new_parent):
+            comm = commit()
+            replaced = [new_parent if x == old_parent else x for x in comm.parents]
+            comm.parents = replaced
+            ref = self(comm)
+            children = self.get_child_commits(commit)
+            for child in children:
+                reparent(child, commit, ref)
+            return ref
+        ref = self(c)
+        for child in self.get_child_commits(c2):
+            reparent(child, c2, ref)
+        return ref
+
+    def get_child_commits(self, commit):
+        children = set()
+        for x in self.reachable_objects():
+            if isinstance(x(), Commit) and commit in x().parents:
+                children.add(commit)
+        return children
 
     def create_branch(self, branch, ref):
         assert branch.type == 'head', f'unexpected branch type: {branch.type}'
