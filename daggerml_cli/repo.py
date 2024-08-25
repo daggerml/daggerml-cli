@@ -630,11 +630,13 @@ class Repo:
         *_, new_dag = (self.put(a, b) for a, b in from_json(ref_dump))
         return new_dag
 
-    def start_fn(self, *, expr):
+    def start_fn(self, *, expr, retry=False):
         expr_datum = self.put_datum([x().value for x in expr])
         expr_node = self(Node(Expr(expr_datum)))
         fndag = self(FnDag(set([expr_node]), None, None, expr_node), return_on_error=True)
         assert fndag.to is not None
+        if fndag().error is not None and retry:
+            self(fndag, FnDag(set([expr_node]), None, None, expr_node))
         out = self.dump_ref(fndag)
         waiter = self(FnWaiter(expr, fndag, dump=out))
         # FIXME: send this to a general purpose execution thing
@@ -690,7 +692,10 @@ class Repo:
         if not waiter.is_finished():
             return
         fn = Fn(dag=waiter.fndag, expr=waiter.expr)
-        return self.put_node(fn, index=index)
+        node = self.put_node(fn, index=index)
+        if node().error is not None:
+            raise node().error
+        return node
 
     def commit(self, res_or_err, index: Ref):
         result, error = (res_or_err, None) if isinstance(res_or_err, Ref) else (None, res_or_err)

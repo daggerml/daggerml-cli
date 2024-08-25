@@ -181,9 +181,9 @@ def _invoke_method(f):
 _invoke_method.fn_map = {}
 
 @_invoke_method
-def invoke_start_fn(db, index, expr):
+def invoke_start_fn(db, index, expr, retry=False):
     with db.tx(True):
-        fn = db.start_fn(expr=expr)
+        fn = db.start_fn(expr=expr, retry=retry)
         dump = fn().dump
         cache_key = fn().fndag.to
         return [fn, cache_key, dump]

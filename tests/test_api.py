@@ -53,8 +53,8 @@ class SimpleApi:
         for x in self.tmpdirs:
             x.__exit__(None, None, None)
 
-    def start_fn(self, expr):
-        waiter, cache_key, dump = self('start_fn', expr)
+    def start_fn(self, expr, retry=False):
+        waiter, cache_key, dump = self('start_fn', expr, retry=retry)
         fnapi = SimpleApi.begin('dag', 'message', dag_dump=dump)
         return waiter, fnapi
 
@@ -139,6 +139,30 @@ class TestApiBase(unittest.TestCase):
                                               d0('put_literal', 1)])
             n2 = d0('get_fn_result', waiter)
             assert d0('get_node_value', n2) == 2
+
+    def test_fn_retry(self):
+        with SimpleApi.begin('d0', 'dag 0') as d0:
+            expr = [d0('put_literal', Resource('asdf')), d0('put_literal', 1)]
+            waiter, fnapi = d0.start_fn(expr=expr)
+            fndag = fnapi('commit', Error('foo'))
+            dump = api.dump_ref(fnapi.ctx, fndag)
+            fnapi.cleanup()
+            api.load_ref(d0.ctx, dump)
+            with self.assertRaises(Error):
+                d0('get_fn_result', waiter)
+            waiter, fnapi = d0.start_fn(expr=expr)
+            with self.assertRaises(Error):
+                d0('get_fn_result', waiter)
+            fnapi.cleanup()
+            waiter, fnapi = d0.start_fn(expr=expr, retry=True)
+            with d0.tx():
+                assert not waiter().is_finished()
+            fndag = fnapi('commit', fnapi('put_literal', 1))
+            dump = api.dump_ref(fnapi.ctx, fndag)
+            fnapi.cleanup()
+            api.load_ref(d0.ctx, dump)
+            node = d0('get_fn_result', waiter)
+            assert d0('get_node_value', node) == 1
 
 
 class TestSpecials(unittest.TestCase):
