@@ -5,7 +5,7 @@ from shutil import rmtree
 from asciidag.graph import Graph as AsciiGraph
 from asciidag.node import Node as AsciiNode
 
-from daggerml_cli.repo import DEFAULT, Ctx, Error, Fn, Literal, Load, Ref, Repo, unroll_datum
+from daggerml_cli.repo import DEFAULT, Ctx, Error, Fn, Index, Literal, Load, Ref, Repo, unroll_datum
 from daggerml_cli.util import asserting, makedirs
 
 ###############################################################################
@@ -170,6 +170,22 @@ def list_dags(config, dag_names=()):
             result = [x for x in result if x['name'] in dag_names]
         return result
     return []
+
+
+def list_indexes(config):
+    if os.path.exists(config.REPO_PATH):
+        db = Repo(config.REPO_PATH, head=config.BRANCHREF)
+        with db.tx():
+            return [{'id': x.to, 'dag': x().dag.to} for x in db.indexes()]
+    return []
+
+
+def delete_index(config, index: Ref):
+    db = Repo(config.REPO_PATH, head=config.BRANCHREF)
+    with db.tx(True):
+        assert isinstance(index(), Index)
+        db.delete(index)
+        return True
 
 
 def begin_dag(config, *, name=None, message, dag_dump=None):

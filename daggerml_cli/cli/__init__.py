@@ -12,7 +12,7 @@ from yaml import safe_load as load_yaml
 from daggerml_cli import api
 from daggerml_cli.__about__ import __version__
 from daggerml_cli.config import Config
-from daggerml_cli.repo import Error, from_json, to_json
+from daggerml_cli.repo import Error, Ref, from_json, to_json
 
 _config_dir = str((Path.home() / '.local/dml').absolute())
 
@@ -296,6 +296,31 @@ def api_invoke(ctx, token, json):
             ctx.obj, from_json(token), from_json(json))))
     except Exception as e:
         click.echo(to_json(Error.from_ex(e)))
+
+
+###############################################################################
+# INDEX #######################################################################
+###############################################################################
+
+
+@cli.group(name='index', no_args_is_help=True, help='Index management commands.')
+@clickex
+def index_group(_):
+    pass
+
+
+@index_group.command(name='list', help="List indexes.")
+@clickex
+def index_list(ctx):
+    for k in api.list_indexes(ctx.obj):
+        click.echo(json.dumps(k, separators=(',', ':')))
+
+
+@index_group.command(name='delete', help="delete index.")
+@click.argument('id')
+@clickex
+def index_delete(ctx, id):
+    click.echo(api.delete_index(ctx.obj, Ref(id)))
 
 
 ###############################################################################

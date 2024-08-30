@@ -92,10 +92,12 @@ class TestApiCreate(unittest.TestCase):
                 'dag', 'invoke', repo,
                 to_json(['put_literal', [], {'data': {'asdf': 23}}])
             )
-            api(
+            idx, = api.jscall('index', 'list')
+            dag_result = api(
                 'dag', 'invoke', repo,
                 to_json(['commit', [], {'result': from_json(node)}])
             )
+            assert from_json(dag_result).to == idx['dag']
             # tmp = [json.loads(x) for x in api('dag', 'list').split('\n') if len(x)]
             tmp = api.jscall('dag', 'list')
             assert [x['name'] for x in tmp] == ['cool-name']
