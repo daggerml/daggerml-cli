@@ -163,14 +163,24 @@ class Error(Exception):
 @repo_type(db=False)
 @dataclass(frozen=True, slots=True)
 class Resource:
-    id: str
+    uri: str
 
     def __post_init__(self):
-        if not isinstance(self.id, str):
-            msg = f'Resource instantiated with invalid {self.id = }'
+        if not isinstance(self.uri, str):
+            msg = f'Resource instantiated with invalid {self.uri = }'
             raise ValueError(msg)
-        if self.id.endswith('/'):
+        if self.uri.endswith('/'):
             raise Error('invalid resource ID (ends with "/")', code='type-error')
+
+    @property
+    def type(self):
+        car, cdr = self.uri.split(':', 1)
+        return car
+
+    @property
+    def id(self):
+        car, cdr = self.uri.split(':', 1)
+        return cdr
 
 
 @repo_type(hash=[])
@@ -320,7 +330,6 @@ class Repo:
                 commit = Commit(
                     [],
                     self(Tree({})),
-                    self(Tree({})),
                     self.user,
                     self.user,
                     'initial commit',
@@ -454,9 +463,16 @@ class Repo:
         return self.objects().difference(self.reachable_objects())
 
     def gc(self):
-        to_delete = self.unreachable_objects()
-        [self.delete(k) for k in to_delete]
-        return len(to_delete)
+        resources = []
+        num_deleted = 0
+        for ref in self.unreachable_objects():
+            obj = ref()
+            if isinstance(obj, Datum) and isinstance(obj.value, Resource):
+                resources.append(obj.value)
+            self.delete(ref)
+            num_deleted += 1
+        logger.info('deleted %r objects including %r resources', num_deleted, len(resources))
+        return resources
 
     def topo_sort(self, *xs):
         xs = list(xs)
@@ -673,20 +689,20 @@ class Repo:
         car, *cdr = expr
         car = car().value().value
         assert isinstance(car, Resource), f'XXXXXXX {type(car) = }'
-        if car.id.startswith('/daggerml') and not fndag().is_finished():
+        if car.type == 'daggerml' and not fndag().is_finished():
             result = error = None
             nodes = [expr_node]
             try:
                 match car.id:
-                    case '/daggerml/len':
+                    case 'op/len':
                         coll, = cdr
                         coll = coll().value().value
                         result = len(coll)
-                    case '/daggerml/keys':
+                    case 'op/keys':
                         coll, = cdr
                         coll = coll().value().value
                         result = sorted(coll.keys())
-                    case '/daggerml/get':
+                    case 'op/get':
                         coll, key = cdr
                         coll = coll().value().value
                         key = key().value().value
@@ -701,7 +717,7 @@ class Repo:
                         else:
                             msg = f'Key {key} not in collection.'
                             raise Error(msg, code='keyerror')
-                    case '/daggerml/type':
+                    case 'op/type':
                         item, = cdr
                         item = item().value().value
                         result = str(type(item).__name__)

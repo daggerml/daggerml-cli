@@ -5,7 +5,7 @@ from shutil import rmtree
 from asciidag.graph import Graph as AsciiGraph
 from asciidag.node import Node as AsciiNode
 
-from daggerml_cli.repo import DEFAULT, Error, Literal, Load, Node, Ref, Repo, unroll_datum
+from daggerml_cli.repo import DEFAULT, Ctx, Error, Fn, Literal, Load, Ref, Repo, unroll_datum
 from daggerml_cli.util import asserting, makedirs
 
 ###############################################################################
@@ -139,27 +139,37 @@ def rebase_branch(config, name):
 # DAG #########################################################################
 ###############################################################################
 
-def get_dag(config, name):
+def describe_dag(config, id):
     db = Repo(config.REPO_PATH, head=config.BRANCHREF)
     with db.tx(False):
-        return db.get_dag(name)
+        ref = Ref(id)
+        dag = ref()
+        edges = {}
+        for node_ref in dag.nodes:
+            node = node_ref()
+            if isinstance(node.data, Fn):
+                edges[node_ref.to] = [x.to for x in node.data.expr]
+            elif isinstance(node.data, Load):
+                edges[node_ref.to] = node.data.dag.to
+        return {
+            'id': ref.to,
+            'expr': dag.expr.to if hasattr(dag, 'expr') else None,
+            'nodes': [x.to for x in dag.nodes],
+            'result': dag.result.to,
+            'error': None if dag.error is None else str(dag.error),
+            'edges': edges,
+        }
 
 
-def list_dag(config):
+def list_dags(config, dag_names=()):
     if os.path.exists(config.REPO_PATH):
         db = Repo(config.REPO_PATH, head=config.BRANCHREF)
         with db.tx():
-            return db.ctx(db.head).dags.keys()
+            result = [{'name': k, 'id': v.to} for k, v in Ctx.from_head(db.head).dags.items()]
+        if len(dag_names) > 0:
+            result = [x for x in result if x['name'] in dag_names]
+        return result
     return []
-
-
-def delete_dag(config, name):
-    db = Repo(config.REPO_PATH, head=config.BRANCHREF)
-    with db.tx(True):
-        c = db.ctx(db.head)
-        if c.dags.pop(name, None):
-            c.commit.tree = db(c.tree)
-            db.set_head(db.head, db(c.commit))
 
 
 def begin_dag(config, *, name=None, message, dag_dump=None):

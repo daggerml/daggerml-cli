@@ -1,3 +1,4 @@
+import json
 import os
 from functools import wraps
 from getpass import getuser
@@ -143,7 +144,8 @@ def repo_list(ctx):
 @repo_group.command(name='gc', help='Delete unreachable objects in the repo.')
 @clickex
 def repo_gc(ctx):
-    click.echo(f'Deleted {api.gc_repo(ctx.obj)} objects.')
+    for rsrc in api.gc_repo(ctx.obj):
+        click.echo(rsrc.uri)
 
 
 @repo_group.command(name='path', help='Filesystem location of the repository.')
@@ -267,11 +269,19 @@ def api_create_dag(ctx, name, message, dag_dump=None):
         click.echo(to_json(Error.from_ex(e)))
 
 
-@click.argument('name')
-@dag_group.command(name='get', help='Get a DAG.')
+@dag_group.command(name='describe', help='Get a DAG.')
+@click.argument('id')
 @clickex
-def api_get_dag(ctx, name):
-    click.echo(to_json(api.get_dag(ctx.obj, name)))
+def api_describe_dag(ctx, id):
+    click.echo(json.dumps(api.describe_dag(ctx.obj, id), separators=(',', ':')))
+
+
+@dag_group.command(name='list', help='List DAGs.')
+@click.option('-n', '--dag-names', multiple=True)
+@clickex
+def dag_list(ctx, dag_names):
+    for k in api.list_dags(ctx.obj, dag_names=dag_names):
+        click.echo(json.dumps(k, separators=(',', ':')))
 
 
 @click.argument('json')
@@ -286,20 +296,6 @@ def api_invoke(ctx, token, json):
             ctx.obj, from_json(token), from_json(json))))
     except Exception as e:
         click.echo(to_json(Error.from_ex(e)))
-
-
-@click.argument('name', shell_complete=complete(api.list_dag))
-@dag_group.command(name='delete', help='Delete a DAG.')
-@clickex
-def dag_delete(ctx, name):
-    api.delete_dag(ctx.obj, name)
-    click.echo(f'Deleted DAG: {name}')
-
-
-@dag_group.command(name='list', help='List DAGs.')
-@clickex
-def dag_list(ctx):
-    [click.echo(k) for k in api.list_dag(ctx.obj)]
 
 
 ###############################################################################

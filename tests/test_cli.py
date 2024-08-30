@@ -1,3 +1,4 @@
+import json
 import os
 import unittest
 from contextlib import contextmanager
@@ -9,6 +10,7 @@ from click.testing import CliRunner
 from click.testing import Result as ClickResult
 
 from daggerml_cli.cli import cli, from_json, to_json
+from daggerml_cli.repo import Repo, Resource
 
 
 @dataclass
@@ -16,12 +18,17 @@ class Api:
     _config_dir: str
     _project_dir: str
 
-    def invoke(self, *args, raw=False):
+    def invoke(self, *args):
         flags = ['--config-dir', self._config_dir, '--project-dir', self._project_dir]
         result = CliRunner().invoke(cli, [*flags, *args])
-        if raw:
-            return result
+        return result
+
+    def __call__(self, *args):
+        result = self.invoke(*args)
         return result.output
+
+    def jscall(self, *args):
+        return [json.loads(x) for x in self(*args).split('\n') if len(x) > 0]
 
     @property
     def config_dir(self):
@@ -31,14 +38,17 @@ class Api:
     def project_dir(self):
         return Path(self._project_dir)
 
+    def init(self, name='foopy'):
+        self('repo', 'create', name)
+        self('project', 'init', name)
+
 
 @contextmanager
 def tmpdirs(*, init=True):
-    with TemporaryDirectory() as tmpd0, TemporaryDirectory() as tmpd1:
+    with TemporaryDirectory(prefix='dml-test-') as tmpd0, TemporaryDirectory(prefix='dml-test-') as tmpd1:
         api = Api(tmpd0, tmpd1)
         if init:
-            api.invoke('repo', 'create', 'foopy')
-            api.invoke('project', 'init', 'foopy')
+            api.init()
         yield api
 
 class TestApiCreate(unittest.TestCase):
@@ -46,7 +56,7 @@ class TestApiCreate(unittest.TestCase):
     def test_create_repo(self):
         with tmpdirs(init=False) as api:
             conf_dir, proj_dir = api.config_dir, api.project_dir
-            result = api.invoke('repo', 'create', 'foopy', raw=True)
+            result = api.invoke('repo', 'create', 'foopy')
             assert isinstance(result, ClickResult)
             assert result.output == "Created repository: foopy\n"
             assert result.exit_code == 0
@@ -54,7 +64,7 @@ class TestApiCreate(unittest.TestCase):
             assert os.path.isdir(proj_dir)
             assert len(os.listdir(conf_dir)) > 0
             assert len(os.listdir(proj_dir)) == 0
-            result = api.invoke('project', 'init', 'foopy', raw=True)
+            result = api.invoke('project', 'init', 'foopy')
             assert isinstance(result, ClickResult)
             assert result.output == "Initialized project with repo: foopy\n"
             assert result.exit_code == 0
@@ -64,16 +74,42 @@ class TestApiCreate(unittest.TestCase):
 
     def test_create_dag(self):
         with tmpdirs() as api:
-            repo = api.invoke(
+            repo = api(
+                'branch', 'create', 'cool-branch'
+            )
+            repo = api(
+                'branch', 'use', 'cool-branch'
+            )
+            repo = api(
                 'dag', 'create', 'cool-name', 'doopy',
             )
-            assert isinstance(repo, str)
-            node = api.invoke(
+            rsrc = Resource('a:b/asdf:e')
+            api(
+                'dag', 'invoke', repo,
+                to_json(['put_literal', [], {'data': rsrc}])
+            )
+            node = api(
                 'dag', 'invoke', repo,
                 to_json(['put_literal', [], {'data': {'asdf': 23}}])
             )
-            api.invoke(
+            api(
                 'dag', 'invoke', repo,
                 to_json(['commit', [], {'result': from_json(node)}])
             )
-            api.invoke('dag', 'get', 'cool-name')
+            # tmp = [json.loads(x) for x in api('dag', 'list').split('\n') if len(x)]
+            tmp = api.jscall('dag', 'list')
+            assert [x['name'] for x in tmp] == ['cool-name']
+            assert api('dag', 'list', '-n', 'asdf') == ''
+            dag_id, = (x['id'] for x in tmp)
+            tmp, = api.jscall('dag', 'describe', dag_id)
+            assert sorted(tmp.keys()) == ['edges', 'error', 'expr', 'id', 'nodes', 'result']
+            assert tmp['error'] is None
+            assert isinstance(tmp['result'], str)
+            assert [x['name'] for x in api.jscall('dag', 'list')] == ['cool-name']
+            assert api('branch', 'list') == 'cool-branch\nmain\n'
+            api('branch', 'use', 'main')
+            assert api('dag', 'list') == ''
+            api('branch', 'delete', 'cool-branch')
+            assert api('branch', 'list') == 'main\n'
+            resp = api('repo', 'gc')
+            assert resp == f'{rsrc.uri}\n'

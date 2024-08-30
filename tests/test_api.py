@@ -104,7 +104,7 @@ class TestApiBase(unittest.TestCase):
 
     def test_fn(self):
         with SimpleApi.begin('d0', 'dag 0') as d0:
-            rsrc = Resource('asdf')
+            rsrc = Resource('a:sdf')
             n0 = d0('put_literal', rsrc)
             n1 = d0('put_literal', 1)
             with d0.tx():
@@ -127,7 +127,7 @@ class TestApiBase(unittest.TestCase):
 
     def test_cache(self):
         with SimpleApi.begin('d0', 'dag 0') as d0:
-            waiter, fnapi = d0.start_fn(expr=[d0('put_literal', Resource('asdf')),
+            waiter, fnapi = d0.start_fn(expr=[d0('put_literal', Resource('a:sdf')),
                                               d0('put_literal', 1)])
             assert d0('get_fn_result', waiter) is None
             fndag = fnapi('commit', fnapi('put_literal', 2))
@@ -135,14 +135,14 @@ class TestApiBase(unittest.TestCase):
             api.load_ref(d0.ctx, dump)
             n1 = d0('get_fn_result', waiter)
             assert d0('get_node_value', n1) == 2
-            waiter, fnapi = d0.start_fn(expr=[d0('put_literal', Resource('asdf')),
+            waiter, fnapi = d0.start_fn(expr=[d0('put_literal', Resource('a:sdf')),
                                               d0('put_literal', 1)])
             n2 = d0('get_fn_result', waiter)
             assert d0('get_node_value', n2) == 2
 
     def test_fn_retry(self):
         with SimpleApi.begin('d0', 'dag 0') as d0:
-            expr = [d0('put_literal', Resource('asdf')), d0('put_literal', 1)]
+            expr = [d0('put_literal', Resource('a:sdf')), d0('put_literal', 1)]
             waiter, fnapi = d0.start_fn(expr=expr)
             fndag = fnapi('commit', Error('foo'))
             dump = api.dump_ref(fnapi.ctx, fndag)
@@ -178,31 +178,31 @@ class TestSpecials(unittest.TestCase):
     def test_len_list(self):
         with SimpleApi.begin('d0', 'dag 0') as d0:
             n0 = d0('put_literal', [1, 2])
-            rsrc = d0('put_literal', Resource('/daggerml/len'))
+            rsrc = d0('put_literal', Resource('daggerml:op/len'))
             assert self.call(d0, [rsrc, n0]) == 2
 
     def test_len_map(self):
         with SimpleApi.begin('d0', 'dag 0') as d0:
             n0 = d0('put_literal', {'a': 1, 'c': 48, 'b': 2})
-            rsrc = d0('put_literal', Resource('/daggerml/len'))
+            rsrc = d0('put_literal', Resource('daggerml:op/len'))
             assert self.call(d0, [rsrc, n0]) == 3
 
     def test_keys_map(self):
         with SimpleApi.begin('d0', 'dag 0') as d0:
             n0 = d0('put_literal', {'a': 1, 'c': 48, 'b': 2})
-            rsrc = d0('put_literal', Resource('/daggerml/keys'))
+            rsrc = d0('put_literal', Resource('daggerml:op/keys'))
             assert self.call(d0, [rsrc, n0]) == ['a', 'b', 'c']
 
     def test_get_list(self):
         with SimpleApi.begin('d0', 'dag 0') as d0:
             n0 = d0('put_literal', [1, 2])
-            rsrc = d0('put_literal', Resource('/daggerml/get'))
+            rsrc = d0('put_literal', Resource('daggerml:op/get'))
             assert self.call(d0, [rsrc, n0, d0('put_literal', 0)]) == 1
 
     def test_get_map(self):
         with SimpleApi.begin('d0', 'dag 0') as d0:
             n0 = d0('put_literal', [1, 2])
-            rsrc = d0('put_literal', Resource('/daggerml/get'))
+            rsrc = d0('put_literal', Resource('daggerml:op/get'))
             assert self.call(d0, [rsrc, n0, d0('put_literal', 0)]) == 1
             with self.assertRaises(Error):
                 self.call(d0, [rsrc, n0, d0('put_literal', 2)])
@@ -210,13 +210,13 @@ class TestSpecials(unittest.TestCase):
     def test_error(self):
         with SimpleApi.begin('d0', 'dag 0') as d0:
             n0 = d0('put_literal', [1, 2])
-            rsrc = d0('put_literal', Resource('/daggerml/asdfqwefr'))
+            rsrc = d0('put_literal', Resource('daggerml:op/asdfqwefr'))
             with self.assertRaises(Error):
                 self.call(d0, [rsrc, n0])
 
     def test_type(self):
         with SimpleApi.begin('d0', 'dag 0') as d0:
-            rsrc = d0('put_literal', Resource('/daggerml/type'))
+            rsrc = d0('put_literal', Resource('daggerml:op/type'))
             def doit(x):
                 n0 = d0('put_literal', x)
                 return self.call(d0, [rsrc, n0])
