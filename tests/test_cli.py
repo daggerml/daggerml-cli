@@ -10,7 +10,7 @@ from click.testing import CliRunner
 from click.testing import Result as ClickResult
 
 from daggerml_cli.cli import cli, from_json, to_json
-from daggerml_cli.repo import Repo, Resource
+from daggerml_cli.repo import Resource
 
 
 @dataclass
