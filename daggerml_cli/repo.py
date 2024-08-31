@@ -5,7 +5,7 @@ import traceback as tb
 from contextlib import contextmanager
 from dataclasses import InitVar, dataclass, field, fields, is_dataclass
 from hashlib import md5
-from typing import List
+from typing import List, Tuple
 from uuid import uuid4
 
 from daggerml_cli.db import db_type, dbenv
@@ -44,6 +44,8 @@ def from_data(data):
 
 
 def to_data(obj):
+    if isinstance(obj, tuple):
+        obj = list(obj)
     n = obj.__class__.__name__
     if isinstance(obj, (type(None), str, bool, int, float)):
         return obj
@@ -164,6 +166,7 @@ class Error(Exception):
 @dataclass(frozen=True, slots=True)
 class Resource:
     uri: str
+    requires: Tuple["Resource"] = field(default_factory=tuple)
 
     def __post_init__(self):
         if not isinstance(self.uri, str):
@@ -171,6 +174,8 @@ class Resource:
             raise ValueError(msg)
         if self.uri.endswith('/'):
             raise Error('invalid resource ID (ends with "/")', code='type-error')
+        if isinstance(self.requires, list):
+            object.__setattr__(self, 'requires', tuple(self.requires))
 
     @property
     def type(self):
