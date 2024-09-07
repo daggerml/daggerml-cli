@@ -217,8 +217,8 @@ class TestRepo(unittest.TestCase):
                 'list': [3, 4, 5],
                 'map': {'a': 2, 'b': 'asdf'},
                 'set': {12, 13, 'a', 3.4},
-                'resource': Resource('qwer'),
-                'composite': {'asdf': {2, Resource('qwer')}},
+                'resource': Resource('a:qwer'),
+                'composite': {'asdf': {2, Resource('a:qwer')}},
             }
             for k, v in data.items():
                 assert from_json(to_json(v)) == v
@@ -230,7 +230,7 @@ class TestRepo(unittest.TestCase):
                 assert val == v, f'failed {k}'
 
     def test_dag_dump_n_load(self):
-        rsrc = Resource('asdf')
+        rsrc = Resource('a:asdf')
         db = Repo(self.tmpdir, 'testy@test', create=True)
         with db.tx(True):
             index = db.begin(name='d0', message='1st dag')

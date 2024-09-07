@@ -166,16 +166,11 @@ class Error(Exception):
 @dataclass(frozen=True, slots=True)
 class Resource:
     uri: str
-    requires: Tuple["Resource"] = field(default_factory=tuple)
+    data: str = ''
 
     def __post_init__(self):
-        if not isinstance(self.uri, str):
-            msg = f'Resource instantiated with invalid {self.uri = }'
-            raise ValueError(msg)
-        if self.uri.endswith('/'):
-            raise Error('invalid resource ID (ends with "/")', code='type-error')
-        if isinstance(self.requires, list):
-            object.__setattr__(self, 'requires', tuple(self.requires))
+        if ':' not in self.uri:
+            raise Error('invalid resource ID (must contain ":")', code='type-error')
 
     @property
     def type(self):
@@ -693,7 +688,6 @@ class Repo:
         # check for db executor
         car, *cdr = expr
         car = car().value().value
-        assert isinstance(car, Resource), f'XXXXXXX {type(car) = }'
         if car.type == 'daggerml' and not fndag().is_finished():
             result = error = None
             nodes = [expr_node]
