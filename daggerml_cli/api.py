@@ -144,6 +144,8 @@ def describe_dag(config, id):
     with db.tx(False):
         ref = Ref(id)
         dag = ref()
+        if dag is None:
+            raise Error(f'dag {id} is not in DB!')
         edges = {}
         for node_ref in dag.nodes:
             node = node_ref()
@@ -155,7 +157,7 @@ def describe_dag(config, id):
             'id': ref.to,
             'expr': dag.expr.to if hasattr(dag, 'expr') else None,
             'nodes': [x.to for x in dag.nodes],
-            'result': dag.result.to,
+            'result': dag.result.to if dag.result is not None else None,
             'error': None if dag.error is None else str(dag.error),
             'edges': edges,
         }
@@ -165,18 +167,57 @@ def list_dags(config, dag_names=()):
     if os.path.exists(config.REPO_PATH):
         db = Repo(config.REPO_PATH, head=config.BRANCHREF)
         with db.tx():
-            result = [{'name': k, 'id': v.to} for k, v in Ctx.from_head(db.head).dags.items()]
+            result = [{'name': k, 'id': v.to, 'dag': v()} for k, v in Ctx.from_head(db.head).dags.items()]
         if len(dag_names) > 0:
             result = [x for x in result if x['name'] in dag_names]
         return result
     return []
 
 
+def begin_dag(config, *, name=None, message, dag_dump=None):
+    db = Repo(config.REPO_PATH, head=config.BRANCHREF)
+    with db.tx(True):
+        dag = None if dag_dump is None else db.load_ref(dag_dump)
+        return db.begin(name=name, message=message, dag=dag)
+
+
+###############################################################################
+# NODE ########################################################################
+###############################################################################
+
+def describe_node(config, id):
+    db = Repo(config.REPO_PATH, head=config.BRANCHREF)
+    with db.tx(False):
+        ref = Ref(id)
+        dag = ref()
+        if dag is None:
+            raise Error(f'dag {id} is not in DB!')
+        edges = {}
+        for node_ref in dag.nodes:
+            node = node_ref()
+            if isinstance(node.data, Fn):
+                edges[node_ref.to] = [x.to for x in node.data.expr]
+            elif isinstance(node.data, Load):
+                edges[node_ref.to] = node.data.dag.to
+        return {
+            'id': ref.to,
+            'expr': dag.expr.to if hasattr(dag, 'expr') else None,
+            'nodes': [x.to for x in dag.nodes],
+            'result': dag.result.to if dag.result is not None else None,
+            'error': None if dag.error is None else str(dag.error),
+            'edges': edges,
+        }
+
+
+###############################################################################
+# INDEX #######################################################################
+###############################################################################
+
 def list_indexes(config):
     if os.path.exists(config.REPO_PATH):
         db = Repo(config.REPO_PATH, head=config.BRANCHREF)
         with db.tx():
-            return [{'id': x.to, 'dag': x().dag.to} for x in db.indexes()]
+            return [{'id': x.to, 'index': x()} for x in db.indexes()]
     return []
 
 
@@ -186,13 +227,6 @@ def delete_index(config, index: Ref):
         assert isinstance(index(), Index)
         db.delete(index)
         return True
-
-
-def begin_dag(config, *, name=None, message, dag_dump=None):
-    db = Repo(config.REPO_PATH, head=config.BRANCHREF)
-    with db.tx(True):
-        dag = None if dag_dump is None else db.load_ref(dag_dump)
-        return db.begin(name=name, message=message, dag=dag)
 
 
 ###############################################################################
@@ -279,6 +313,10 @@ def invoke_api(config, token, data):
 
 
 def list_commit(config):
+    if os.path.exists(config.REPO_PATH):
+        db = Repo(config.REPO_PATH, head=config.BRANCHREF)
+        with db.tx():
+            return [(x.to, x()) for x in db.objects('commit')]
     return []
 
 

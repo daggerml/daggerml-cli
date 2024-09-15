@@ -1,5 +1,7 @@
 import json
 import os
+from dataclasses import fields
+from datetime import datetime
 from functools import wraps
 from getpass import getuser
 from pathlib import Path
@@ -25,6 +27,21 @@ DEFAULT_CONFIG = Config(
     os.getenv('DML_USER', f'{getuser()}@{gethostname()}'),
     os.getenv('DML_REPO_PATH'),
 )
+
+def jsdump(x, **kw):
+    def default(y):
+        if isinstance(y, set):
+            return list(y)
+        if isinstance(y, datetime):
+            return y.isoformat()
+        if isinstance(y, Ref):
+            return y.to
+        return str(y)
+    return json.dumps(x, default=default, separators=(',', ':'), **kw)
+
+
+def asdict(x):
+    return {f.name: getattr(x, f.name) for f in fields(x)}
 
 
 def set_config(ctx, *_):
@@ -84,18 +101,20 @@ def complete(f, prelude=None):
     '--debug',
     is_flag=True,
     help='Enable debug output.')
+@click.option('--output', type=click.Choice(['text', 'json']), default='text', help='preferred output format.')
 @click.option('--config', default='~/config.yml', type=click.Path())  # this allows us to change config path
 @click.group(
     no_args_is_help=True,
     context_settings={'help_option_names': ['-h', '--help'], 'auto_envvar_prefix': 'DML', 'show_default': True})
 @click.version_option(version=__version__, prog_name='dml')
 @clickex
-def cli(ctx, config_dir, project_dir, repo, branch, user, repo_path, debug, config):
+def cli(ctx, config_dir, project_dir, repo, branch, user, repo_path, debug, config, output):
     if os.path.exists(config):
         with open(config) as f:
             config = load_yaml(f.read())
         ctx.default_map = config
     set_config(ctx)
+    ctx.obj.output = output
     ctx.with_resource(ctx.obj)
 
 
@@ -138,7 +157,12 @@ def repo_copy(ctx, name):
 @repo_group.command(name='list', help='List repositories.')
 @clickex
 def repo_list(ctx):
-    [click.echo(k) for k in api.list_repo(ctx.obj)]
+    output = ctx.obj.output
+    for k in api.list_repo(ctx.obj):
+        if output == 'json':
+            click.echo(json.dumps({'name': k}))
+        else:
+            click.echo(k)
 
 
 @repo_group.command(name='gc', help='Delete unreachable objects in the repo.')
@@ -220,7 +244,12 @@ def branch_delete(ctx, name):
 @branch_group.command(name='list', help='List branches.')
 @clickex
 def branch_list(ctx):
-    [click.echo(k) for k in api.list_branch(ctx.obj)]
+    output = ctx.obj.output
+    for k in api.list_branch(ctx.obj):
+        if output == 'json':
+            click.echo(json.dumps({'name': k}))
+        else:
+            click.echo(k)
 
 
 @click.argument('name', shell_complete=complete(api.list_other_branch))
@@ -261,7 +290,7 @@ def dag_group(_):
 @click.option('-d', '--dag-dump', help='dag dump', type=str)
 @dag_group.command(name='create', help='Create a new DAG.')
 @clickex
-def api_create_dag(ctx, name, message, dag_dump=None):
+def dag_create(ctx, name, message, dag_dump=None):
     try:
         idx = api.begin_dag(ctx.obj, name=name, message=message, dag_dump=dag_dump)
         click.echo(to_json(idx))
@@ -272,16 +301,25 @@ def api_create_dag(ctx, name, message, dag_dump=None):
 @dag_group.command(name='describe', help='Get a DAG.')
 @click.argument('id')
 @clickex
-def api_describe_dag(ctx, id):
-    click.echo(json.dumps(api.describe_dag(ctx.obj, id), separators=(',', ':')))
+def describe_dag(ctx, id):
+    click.echo(jsdump(api.describe_dag(ctx.obj, id)))
 
 
 @dag_group.command(name='list', help='List DAGs.')
 @click.option('-n', '--dag-names', multiple=True)
 @clickex
 def dag_list(ctx, dag_names):
+    output = ctx.obj.output
     for k in api.list_dags(ctx.obj, dag_names=dag_names):
-        click.echo(json.dumps(k, separators=(',', ':')))
+        if output == 'json':
+            dag = k.pop('dag')
+            out = {**k, **asdict(dag)}
+            if isinstance(out['result'], dict):
+                out['result'] = out['result']['to']
+            out.pop('nodes')
+            click.echo(jsdump(out))
+        else:
+            click.echo(k['id'])
 
 
 @click.argument('json')
@@ -312,8 +350,13 @@ def index_group(_):
 @index_group.command(name='list', help="List indexes.")
 @clickex
 def index_list(ctx):
+    output = ctx.obj.output
     for k in api.list_indexes(ctx.obj):
-        click.echo(json.dumps(k, separators=(',', ':')))
+        if output == 'json':
+            dag = k.pop('index')
+            click.echo(jsdump({**k, **asdict(dag)}))
+        else:
+            click.echo(k['id'])
 
 
 @index_group.command(name='delete', help="delete index.")
@@ -332,6 +375,17 @@ def index_delete(ctx, id):
 @clickex
 def commit_group(_):
     pass
+
+
+@commit_group.command(name='list', help='List commits.')
+@clickex
+def commit_list(ctx):
+    output = ctx.obj.output
+    for id, commit in api.list_commit(ctx.obj):
+        if output == 'json':
+            click.echo(jsdump(dict(id=id, **asdict(commit))))
+        else:
+            click.echo(id)
 
 
 @click.option('--graph', is_flag=True, help='Print a graph of all commits.')

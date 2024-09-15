@@ -23,12 +23,11 @@ class Api:
         result = CliRunner().invoke(cli, [*flags, *args])
         return result
 
-    def __call__(self, *args):
-        result = self.invoke(*args)
-        return result.output
-
-    def jscall(self, *args):
-        return [json.loads(x) for x in self(*args).split('\n') if len(x) > 0]
+    def __call__(self, *args, output='text'):
+        result = self.invoke('--output', output, *args).output
+        if output == 'text':
+            return result
+        return [json.loads(x) for x in result.split('\n') if len(x) > 0]
 
     @property
     def config_dir(self):
@@ -92,22 +91,22 @@ class TestApiCreate(unittest.TestCase):
                 'dag', 'invoke', repo,
                 to_json(['put_literal', [], {'data': {'asdf': 23}}])
             )
-            idx, = api.jscall('index', 'list')
+            idx, = api('index', 'list', output='json')
             dag_result = api(
                 'dag', 'invoke', repo,
                 to_json(['commit', [], {'result': from_json(node)}])
             )
             assert from_json(dag_result).to == idx['dag']
             # tmp = [json.loads(x) for x in api('dag', 'list').split('\n') if len(x)]
-            tmp = api.jscall('dag', 'list')
+            tmp = api('dag', 'list', output='json')
             assert [x['name'] for x in tmp] == ['cool-name']
             assert api('dag', 'list', '-n', 'asdf') == ''
             dag_id, = (x['id'] for x in tmp)
-            tmp, = api.jscall('dag', 'describe', dag_id)
+            tmp, = api('dag', 'describe', dag_id, output='json')
             assert sorted(tmp.keys()) == ['edges', 'error', 'expr', 'id', 'nodes', 'result']
             assert tmp['error'] is None
             assert isinstance(tmp['result'], str)
-            assert [x['name'] for x in api.jscall('dag', 'list')] == ['cool-name']
+            assert [x['name'] for x in api('dag', 'list', output='json')] == ['cool-name']
             assert api('branch', 'list') == 'cool-branch\nmain\n'
             api('branch', 'use', 'main')
             assert api('dag', 'list') == ''

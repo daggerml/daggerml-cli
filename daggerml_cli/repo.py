@@ -447,10 +447,11 @@ class Repo:
         if ref and ref.to:
             return [ref, [self.log(ref=x) for x in sort(ref().parents) if x and x.to]]
 
-    def objects(self):
+    def objects(self, type=None):
         result = set()
-        for db in self.dbs.keys():
-            [result.add(k) for k in self.cursor(db)]
+        types = list(self.dbs.keys()) if type is None else [type]
+        for db in types:
+            [result.add(x) for x in self.cursor(db)]
         return result
 
     def reachable_objects(self):
