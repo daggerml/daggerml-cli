@@ -338,6 +338,15 @@ class Repo:
                 self('/init', '00000000000000000000000000000000')  # so we all have a common root
             self.checkout(self.head)
 
+    def close(self):
+        self.env.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *errs, **err_kw):
+        self.env.close()
+
     def __call__(self, key, obj=None, *, return_on_error=False) -> Ref:
         return self.put(key, obj, return_on_error=return_on_error)
 

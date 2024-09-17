@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
+import glob
+import os
 import unittest
 from collections import Counter
 from dataclasses import dataclass, field
 from tempfile import TemporaryDirectory
 from typing import Any
 
+import lmdb
 from tabulate import tabulate
 
 from daggerml_cli.repo import (
@@ -255,28 +258,37 @@ class TestGit(unittest.TestCase):
         self.tmpdir_ctx.__exit__(None, None, None)
 
     def test_squash(self):
+        with Repo(self.tmpdir, create=True) as db:
+            def run_commit(name, value):
+                idx = db.begin(name=name, message=f'{name = }')
+                n = db.put_node(Literal(db.put_datum(value)), index=idx)
+                db.commit(n, index=idx)
+
+            def get_commits():
+                commits = []
+                for obj in db.objects():
+                    if isinstance(obj(), Commit):
+                        commits.append(obj)
+                return commits
+
+            with db.tx(True):
+                run_commit('d0', 2)
+                c0 = db.head().commit
+                run_commit('d1', 'asx')
+                run_commit('d2',  'qwejlk')
+                db.gc()
+                n0 = len(get_commits())
+                comm = db.squash(c0, db.head().commit)
+                db.set_head(db.head, comm)
+                db.gc()
+                n1 = len(get_commits())
+                assert n1 < n0
+
+    def test_too_many_files(self):
         db = Repo(self.tmpdir, create=True)
-        def run_commit(name, value):
-            idx = db.begin(name=name, message=f'{name = }')
-            n = db.put_node(Literal(db.put_datum(value)), index=idx)
-            db.commit(n, index=idx)
-
-        def get_commits():
-            commits = []
-            for obj in db.objects():
-                if isinstance(obj(), Commit):
-                    commits.append(obj)
-            return commits
-
-        with db.tx(True):
-            run_commit('d0', 2)
-            c0 = db.head().commit
-            run_commit('d1', 'asx')
-            run_commit('d2',  'qwejlk')
-            db.gc()
-            n0 = len(get_commits())
-            comm = db.squash(c0, db.head().commit)
-            db.set_head(db.head, comm)
-            db.gc()
-            n1 = len(get_commits())
-            assert n1 < n0
+        with TemporaryDirectory(prefix='dml-test-') as tmpd:
+            with self.assertRaisesRegex(lmdb.Error, 'Too many open files'):
+                Repo(tmpd, create=True)
+            [os.remove(f) for f in glob.glob(f'{tmpd}/*')]
+            db.close()
+            Repo(tmpd, create=True)
