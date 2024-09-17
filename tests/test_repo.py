@@ -1,13 +1,10 @@
 #!/usr/bin/env python3
-import glob
-import os
 import unittest
 from collections import Counter
 from dataclasses import dataclass, field
 from tempfile import TemporaryDirectory
 from typing import Any
 
-import lmdb
 from tabulate import tabulate
 
 from daggerml_cli.repo import (
@@ -242,13 +239,14 @@ class TestRepo(DmlCliTestBase):
                 'composite': {'asdf': {2, Resource('a:qwer')}},
             }
             for k, v in data.items():
-                assert from_json(to_json(v)) == v
-                ref = db.put_node(Literal(db.put_datum(v)), index=index)
-                assert isinstance(ref, Ref)
-                node = ref()
-                assert isinstance(node, Node)
-                val = unroll_datum(node.value())
-                assert val == v, f'failed {k}'
+                with self.subTest(datatype=k):
+                    assert from_json(to_json(v)) == v
+                    ref = db.put_node(Literal(db.put_datum(v)), index=index)
+                    assert isinstance(ref, Ref)
+                    node = ref()
+                    assert isinstance(node, Node)
+                    val = unroll_datum(node.value())
+                    assert val == v, f'failed {k}'
 
     def test_dag_dump_n_load(self):
         rsrc = Resource('a:asdf')
