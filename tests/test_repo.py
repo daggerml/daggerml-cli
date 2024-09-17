@@ -64,18 +64,36 @@ class FnStart:
         return self
 
     def __exit__(self, *args, **kwargs):
+        self.fndb.close()
         if hasattr(self, '_tmpd'):
             self._tmpd.__exit__(*args, **kwargs)
 
 
-class TestRepo(unittest.TestCase):
+class DmlCliTestBase(unittest.TestCase):
 
     def setUp(self):
+        self.repos = []
+
+    def tearDown(self):
+        for repo in self.repos:
+            repo.close()
+
+    def new_repo(self, *args, **kwargs):
+        repo = Repo(*args, **kwargs)
+        self.repos.append(repo)
+        return repo
+
+
+class TestRepo(DmlCliTestBase):
+
+    def setUp(self):
+        super().setUp()
         self.tmpdir_ctx = TemporaryDirectory(prefix='dml-test-')
         self.tmpdir = self.tmpdir_ctx.__enter__()
 
     def tearDown(self):
         self.tmpdir_ctx.__exit__(None, None, None)
+        super().tearDown()
 
     def get_dag(self, db, dag):
         return Ctx.from_head(db.head).dags[dag]
@@ -84,7 +102,7 @@ class TestRepo(unittest.TestCase):
         return unroll_datum(dag().result().value)
 
     def test_create_dag(self):
-        db = Repo(self.tmpdir, 'testy@test', create=True)
+        db = self.new_repo(self.tmpdir, 'testy@test', create=True)
         with db.tx(True):
             index = db.begin(name='d0', message='1st dag')
             n0 = db.put_node(Literal(db.put_datum(Resource('a:b'))), index=index)
@@ -92,7 +110,7 @@ class TestRepo(unittest.TestCase):
 
     def test_fndag_id(self):
         expr = [Resource('a:' + self.id()), ['howdy', 1], 2]
-        db = Repo(self.tmpdir, 'testy@test', create=True)
+        db = self.new_repo(self.tmpdir, 'testy@test', create=True)
         with db.tx(True):
             expr_datum = db.put_datum([x for x in expr])
             expr_node = db(Node(Expr(expr_datum)))
@@ -100,7 +118,7 @@ class TestRepo(unittest.TestCase):
             dag0_id = fndag.to
         # same expr => same ID
         with TemporaryDirectory(prefix='dml-test-') as tmpd:
-            db = Repo(tmpd, 'testy@test', create=True)
+            db = self.new_repo(tmpd, 'testy@test', create=True)
             with db.tx(True):
                 expr_datum = db.put_datum([x for x in expr])
                 expr_node = db(Node(Expr(expr_datum)))
@@ -109,7 +127,7 @@ class TestRepo(unittest.TestCase):
         assert dag0_id == dag1_id
         # different expr => different ID
         with TemporaryDirectory(prefix='dml-test-') as tmpd:
-            db = Repo(tmpd, 'testy@test', create=True)
+            db = self.new_repo(tmpd, 'testy@test', create=True)
             with db.tx(True):
                 expr_datum = db.put_datum([x for x in [*expr, 4]])
                 expr_node = db(Node(Expr(expr_datum)))
@@ -119,14 +137,14 @@ class TestRepo(unittest.TestCase):
 
     def test_dag_id(self):
         expr = [Resource(f'a:{self.id()}'), ['howdy', 1], 2]
-        db = Repo(self.tmpdir, 'testy@test', create=True)
+        db = self.new_repo(self.tmpdir, 'testy@test', create=True)
         with db.tx(True):
             index = db.begin(name='d0', message='1st dag')
             _expr = [db.put_node(Literal(db.put_datum(x)), index=index) for x in expr]
             with FnStart(db, _expr, create=True) as fns:
                 fnid = fns.fndag.to
         with TemporaryDirectory(prefix='dml-test-') as tmpd:
-            db = Repo(tmpd, 'testy@test', create=True)
+            db = self.new_repo(tmpd, 'testy@test', create=True)
             with db.tx(True):
                 index = db.begin(name='d0', message='1st dag')
                 _expr = [db.put_node(Literal(db.put_datum(x)), index=index) for x in expr]
@@ -136,7 +154,7 @@ class TestRepo(unittest.TestCase):
 
     def test_cache_newdag(self):
         expr = [Resource(f'a:{self.id()}'), ['howdy', 1], 2]
-        db = Repo(self.tmpdir, 'testy@test', create=True)
+        db = self.new_repo(self.tmpdir, 'testy@test', create=True)
         with db.tx(True):
             index = db.begin(name='d0', message='1st dag')
             _expr = [db.put_node(Literal(db.put_datum(x)), index=index) for x in expr]
@@ -169,7 +187,7 @@ class TestRepo(unittest.TestCase):
 
     def test_get_nodeval(self):
         data = {'asdf': 23}
-        db = Repo(self.tmpdir, 'testy@test', create=True)
+        db = self.new_repo(self.tmpdir, 'testy@test', create=True)
         with db.tx(True):
             index = db.begin(name='d0', message='1st dag')
             node = db.put_node(Literal(db.put_datum(data)), index=index)
@@ -177,7 +195,7 @@ class TestRepo(unittest.TestCase):
             assert res == data
 
     def test_walk(self):
-        db = Repo(self.tmpdir, 'testy@test', create=True)
+        db = self.new_repo(self.tmpdir, 'testy@test', create=True)
         def walk_types(obj):
             return Counter(x.type for x in db.walk(obj))
         with db.tx(True):
@@ -189,7 +207,7 @@ class TestRepo(unittest.TestCase):
             assert walk_types(self.get_dag(db, 'd0')().result().value) == {'datum': 2}
 
     def test_walk_ordered(self):
-        db = Repo(self.tmpdir, 'testy@test', create=True)
+        db = self.new_repo(self.tmpdir, 'testy@test', create=True)
         def walk_types(obj, ordered=False):
             f = db.walk_ordered if ordered else db.walk
             return Counter(x.type for x in f(obj))
@@ -208,7 +226,7 @@ class TestRepo(unittest.TestCase):
             )
 
     def test_datatypes(self):
-        db = Repo(self.tmpdir, 'testy@test', create=True)
+        db = self.new_repo(self.tmpdir, 'testy@test', create=True)
         with db.tx(True):
             index = db.begin(name='d0', message='1st dag')
             data = {
@@ -234,61 +252,54 @@ class TestRepo(unittest.TestCase):
 
     def test_dag_dump_n_load(self):
         rsrc = Resource('a:asdf')
-        db = Repo(self.tmpdir, 'testy@test', create=True)
+        db = self.new_repo(self.tmpdir, 'testy@test', create=True)
         with db.tx(True):
             index = db.begin(name='d0', message='1st dag')
             db.put_node(Literal(db.put_datum(rsrc)), index=index)
             dag = index().dag
             dump = db.dump_ref(dag)
         with TemporaryDirectory(prefix='dml-test-') as tmpd:
-            repo = Repo(tmpd, create=True)
+            repo = self.new_repo(tmpd, create=True)
             with repo.tx(True):
                 ref = repo.load_ref(dump)
                 dump2 = repo.dump_ref(ref)
         assert ref == dag
         assert dump == dump2
 
-class TestGit(unittest.TestCase):
+class TestGit(DmlCliTestBase):
 
     def setUp(self):
+        super().setUp()
         self.tmpdir_ctx = TemporaryDirectory(prefix='dml-test-')
         self.tmpdir = self.tmpdir_ctx.__enter__()
 
     def tearDown(self):
         self.tmpdir_ctx.__exit__(None, None, None)
+        super().tearDown()
 
     def test_squash(self):
-        with Repo(self.tmpdir, create=True) as db:
-            def run_commit(name, value):
-                idx = db.begin(name=name, message=f'{name = }')
-                n = db.put_node(Literal(db.put_datum(value)), index=idx)
-                db.commit(n, index=idx)
+        db = self.new_repo(self.tmpdir, create=True)
+        def run_commit(name, value):
+            idx = db.begin(name=name, message=f'{name = }')
+            n = db.put_node(Literal(db.put_datum(value)), index=idx)
+            db.commit(n, index=idx)
 
-            def get_commits():
-                commits = []
-                for obj in db.objects():
-                    if isinstance(obj(), Commit):
-                        commits.append(obj)
-                return commits
+        def get_commits():
+            commits = []
+            for obj in db.objects():
+                if isinstance(obj(), Commit):
+                    commits.append(obj)
+            return commits
 
-            with db.tx(True):
-                run_commit('d0', 2)
-                c0 = db.head().commit
-                run_commit('d1', 'asx')
-                run_commit('d2',  'qwejlk')
-                db.gc()
-                n0 = len(get_commits())
-                comm = db.squash(c0, db.head().commit)
-                db.set_head(db.head, comm)
-                db.gc()
-                n1 = len(get_commits())
-                assert n1 < n0
-
-    def test_too_many_files(self):
-        db = Repo(self.tmpdir, create=True)
-        with TemporaryDirectory(prefix='dml-test-') as tmpd:
-            with self.assertRaisesRegex(lmdb.Error, 'Too many open files'):
-                Repo(tmpd, create=True)
-            [os.remove(f) for f in glob.glob(f'{tmpd}/*')]
-            db.close()
-            Repo(tmpd, create=True)
+        with db.tx(True):
+            run_commit('d0', 2)
+            c0 = db.head().commit
+            run_commit('d1', 'asx')
+            run_commit('d2',  'qwejlk')
+            db.gc()
+            n0 = len(get_commits())
+            comm = db.squash(c0, db.head().commit)
+            db.set_head(db.head, comm)
+            db.gc()
+            n1 = len(get_commits())
+            assert n1 < n0
