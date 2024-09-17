@@ -345,7 +345,7 @@ class Repo:
         return self
 
     def __exit__(self, *errs, **err_kw):
-        self.env.close()
+        self.close()
 
     def __call__(self, key, obj=None, *, return_on_error=False) -> Ref:
         return self.put(key, obj, return_on_error=return_on_error)
