@@ -37,6 +37,13 @@ dependencies = [
   "importlib_metadata; python_version < '3.8'",
 ]
 
+[project.optional-dependencies]
+test = [
+  "coverage[toml]>=6.5",
+  "pytest",
+  "pytest-cov",
+]
+
 [project.urls]
 Documentation = "https://github.com/daggerml/daggerml-cli#readme"
 Issues = "https://github.com/daggerml/daggerml-cli/issues"
