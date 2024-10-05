@@ -33,7 +33,7 @@ def list_other_repo(config):
 
 def create_repo(config, name):
     config._REPO = name
-    with Repo(makedirs(config.REPO_PATH), config.USER, create=True) as db:
+    with Repo(makedirs(config.REPO_PATH), config.USER, create=True):
         pass
 
 
