@@ -17,16 +17,21 @@ class TestConfig(TestCase):
 
         # Trying to access a key that hasn't been set yet is an error.
         with self.assertRaises(ConfigError):
-            assert config.REPO is None
+            assert config.BRANCH is None
+
+        # Set BRANCH key without writing to any files, and then access it.
+        config._BRANCH = "master"
+        assert config.BRANCH == "master"
 
         # Environment variables can provide a value, prefix the desired config
         # field name with "DML_" as the name of the environment variable.
         with mock.patch.dict(os.environ, {"DML_REPO": "test0"}):
             assert config.REPO == "test0"
 
-        # Set REPO key without writing to any files, and then access it.
-        config._REPO = "test0"
-        assert config.REPO == "test0"
+            # And REPO can be modified, but it won't be persisted because we are
+            # not using the Config object as a context manager.
+            config.REPO = "test1"
+            assert config.REPO == "test1"
 
         # Some fields access other fields internally -- these are dynamic, or
         # computed fields. It's an error to acc ess them if the fields they
