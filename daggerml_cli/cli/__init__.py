@@ -345,7 +345,7 @@ def dag_list(ctx, dag_names):
 @click.argument('token')
 @dag_group.command(
     name='invoke',
-    help=f'Invoke API with token returned by create and JSON command.\n\nops: {list(api._invoke_method.fn_map.keys())}')
+    help=f'Invoke API with token returned by create and JSON command.\n\nJSON command ops: {api.format_ops()}')
 @clickex
 def api_invoke(ctx, token, json):
     try:
