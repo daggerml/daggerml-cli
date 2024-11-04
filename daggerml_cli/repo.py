@@ -138,7 +138,7 @@ class Ref:
 class FnWaiter:
     expr: List[Ref]  # -> [Node]
     fndag: Ref  # -> FnDag
-    dump: str|None = None
+    dump: str | None = None
 
     def is_finished(self):
         return self.fndag().is_finished()
@@ -552,6 +552,7 @@ class Repo:
 
     def rebase(self, c1, c2):
         c0 = self.merge_base(c1, c2)
+
         def replay(commit):
             if commit == c0:
                 return c1
@@ -577,6 +578,7 @@ class Repo:
         c.parents = [c1]
         c.committer = c2().committer
         c.created = now()
+
         def reparent(commit, old_parent, new_parent):
             comm = commit()
             replaced = [new_parent if x == old_parent else x for x in comm.parents]
