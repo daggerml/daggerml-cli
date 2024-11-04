@@ -15,7 +15,8 @@ def config_property(f=None, **opts):
         @wraps(f)
         def getter(self) -> str:
             if base and getattr(self, priv) is None:
-                setattr(self, priv, readfile(self.get(base), *path))
+                val = os.getenv(env) or readfile(self.get(base), *path)
+                setattr(self, priv, val)
             result = f(self) or getattr(self, priv, None)
             if not result:
                 errmsg = f'required: --{kebab} option or DML_{name} environment variable'
@@ -24,6 +25,7 @@ def config_property(f=None, **opts):
             return result
         name = f.__name__
         priv = f'_{name}'
+        env = f'DML{priv}'
         kebab = name.lower().replace('_', '-')
         base, *path = opts.get('path', [None])
         result = property(getter)
@@ -40,6 +42,7 @@ def config_property(f=None, **opts):
 
 @dataclass
 class Config:
+    """This class holds the global configuration options."""
     _CONFIG_DIR: str | None = None
     _PROJECT_DIR: str | None = None
     _REPO: str | None = None
@@ -96,6 +99,7 @@ class Config:
 
     def __enter__(self):
         self._writes.append({})
+        return self
 
     def __exit__(self, type, *_):
         writes = self._writes.pop()

@@ -217,6 +217,7 @@ class TestSpecials(unittest.TestCase):
     def test_type(self):
         with SimpleApi.begin('d0', 'dag 0') as d0:
             rsrc = d0('put_literal', Resource('daggerml:op/type'))
+
             def doit(x):
                 n0 = d0('put_literal', x)
                 return self.call(d0, [rsrc, n0])
