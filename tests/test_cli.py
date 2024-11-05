@@ -50,6 +50,7 @@ def tmpdirs(*, init=True):
             api.init()
         yield api
 
+
 class TestApiCreate(unittest.TestCase):
 
     def test_create_repo(self):
