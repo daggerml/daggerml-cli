@@ -31,7 +31,6 @@ def dump(repo, count=None):
     print('\n' + tabulate(rows, tablefmt="simple_grid"))
 
 
-
 @dataclass
 class FnStart:
     repo: Any
@@ -193,8 +192,10 @@ class TestRepo(DmlCliTestBase):
 
     def test_walk(self):
         db = self.new_repo(self.tmpdir, 'testy@test', create=True)
+
         def walk_types(obj):
             return Counter(x.type for x in db.walk(obj))
+
         with db.tx(True):
             index = db.begin(name='d0', message='1st dag')
             n0 = db.put_node(Literal(db.put_datum({'foo': 42})), index=index)
@@ -205,9 +206,11 @@ class TestRepo(DmlCliTestBase):
 
     def test_walk_ordered(self):
         db = self.new_repo(self.tmpdir, 'testy@test', create=True)
+
         def walk_types(obj, ordered=False):
             f = db.walk_ordered if ordered else db.walk
             return Counter(x.type for x in f(obj))
+
         with db.tx(True):
             index = db.begin(name='d0', message='1st dag')
             n0 = db.put_node(Literal(db.put_datum({'foo': 42})), index=index)
@@ -264,6 +267,7 @@ class TestRepo(DmlCliTestBase):
         assert ref == dag
         assert dump == dump2
 
+
 class TestGit(DmlCliTestBase):
 
     def setUp(self):
@@ -277,6 +281,7 @@ class TestGit(DmlCliTestBase):
 
     def test_squash(self):
         db = self.new_repo(self.tmpdir, create=True)
+
         def run_commit(name, value):
             idx = db.begin(name=name, message=f'{name = }')
             n = db.put_node(Literal(db.put_datum(value)), index=idx)
