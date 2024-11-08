@@ -1,5 +1,5 @@
 import os
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field, fields, replace
 from functools import wraps
 
 from daggerml_cli.repo import Ref
@@ -8,6 +8,10 @@ from daggerml_cli.util import readfile, writefile
 
 class ConfigError(RuntimeError):
     pass
+
+
+def priv_name(x):
+    return f'_{x.upper()}'
 
 
 def config_property(f=None, **opts):
@@ -19,12 +23,12 @@ def config_property(f=None, **opts):
                 setattr(self, priv, val)
             result = f(self) or getattr(self, priv, None)
             if not result:
-                errmsg = f'required: --{kebab} option or DML_{name} environment variable'
+                errmsg = f'required: --{kebab} option or {env} environment variable'
                 errmsg = '%s or `dml %s`' % (errmsg, opts['cmd']) if opts.get('cmd') else errmsg
                 raise ConfigError(errmsg)
             return result
         name = f.__name__
-        priv = f'_{name}'
+        priv = priv_name(name)
         env = f'DML{priv}'
         kebab = name.lower().replace('_', '-')
         base, *path = opts.get('path', [None])
@@ -51,6 +55,12 @@ class Config:
     _REPO_PATH: str | None = None
     _DEBUG: bool = False
     _writes: list = field(default_factory=list)
+
+    @classmethod
+    def new(cls, **kw):
+        xs = {priv_name(k): v for k, v in kw.items()}
+        fs = [f.name for f in fields(cls)]
+        return cls(**{k: v for k, v in xs.items() if k in fs})
 
     def get(self, name, default=None):
         try:

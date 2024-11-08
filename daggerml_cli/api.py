@@ -236,58 +236,71 @@ def delete_index(config, index: Ref):
 ###############################################################################
 
 
-def _invoke_method(f):
+def invoke_op(f):
     _, fname = f.__name__.split('_', 1)
-    _invoke_method.fn_map[fname] = f
+    if not hasattr(invoke_op, 'fns'):
+        invoke_op.fns = {}
+    invoke_op.fns[fname] = f
     return f
-_invoke_method.fn_map = {}
 
-@_invoke_method
-def invoke_start_fn(db, index, expr, retry=False):
+
+def format_ops():
+    return ', '.join(list(invoke_op.fns.keys()))
+
+
+@invoke_op
+def op_start_fn(db, index, expr, retry=False):
     with db.tx(True):
         fn = db.start_fn(expr=expr, retry=retry)
         dump = fn().dump
         cache_key = fn().fndag.to
         return [fn, cache_key, dump]
 
-@_invoke_method
-def invoke_get_fn_result(db, index, waiter_ref):
+
+@invoke_op
+def op_get_fn_result(db, index, waiter_ref):
     with db.tx(True):
         result = db.get_fn_result(index, waiter_ref)
         if isinstance(result, Ref) and result().error is not None:
             return result().error
         return result
 
-@_invoke_method
-def invoke_put_literal(db, index, data):
+
+@invoke_op
+def op_put_literal(db, index, data):
     with db.tx(True):
         from daggerml_cli.repo import Index
         assert isinstance(index(), Index)
         datum = db.put_datum(data)
         return db.put_node(Literal(datum), index=index)
 
-@_invoke_method
-def invoke_put_load(db, index, load_dag):
+
+@invoke_op
+def op_put_load(db, index, load_dag):
     with db.tx(True):
         return db.put_node(Load(asserting(db.get_dag(load_dag))), index=index)
 
-@_invoke_method
-def invoke_commit(db, index, result):
+
+@invoke_op
+def op_commit(db, index, result):
     with db.tx(True):
         return db.commit(res_or_err=result, index=index)
 
-@_invoke_method
-def invoke_get_node_value(db, _, node: Ref):
+
+@invoke_op
+def op_get_node_value(db, _, node: Ref):
     with db.tx():
         return db.get_node_value(node)
 
-@_invoke_method
-def invoke_get_expr(db, index):
+
+@invoke_op
+def op_get_expr(db, index):
     with db.tx():
         return index().dag().expr
 
-@_invoke_method
-def invoke_unroll(db, index, node):
+
+@invoke_op
+def op_unroll(db, index, node):
     with db.tx():
         return unroll_datum(node().value())
 
@@ -304,7 +317,7 @@ def invoke_api(config, token, data):
         # db = token if token else Repo(config.REPO_PATH, config.USER, config.BRANCHREF)
         with Repo(config.REPO_PATH, config.USER, config.BRANCHREF) as db:
             op, args, kwargs = data
-            return _invoke_method.fn_map.get(op, no_such_op(op))(db, token, *args, **kwargs)
+            return invoke_op.fns.get(op, no_such_op(op))(db, token, *args, **kwargs)
     except Exception as e:
         raise Error.from_ex(e) from e
 
@@ -338,6 +351,7 @@ def commit_log_graph(config):
                     tag2 = f" {head.name}" if head else ""
                     names[x[0]] = f"{k}{tag1}{tag2}"
                     [walk_names(p) for p in x[1]]
+
             def walk_nodes(x):
                 if x and x[0]:
                     if x[0] not in nodes:
