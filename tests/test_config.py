@@ -34,7 +34,7 @@ class TestConfig(TestCase):
             assert config.REPO == "test1"
 
         # Some fields access other fields internally -- these are dynamic, or
-        # computed fields. It's an error to acc ess them if the fields they
+        # computed fields. It's an error to access them if the fields they
         # access haven't been set. For example, REPO_DIR internally references
         # CONFIG_DIR which hasn't been set yet.
         with self.assertRaises(ConfigError):
