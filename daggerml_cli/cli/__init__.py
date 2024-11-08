@@ -170,7 +170,7 @@ def repo_delete(ctx, name):
 @clickex
 def repo_copy(ctx, name):
     api.copy_repo(ctx.obj, name)
-    click.echo(f'Copied repo: {ctx.obj.REPO} -> {name}')
+    click.echo(f'Copied repository: {ctx.obj.REPO} -> {name}')
 
 
 @repo_group.command(name='list', help='List repositories.')
