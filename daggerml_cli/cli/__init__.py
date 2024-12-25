@@ -16,16 +16,26 @@ from daggerml_cli.__about__ import __version__
 from daggerml_cli.config import Config
 from daggerml_cli.repo import Error, Ref, from_json, to_json
 
-_config_dir = str((Path.home() / '.local/dml').absolute())
+SYSTEM_CONFIG_DIR = str(Path(os.getenv('XDG_CONFIG_HOME', str(Path.home() / '.config'))))
+CONFIG_DIR = str((Path(SYSTEM_CONFIG_DIR) / 'dml').absolute())
+CONFIG_FILE = str((Path(CONFIG_DIR) / 'config.yml').absolute())
 
-DEFAULT_CONFIG = Config(
-    os.getenv('DML_CONFIG_DIR', os.path.join(
-        str(Path.home()), '.local', 'dml')),
-    os.getenv('DML_PROJECT_DIR', '.dml'),
-    os.getenv('DML_REPO'),
-    os.getenv('DML_BRANCH'),
-    os.getenv('DML_USER', f'{getuser()}@{gethostname()}'),
-    os.getenv('DML_REPO_PATH'),
+DEFAULT_CONFIG = {
+    'CONFIG_DIR': CONFIG_DIR,
+    'PROJECT_DIR': '.dml',
+    'REPO': None,
+    'BRANCH': None,
+    'USER': f'{getuser()}@{gethostname()}',
+    'REPO_PATH': None,
+}
+
+BASE_CONFIG = Config(
+    os.getenv('DML_CONFIG_DIR', DEFAULT_CONFIG['CONFIG_DIR']),
+    os.getenv('DML_PROJECT_DIR', DEFAULT_CONFIG['PROJECT_DIR']),
+    os.getenv('DML_REPO', DEFAULT_CONFIG['REPO']),
+    os.getenv('DML_BRANCH', DEFAULT_CONFIG['BRANCH']),
+    os.getenv('DML_USER', DEFAULT_CONFIG['USER']),
+    os.getenv('DML_REPO_PATH', DEFAULT_CONFIG['REPO_PATH']),
 )
 
 
@@ -46,9 +56,7 @@ def asdict(x):
 
 
 def set_config(ctx, *_):
-    xs = {f'_{k.upper()}': v for k, v in ctx.params.items()}
-    ctx.obj = Config(**{k: v for k, v in xs.items()
-                     if hasattr(DEFAULT_CONFIG, k)})
+    ctx.obj = Config.new(**dict(ctx.params.items()))
 
 
 def clickex(f):
@@ -66,7 +74,7 @@ def complete(f, prelude=None):
         try:
             if prelude:
                 prelude(ctx, param, incomplete)
-            return [k for k in (f(ctx.obj or DEFAULT_CONFIG) or []) if k.startswith(incomplete)]
+            return [k for k in (f(ctx.obj or BASE_CONFIG) or []) if k.startswith(incomplete)]
         except BaseException:
             return []
     return inner
@@ -74,7 +82,7 @@ def complete(f, prelude=None):
 
 @click.option(
     '--user',
-    default=f'{getuser()}@{gethostname()}',
+    default=DEFAULT_CONFIG['USER'],
     help='Specify user name@host or email, etc.')
 @click.option(
     '--branch',
@@ -91,22 +99,32 @@ def complete(f, prelude=None):
 @click.option(
     '--project-dir',
     type=click.Path(),
-    default='.dml',
+    default=DEFAULT_CONFIG['PROJECT_DIR'],
     help='Project directory location.')
 @click.option(
     '--config-dir',
     type=click.Path(),
-    default=_config_dir,
+    default=DEFAULT_CONFIG['CONFIG_DIR'],
     help='Config directory location.')
 @click.option(
     '--debug',
     is_flag=True,
     help='Enable debug output.')
-@click.option('--output', type=click.Choice(['text', 'json']), default='text', help='preferred output format.')
-@click.option('--config', default='~/config.yml', type=click.Path())  # this allows us to change config path
+@click.option(
+    '--output',
+    type=click.Choice(['text', 'json']),
+    default='text',
+    help='preferred output format.')
+@click.option(
+    '--config',
+    default=CONFIG_FILE,
+    type=click.Path())  # this allows us to change config path
 @click.group(
     no_args_is_help=True,
-    context_settings={'help_option_names': ['-h', '--help'], 'auto_envvar_prefix': 'DML', 'show_default': True})
+    context_settings={
+        'help_option_names': ['-h', '--help'],
+        'auto_envvar_prefix': 'DML',
+        'show_default': True})
 @click.version_option(version=__version__, prog_name='dml')
 @clickex
 def cli(ctx, config_dir, project_dir, repo, branch, user, repo_path, debug, config, output):
@@ -152,7 +170,7 @@ def repo_delete(ctx, name):
 @clickex
 def repo_copy(ctx, name):
     api.copy_repo(ctx.obj, name)
-    click.echo(f'Copied repo: {ctx.obj.REPO} -> {name}')
+    click.echo(f'Copied repository: {ctx.obj.REPO} -> {name}')
 
 
 @repo_group.command(name='list', help='List repositories.')
@@ -327,7 +345,7 @@ def dag_list(ctx, dag_names):
 @click.argument('token')
 @dag_group.command(
     name='invoke',
-    help=f'Invoke API with token returned by create and JSON command.\n\nops: {list(api._invoke_method.fn_map.keys())}')
+    help=f'Invoke API with token returned by create and JSON command.\n\nJSON command ops: {api.format_ops()}')
 @clickex
 def api_invoke(ctx, token, json):
     try:
