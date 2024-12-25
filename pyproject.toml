@@ -63,10 +63,13 @@ python = "3.10"
 
 [tool.hatch.envs.test]
 dependencies = [
+  "twine",
   "coverage[toml]>=6.5",
   "pytest",
   "pytest-cov",
 ]
+[tool.hatch.envs.test.scripts]
+dml-build = "hatch build && twine upload -r {args:tests} dist/*"
 
 [tool.ruff]
 target-version = "py37"
