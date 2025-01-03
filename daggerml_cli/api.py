@@ -193,7 +193,7 @@ def describe_node(config, id):
             ref = Ref(id)
             dag = ref()
             if dag is None:
-                raise Error(f'dag {id} is not in DB!')
+                raise Error(f'dag not found: {id}')
             edges = {}
             for node_ref in dag.nodes:
                 node = node_ref()

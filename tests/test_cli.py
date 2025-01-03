@@ -33,7 +33,7 @@ class Dag:
 
 @dataclass
 class Cli:
-    """Helper class facilitating testing of cli 'dag invoke' command."""
+    """Helper class facilitating testing of cli `dag invoke` command."""
     _config_dir: str
     _project_dir: str
 
@@ -95,7 +95,7 @@ def cliTmpDirs():
             yield Cli(config_dir, project_dir)
 
 
-class TestBranch(TestCase):
+class TestCliBranch(TestCase):
 
     def test_branch_create(self):
         with cliTmpDirs() as dml:
@@ -140,7 +140,18 @@ class TestBranch(TestCase):
             dml.branch('main')
 
 
-class TestProject(TestCase):
+class TestCliCommit(TestCase):
+
+    def test_commit_list(self):
+        with cliTmpDirs() as dml:
+            dml.repo_create('repo0')
+            dml.project_init('repo0')
+            commits = dml('commit', 'list').split('\n')
+            assert len(commits) == 1
+            assert commits[0].startswith('commit/')
+
+
+class TestCliProject(TestCase):
 
     def test_project_init(self):
         with cliTmpDirs() as dml:
@@ -149,7 +160,7 @@ class TestProject(TestCase):
             dml.repo('repo0')
 
 
-class TestRepo(TestCase):
+class TestCliRepo(TestCase):
 
     def test_repo_copy(self):
         with cliTmpDirs() as dml:
@@ -203,7 +214,7 @@ class TestRepo(TestCase):
             dml.repo_path()
 
 
-class TestZzz(TestCase):
+class TestCliZzz(TestCase):
 
     def test_zzz(self):
         with cliTmpDirs() as dml:
