@@ -1,0 +1,83 @@
+cache_dir='/var/folders/s5/b6p3x08d38186_0xkrj9h80m0000gn/T/tmpzwas9tgv'
+d0.token=Ref(to='index/b7b04c6c676d8caac2979a5f865a9f6b')
+fndag()=FnDag(nodes={Ref(to='node/489476910a4f6c5eb72300ff93c1f5c3')}, result=None, error=None, expr=Ref(to='node/489476910a4f6c5eb72300ff93c1f5c3'))
+fndag().ready()=False
+cache_dir='/var/folders/s5/b6p3x08d38186_0xkrj9h80m0000gn/T/tmpzwas9tgv'
+d0.token=Ref(to='index/4004f68a0948231238d0434583099b23')
+fndag()=FnDag(nodes={Ref(to='node/489476910a4f6c5eb72300ff93c1f5c3')}, result=None, error=None, expr=Ref(to='node/489476910a4f6c5eb72300ff93c1f5c3'))
+fndag().ready()=False
+cache_dir='/var/folders/s5/b6p3x08d38186_0xkrj9h80m0000gn/T/tmpn_zio5jo'
+d0.token()=Index(commit=Ref(to='commit/831fc808663f20f3a9aad662d05650eb'), dag=Ref(to='fndag/682fbdc1d86bbcf3dfacffb652d1de4f'))
+fndag()=FnDag(nodes={Ref(to='node/489476910a4f6c5eb72300ff93c1f5c3')}, result=None, error=None, expr=Ref(to='node/489476910a4f6c5eb72300ff93c1f5c3'))
+fndag().ready()=False
+cache_dir='/var/folders/s5/b6p3x08d38186_0xkrj9h80m0000gn/T/tmpn_zio5jo'
+d0.token()=Index(commit=Ref(to='commit/bf92cd3e35a10ff864d9b524495e30db'), dag=Ref(to='fndag/682fbdc1d86bbcf3dfacffb652d1de4f'))
+fndag()=FnDag(nodes={Ref(to='node/489476910a4f6c5eb72300ff93c1f5c3')}, result=None, error=None, expr=Ref(to='node/489476910a4f6c5eb72300ff93c1f5c3'))
+fndag().ready()=False
+cache_dir='/var/folders/s5/b6p3x08d38186_0xkrj9h80m0000gn/T/tmp9ke_bevm'
+d0.token()=Index(commit=Ref(to='commit/956b529ca5d307b6854b089a51b1a0ee'), dag=Ref(to='fndag/682fbdc1d86bbcf3dfacffb652d1de4f'))
+fndag()=FnDag(nodes={Ref(to='node/489476910a4f6c5eb72300ff93c1f5c3')}, result=None, error=None, expr=Ref(to='node/489476910a4f6c5eb72300ff93c1f5c3'))
+fndag().ready()=False
+cache_dir='/var/folders/s5/b6p3x08d38186_0xkrj9h80m0000gn/T/tmp9ke_bevm'
+d0.token()=Index(commit=Ref(to='commit/f1d5d566b9d0d240fad185f715b5b1cf'), dag=Ref(to='fndag/682fbdc1d86bbcf3dfacffb652d1de4f'))
+fndag()=FnDag(nodes={Ref(to='node/489476910a4f6c5eb72300ff93c1f5c3')}, result=None, error=None, expr=Ref(to='node/489476910a4f6c5eb72300ff93c1f5c3'))
+fndag().ready()=False
+cache_dir='/var/folders/s5/b6p3x08d38186_0xkrj9h80m0000gn/T/tmpl0mrey3h'
+d0.token().dag()=FnDag(nodes={Ref(to='node/489476910a4f6c5eb72300ff93c1f5c3')}, result=None, error=None, expr=Ref(to='node/489476910a4f6c5eb72300ff93c1f5c3'))
+fndag()=FnDag(nodes={Ref(to='node/489476910a4f6c5eb72300ff93c1f5c3')}, result=None, error=None, expr=Ref(to='node/489476910a4f6c5eb72300ff93c1f5c3'))
+fndag().ready()=False
+cache_dir='/var/folders/s5/b6p3x08d38186_0xkrj9h80m0000gn/T/tmpl0mrey3h'
+d0.token().dag()=FnDag(nodes={Ref(to='node/489476910a4f6c5eb72300ff93c1f5c3')}, result=None, error=None, expr=Ref(to='node/489476910a4f6c5eb72300ff93c1f5c3'))
+fndag()=FnDag(nodes={Ref(to='node/489476910a4f6c5eb72300ff93c1f5c3')}, result=None, error=None, expr=Ref(to='node/489476910a4f6c5eb72300ff93c1f5c3'))
+fndag().ready()=False
+d0.token().dag()=FnDag(nodes={Ref(to='node/489476910a4f6c5eb72300ff93c1f5c3')}, result=None, error=None, expr=Ref(to='node/489476910a4f6c5eb72300ff93c1f5c3'))
+fndag()=FnDag(nodes={Ref(to='node/489476910a4f6c5eb72300ff93c1f5c3')}, result=None, error=None, expr=Ref(to='node/489476910a4f6c5eb72300ff93c1f5c3'))
+fndag().ready()=False
+d0.token().dag()=FnDag(nodes={Ref(to='node/489476910a4f6c5eb72300ff93c1f5c3')}, result=None, error=None, expr=Ref(to='node/489476910a4f6c5eb72300ff93c1f5c3'))
+fndag()=FnDag(nodes={Ref(to='node/489476910a4f6c5eb72300ff93c1f5c3')}, result=None, error=None, expr=Ref(to='node/489476910a4f6c5eb72300ff93c1f5c3'))
+fndag().ready()=False
+d0.token().dag()=FnDag(nodes={Ref(to='node/8956a616b131683c5f90a81f44122721')}, result=None, error=None, expr=Ref(to='node/8956a616b131683c5f90a81f44122721'))
+fndag()=FnDag(nodes={Ref(to='node/8956a616b131683c5f90a81f44122721')}, result=None, error=None, expr=Ref(to='node/8956a616b131683c5f90a81f44122721'))
+fndag().ready()=False
+d0.token().dag()=FnDag(nodes={Ref(to='node/8956a616b131683c5f90a81f44122721')}, result=None, error=None, expr=Ref(to='node/8956a616b131683c5f90a81f44122721'))
+fndag()=FnDag(nodes={Ref(to='node/8956a616b131683c5f90a81f44122721')}, result=None, error=None, expr=Ref(to='node/8956a616b131683c5f90a81f44122721'))
+fndag().ready()=False
+d0.token().dag()=FnDag(nodes={Ref(to='node/8956a616b131683c5f90a81f44122721')}, result=None, error=None, expr=Ref(to='node/8956a616b131683c5f90a81f44122721'))
+fndag()=FnDag(nodes={Ref(to='node/8956a616b131683c5f90a81f44122721')}, result=None, error=None, expr=Ref(to='node/8956a616b131683c5f90a81f44122721'))
+fndag().ready()=False
+d0.token().dag()=FnDag(nodes={Ref(to='node/8956a616b131683c5f90a81f44122721')}, result=None, error=None, expr=Ref(to='node/8956a616b131683c5f90a81f44122721'))
+fndag()=FnDag(nodes={Ref(to='node/8956a616b131683c5f90a81f44122721')}, result=None, error=None, expr=Ref(to='node/8956a616b131683c5f90a81f44122721'))
+fndag().ready()=False
+d0.token().dag()=FnDag(nodes={Ref(to='node/8956a616b131683c5f90a81f44122721')}, result=None, error=None, expr=Ref(to='node/8956a616b131683c5f90a81f44122721'))
+fndag()=FnDag(nodes={Ref(to='node/8956a616b131683c5f90a81f44122721')}, result=None, error=None, expr=Ref(to='node/8956a616b131683c5f90a81f44122721'))
+fndag().ready()=False
+d0.token().dag()=FnDag(nodes={Ref(to='node/489476910a4f6c5eb72300ff93c1f5c3')}, result=None, error=None, expr=Ref(to='node/489476910a4f6c5eb72300ff93c1f5c3'))
+fndag()=FnDag(nodes={Ref(to='node/489476910a4f6c5eb72300ff93c1f5c3')}, result=None, error=None, expr=Ref(to='node/489476910a4f6c5eb72300ff93c1f5c3'))
+fndag().ready()=False
+d0.token().dag()=FnDag(nodes={Ref(to='node/489476910a4f6c5eb72300ff93c1f5c3')}, result=None, error=None, expr=Ref(to='node/489476910a4f6c5eb72300ff93c1f5c3'))
+fndag()=FnDag(nodes={Ref(to='node/489476910a4f6c5eb72300ff93c1f5c3')}, result=None, error=None, expr=Ref(to='node/489476910a4f6c5eb72300ff93c1f5c3'))
+fndag().ready()=False
+d0.token().dag()=FnDag(nodes={Ref(to='node/8956a616b131683c5f90a81f44122721')}, result=None, error=None, expr=Ref(to='node/8956a616b131683c5f90a81f44122721'))
+fndag()=FnDag(nodes={Ref(to='node/8956a616b131683c5f90a81f44122721')}, result=None, error=None, expr=Ref(to='node/8956a616b131683c5f90a81f44122721'))
+fndag().ready()=False
+d0.token().dag()=FnDag(nodes={Ref(to='node/8956a616b131683c5f90a81f44122721')}, result=None, error=None, expr=Ref(to='node/8956a616b131683c5f90a81f44122721'))
+fndag()=FnDag(nodes={Ref(to='node/8956a616b131683c5f90a81f44122721')}, result=None, error=None, expr=Ref(to='node/8956a616b131683c5f90a81f44122721'))
+fndag().ready()=False
+d0.token().dag()=FnDag(nodes={Ref(to='node/8956a616b131683c5f90a81f44122721')}, result=None, error=None, expr=Ref(to='node/8956a616b131683c5f90a81f44122721'))
+fndag()=FnDag(nodes={Ref(to='node/8956a616b131683c5f90a81f44122721')}, result=None, error=None, expr=Ref(to='node/8956a616b131683c5f90a81f44122721'))
+fndag().ready()=False
+d0.token().dag()=FnDag(nodes={Ref(to='node/8956a616b131683c5f90a81f44122721')}, result=None, error=None, expr=Ref(to='node/8956a616b131683c5f90a81f44122721'))
+fndag()=FnDag(nodes={Ref(to='node/8956a616b131683c5f90a81f44122721')}, result=None, error=None, expr=Ref(to='node/8956a616b131683c5f90a81f44122721'))
+fndag().ready()=False
+d0.token().dag()=FnDag(nodes={Ref(to='node/8956a616b131683c5f90a81f44122721')}, result=None, error=None, expr=Ref(to='node/8956a616b131683c5f90a81f44122721'))
+fndag()=FnDag(nodes={Ref(to='node/8956a616b131683c5f90a81f44122721')}, result=None, error=None, expr=Ref(to='node/8956a616b131683c5f90a81f44122721'))
+fndag().ready()=False
+d0.token().dag()=FnDag(nodes={Ref(to='node/8956a616b131683c5f90a81f44122721')}, result=None, error=None, expr=Ref(to='node/8956a616b131683c5f90a81f44122721'))
+fndag()=FnDag(nodes={Ref(to='node/8956a616b131683c5f90a81f44122721')}, result=None, error=None, expr=Ref(to='node/8956a616b131683c5f90a81f44122721'))
+fndag().ready()=False
+d0.token().dag()=FnDag(nodes={Ref(to='node/8956a616b131683c5f90a81f44122721')}, result=None, error=None, expr=Ref(to='node/8956a616b131683c5f90a81f44122721'))
+fndag()=FnDag(nodes={Ref(to='node/8956a616b131683c5f90a81f44122721')}, result=None, error=None, expr=Ref(to='node/8956a616b131683c5f90a81f44122721'))
+fndag().ready()=False
+d0.token().dag()=FnDag(nodes={Ref(to='node/8956a616b131683c5f90a81f44122721')}, result=None, error=None, expr=Ref(to='node/8956a616b131683c5f90a81f44122721'))
+fndag()=FnDag(nodes={Ref(to='node/8956a616b131683c5f90a81f44122721')}, result=None, error=None, expr=Ref(to='node/8956a616b131683c5f90a81f44122721'))
+fndag().ready()=False

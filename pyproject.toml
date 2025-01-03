@@ -120,7 +120,11 @@ ignore = [
   # Line too long
   "E501",
   # overwritten loop variable
-  "PLW2901"
+  "PLW2901",
+  # `subprocess` call: check for execution of untrusted input
+  "S603",
+  # `try`-`except`-`pass` detected, consider logging the exception
+  "S110",
 ]
 unfixable = [
   # Don't touch unused imports
