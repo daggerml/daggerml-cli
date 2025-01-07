@@ -38,8 +38,7 @@ class SimpleApi:
                 _USER='user0',
             )
             api.create_repo(ctx, 'test')
-            api.use_repo(ctx, 'test')
-            api.init_project(ctx, 'test')
+            api.config_repo(ctx, 'test')
         tok = api.begin_dag(ctx, name=name, message=message, dag_dump=dag_dump)
         return cls(tok, ctx, tmpdirs)
 
@@ -75,10 +74,9 @@ class TestApiCreate(unittest.TestCase):
                 _USER='user0',
             )
             api.create_repo(ctx, 'test')
-            assert api.list_repo(ctx) == ['test']
-            api.use_repo(ctx, 'test')
-            assert api.list_branch(ctx) == ['main']
-            api.init_project(ctx, 'test')
+            assert api.with_query(api.list_repo, '[*].name')(ctx) == ['test']
+            api.config_repo(ctx, 'test')
+            assert api.jsdata(api.list_branch(ctx)) == ['main']
             api.create_branch(ctx, 'b0')
             assert api.current_branch(ctx) == 'b0'
 

@@ -13,7 +13,7 @@
 ## Installation
 
 ```sh
-pip install --prefix $HOME daggerml-cli
+pip install daggerml-cli
 ```
 
 For consistency with `python-lib`, to run the tests:

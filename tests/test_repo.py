@@ -110,7 +110,7 @@ class TestRepo(DmlCliTestBase):
         with db.tx(True):
             expr_datum = db.put_datum([x for x in expr])
             expr_node = db(Node(Expr(expr_datum)))
-            fndag = db(FnDag(set([expr_node]), None, None, expr_node), return_on_error=True)
+            fndag = db(FnDag(set([expr_node]), None, None, expr=expr_node), return_on_error=True)
             dag0_id = fndag.to
         # same expr => same ID
         with TemporaryDirectory(prefix='dml-test-') as tmpd:
@@ -118,7 +118,7 @@ class TestRepo(DmlCliTestBase):
             with db.tx(True):
                 expr_datum = db.put_datum([x for x in expr])
                 expr_node = db(Node(Expr(expr_datum)))
-                fndag = db(FnDag(set([expr_node]), None, None, expr_node), return_on_error=True)
+                fndag = db(FnDag(set([expr_node]), None, None, expr=expr_node), return_on_error=True)
                 dag1_id = fndag.to
         assert dag0_id == dag1_id
         # different expr => different ID
@@ -127,7 +127,7 @@ class TestRepo(DmlCliTestBase):
             with db.tx(True):
                 expr_datum = db.put_datum([x for x in [*expr, 4]])
                 expr_node = db(Node(Expr(expr_datum)))
-                fndag = db(FnDag(set([expr_node]), None, None, expr_node), return_on_error=True)
+                fndag = db(FnDag(set([expr_node]), None, None, expr=expr_node), return_on_error=True)
                 dag1_id = fndag.to
         assert dag0_id != dag1_id
 
