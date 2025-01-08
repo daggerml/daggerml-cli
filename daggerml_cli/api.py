@@ -1,20 +1,48 @@
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, is_dataclass
+from datetime import datetime
 from shutil import rmtree
 
+import jmespath
 from asciidag.graph import Graph as AsciiGraph
 from asciidag.node import Node as AsciiNode
 
-from daggerml_cli.repo import DEFAULT, Ctx, Error, Fn, Index, Literal, Load, Ref, Repo, unroll_datum
+from daggerml_cli.repo import DEFAULT_BRANCH, Ctx, Error, Fn, Index, Literal, Load, Ref, Repo, unroll_datum
 from daggerml_cli.util import asserting, makedirs
+
+###############################################################################
+# HELPERS #####################################################################
+###############################################################################
+
+
+def jsdata(x):
+    if isinstance(x, (tuple, list, set)):
+        return [jsdata(y) for y in x]
+    if isinstance(x, dict):
+        return {k: jsdata(v) for k, v in x.items()}
+    if isinstance(x, Ref):
+        return x.name
+    if isinstance(x, datetime):
+        return x.isoformat()
+    if is_dataclass(x):
+        return jsdata(x.__dict__)
+    return x
+
+
+def with_query(f, query):
+    return lambda *args, **kwargs: jmespath.search(query, jsdata(f(*args, **kwargs)))
+
+
+def with_attrs(x, **kwargs):
+    y = x()
+    for k, v in kwargs.items():
+        setattr(y, k, v)
+    return y
+
 
 ###############################################################################
 # REPO ########################################################################
 ###############################################################################
-
-
-def current_repo(config):
-    return config.REPO
 
 
 def repo_path(config):
@@ -23,23 +51,19 @@ def repo_path(config):
 
 def list_repo(config):
     if os.path.exists(config.REPO_DIR):
-        return sorted(os.listdir(config.REPO_DIR))
+        xs = sorted(os.listdir(config.REPO_DIR))
+        return [{'name': x, 'path': os.path.join(config.REPO_DIR, x)} for x in xs]
     return []
 
 
 def list_other_repo(config):
-    return sorted([k for k in list_repo(config) if k != config.REPO])
+    return [k for k in list_repo(config) if k['name'] != config.REPO]
 
 
 def create_repo(config, name):
     config._REPO = name
     with Repo(makedirs(config.REPO_PATH), config.USER, create=True):
         pass
-
-
-def use_repo(config, name):
-    assert name in list_repo(config), f"no such repo: {name}"
-    config.REPO = name
 
 
 def delete_repo(config, name):
@@ -58,6 +82,11 @@ def gc_repo(config):
             return db.gc()
 
 
+###############################################################################
+# REF #########################################################################
+###############################################################################
+
+
 def dump_ref(config, ref):
     with Repo(config.REPO_PATH, head=config.BRANCHREF) as db:
         with db.tx():
@@ -71,15 +100,39 @@ def load_ref(config, ref):
 
 
 ###############################################################################
-# PROJECT #####################################################################
+# STATUS ######################################################################
 ###############################################################################
 
 
-def init_project(config, name, branch=Ref(DEFAULT).name):  # noqa: B008
-    if name is not None:
-        assert name in list_repo(config), f"repo not found: {name}"
+def status(config):
+    return {
+        'repo': config.get('REPO'),
+        'branch': config.get('BRANCH'),
+        'user': config.get('USER'),
+        'config_dir': config.get('CONFIG_DIR'),
+        'project_dir': config.get('PROJECT_DIR') and os.path.abspath(config.get('PROJECT_DIR')),
+        'repo_path': config.get('REPO_PATH'),
+    }
+
+
+###############################################################################
+# CONFIG ######################################################################
+###############################################################################
+
+
+def config_repo(config, name):
+    assert name in with_query(list_repo, '[*].name')(config), f"no such repo: {name}"
     config.REPO = name
-    use_branch(config, branch)
+    config_branch(config, Ref(DEFAULT_BRANCH).name)
+
+
+def config_branch(config, name):
+    assert name in jsdata(list_branch(config)), f"branch not found: {name}"
+    config.BRANCH = name
+
+
+def config_user(config, user):
+    config.USER = user
 
 
 ###############################################################################
@@ -92,33 +145,26 @@ def current_branch(config):
 
 
 def list_branch(config):
-    if os.path.exists(config.REPO_PATH):
-        with Repo(config.REPO_PATH) as db:
-            with db.tx():
-                return sorted([k.name for k in db.heads() if k.name])
-    return []
+    with Repo(config.REPO_PATH) as db:
+        with db.tx():
+            return sorted([x for x in db.heads()], key=lambda y: y.name)
 
 
 def list_other_branch(config):
-    return [k for k in list_branch(config) if k != config.BRANCH]
+    return [k for k in list_branch(config) if k.name != config.BRANCH]
 
 
 def create_branch(config, name):
     with Repo(config.REPO_PATH, head=config.BRANCHREF) as db:
         with db.tx(True):
             db.create_branch(Ref(f"head/{name}"), db.head)
-    use_branch(config, name)
+    config_branch(config, name)
 
 
 def delete_branch(config, name):
     with Repo(config.REPO_PATH, head=config.BRANCHREF) as db:
         with db.tx(True):
             db.delete_branch(Ref(f"head/{name}"))
-
-
-def use_branch(config, name):
-    assert name in list_branch(config), f"branch not found: {name}"
-    config.BRANCH = name
 
 
 def merge_branch(config, name):
@@ -141,43 +187,17 @@ def rebase_branch(config, name):
 # DAG #########################################################################
 ###############################################################################
 
-def describe_dag(config, id):
+
+def list_dags(config):
     with Repo(config.REPO_PATH, head=config.BRANCHREF) as db:
-        with db.tx(False):
-            ref = Ref(id)
-            dag = ref()
-            if dag is None:
-                raise Error(f'dag {id} is not in DB!')
-            edges = {}
-            for node_ref in dag.nodes:
-                node = node_ref()
-                if isinstance(node.data, Fn):
-                    edges[node_ref.to] = [x.to for x in node.data.expr]
-                elif isinstance(node.data, Load):
-                    edges[node_ref.to] = node.data.dag.to
-            return {
-                'id': ref.to,
-                'expr': dag.expr.to if hasattr(dag, 'expr') else None,
-                'nodes': [x.to for x in dag.nodes],
-                'result': dag.result.to if dag.result is not None else None,
-                'error': None if dag.error is None else str(dag.error),
-                'edges': edges,
-            }
-
-
-def list_dags(config, dag_names=()):
-    if os.path.exists(config.REPO_PATH):
-        with Repo(config.REPO_PATH, head=config.BRANCHREF) as db:
-            with db.tx():
-                result = [{'name': k, 'id': v.to, 'dag': v()} for k, v in Ctx.from_head(db.head).dags.items()]
-        if len(dag_names) > 0:
-            result = [x for x in result if x['name'] in dag_names]
-        return result
-    return []
+        with db.tx():
+            dags = Ctx.from_head(db.head).dags
+            result = [with_attrs(v, id=v, name=k) for k, v in dags.items()]
+            return sorted(result, key=lambda x: x.name)
 
 
 def begin_dag(config, *, name=None, message, dag_dump=None):
-    with Repo(config.REPO_PATH, head=config.BRANCHREF) as db:
+    with Repo(config.REPO_PATH, config.USER, head=config.BRANCHREF) as db:
         with db.tx(True):
             dag = None if dag_dump is None else db.load_ref(dag_dump)
             return db.begin(name=name, message=message, dag=dag)
@@ -187,13 +207,14 @@ def begin_dag(config, *, name=None, message, dag_dump=None):
 # NODE ########################################################################
 ###############################################################################
 
+
 def describe_node(config, id):
     with Repo(config.REPO_PATH, head=config.BRANCHREF) as db:
         with db.tx(False):
             ref = Ref(id)
             dag = ref()
             if dag is None:
-                raise Error(f'dag {id} is not in DB!')
+                raise Error(f'dag not found: {id}')
             edges = {}
             for node_ref in dag.nodes:
                 node = node_ref()
@@ -215,18 +236,17 @@ def describe_node(config, id):
 # INDEX #######################################################################
 ###############################################################################
 
+
 def list_indexes(config):
-    if os.path.exists(config.REPO_PATH):
-        with Repo(config.REPO_PATH, head=config.BRANCHREF) as db:
-            with db.tx():
-                return [{'id': x.to, 'index': x()} for x in db.indexes()]
-    return []
+    with Repo(config.REPO_PATH, head=config.BRANCHREF) as db:
+        with db.tx():
+            return [with_attrs(x, id=x) for x in db.indexes()]
 
 
 def delete_index(config, index: Ref):
     with Repo(config.REPO_PATH, head=config.BRANCHREF) as db:
         with db.tx(True):
-            assert isinstance(index(), Index)
+            assert isinstance(index(), Index), f'no such index: {index.name}'
             db.delete(index)
     return True
 
@@ -328,11 +348,10 @@ def invoke_api(config, token, data):
 
 
 def list_commit(config):
-    if os.path.exists(config.REPO_PATH):
-        with Repo(config.REPO_PATH, head=config.BRANCHREF) as db:
-            with db.tx():
-                return [(x.to, x()) for x in db.objects('commit')]
-    return []
+    with Repo(config.REPO_PATH, head=config.BRANCHREF) as db:
+        with db.tx():
+            result = [with_attrs(x, id=x) for x in db.commits()]
+            return sorted(result, key=lambda x: x.modified, reverse=True)
 
 
 def commit_log_graph(config):

@@ -12,7 +12,7 @@ from daggerml_cli.db import db_type, dbenv
 from daggerml_cli.pack import packb, register, unpackb
 from daggerml_cli.util import asserting, makedirs, now
 
-DEFAULT = 'head/main'
+DEFAULT_BRANCH = 'head/main'
 DATA_TYPE = {}
 
 
@@ -193,6 +193,7 @@ class Head:
 @dataclass
 class Index(Head):
     dag: Ref
+    id: Ref | None = None
 
 
 @repo_type
@@ -219,6 +220,8 @@ class Dag:
     nodes: set[Ref]  # -> node
     result: Ref | None  # -> node
     error: Error | None
+    id: Ref | None = None
+    name: str | None = None
 
     def is_finished(self):
         return (self.result or self.error) is not None
@@ -227,7 +230,7 @@ class Dag:
 @repo_type(hash=['expr'])
 @dataclass
 class FnDag(Dag):
-    expr: Ref  # -> node(expr)
+    expr: Ref | None = None  # -> node(expr)
 
 
 @repo_type(db=False)
@@ -313,7 +316,7 @@ class Ctx:
 class Repo:
     path: str
     user: str = 'unknown'
-    head: Ref = field(default_factory=lambda: Ref(DEFAULT))  # -> head
+    head: Ref = field(default_factory=lambda: Ref(DEFAULT_BRANCH))  # -> head
     create: InitVar[bool] = False
 
     def __post_init__(self, create=False):
@@ -455,6 +458,10 @@ class Repo:
             return {k: self.log(ref=k().commit) for k in self.cursor(db)}
         if ref and ref.to:
             return [ref, [self.log(ref=x) for x in sort(ref().parents) if x and x.to]]
+
+    def commits(self, ref=None):
+        ref = self.head if ref is None else ref
+        return filter(lambda x: x.type == 'commit', self.walk(ref))
 
     def objects(self, type=None):
         result = set()
@@ -690,10 +697,10 @@ class Repo:
     def start_fn(self, *, expr, retry=False):
         expr_datum = self.put_datum([x().value for x in expr])
         expr_node = self(Node(Expr(expr_datum)))
-        fndag = self(FnDag(set([expr_node]), None, None, expr_node), return_on_error=True)
+        fndag = self(FnDag(set([expr_node]), None, None, expr=expr_node), return_on_error=True)
         assert fndag.to is not None
         if fndag().error is not None and retry:
-            self(fndag, FnDag(set([expr_node]), None, None, expr_node))
+            self(fndag, FnDag(set([expr_node]), None, None, expr=expr_node))
         out = self.dump_ref(fndag)
         waiter = self(FnWaiter(expr, fndag, dump=out))
         # FIXME: send this to a general purpose execution thing
@@ -739,7 +746,7 @@ class Repo:
             if result is not None:
                 result = self(Node(Literal(self.put_datum(result))))
                 nodes.append(result)
-            self(fndag, FnDag(set(nodes), result, error, expr_node))
+            self(fndag, FnDag(set(nodes), result, error, expr=expr_node))
         return waiter
 
     def get_fn_result(self, index, waiter):

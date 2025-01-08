@@ -28,6 +28,7 @@ classifiers = [
 ]
 dependencies = [
   "click",
+  "jmespath",
   "lmdb",
   "msgpack",
   "tabulate",

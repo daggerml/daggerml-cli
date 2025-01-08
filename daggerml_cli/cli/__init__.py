@@ -1,15 +1,11 @@
 import json
 import os
-from dataclasses import fields
-from datetime import datetime
 from functools import wraps
-from getpass import getuser
 from pathlib import Path
-from socket import gethostname
 
 import click
+import jmespath
 from click import ClickException
-from yaml import safe_load as load_yaml
 
 from daggerml_cli import api
 from daggerml_cli.__about__ import __version__
@@ -25,8 +21,9 @@ DEFAULT_CONFIG = {
     'PROJECT_DIR': '.dml',
     'REPO': None,
     'BRANCH': None,
-    'USER': f'{getuser()}@{gethostname()}',
+    'USER': None,
     'REPO_PATH': None,
+    'QUERY': None,
 }
 
 BASE_CONFIG = Config(
@@ -39,20 +36,11 @@ BASE_CONFIG = Config(
 )
 
 
-def jsdump(x, **kw):
-    def default(y):
-        if isinstance(y, set):
-            return list(y)
-        if isinstance(y, datetime):
-            return y.isoformat()
-        if isinstance(y, Ref):
-            return y.to
-        return str(y)
-    return json.dumps(x, default=default, separators=(',', ':'), **kw)
-
-
-def asdict(x):
-    return {f.name: getattr(x, f.name) for f in fields(x)}
+def jsdumps(x, config=None, **kw):
+    result = api.jsdata(x)
+    if config is not None and config.QUERY is not None:
+        result = jmespath.search(config.QUERY, result)
+    return json.dumps(result, indent=2, **kw)
 
 
 def set_config(ctx, *_):
@@ -74,67 +62,93 @@ def complete(f, prelude=None):
         try:
             if prelude:
                 prelude(ctx, param, incomplete)
-            return [k for k in (f(ctx.obj or BASE_CONFIG) or []) if k.startswith(incomplete)]
+            return [k for k in (api.jsdata(f(ctx.obj or BASE_CONFIG)) or []) if k.startswith(incomplete)]
         except BaseException:
             return []
     return inner
 
 
+@click.version_option(version=__version__, prog_name='dml')
 @click.option(
     '--user',
+    type=str,
     default=DEFAULT_CONFIG['USER'],
     help='Specify user name@host or email, etc.')
 @click.option(
-    '--branch',
-    shell_complete=complete(api.list_branch, set_config),
-    help='Specify a branch other than the project branch.')
-@click.option(
-    '--repo-path',
-    type=click.Path(),
-    help='Specify the path to a repo other than the project repo.')
-@click.option(
     '--repo',
-    shell_complete=complete(api.list_repo, set_config),
+    type=str,
+    shell_complete=complete(api.with_query(api.list_repo, '[*].name'), set_config),
     help='Specify a repo other than the project repo.')
+@click.option(
+    '--query',
+    type=str,
+    help='A JMESPath query to use in filtering the response data.')
 @click.option(
     '--project-dir',
     type=click.Path(),
     default=DEFAULT_CONFIG['PROJECT_DIR'],
     help='Project directory location.')
 @click.option(
+    '--debug',
+    is_flag=True,
+    help='Enable debug output.')
+@click.option(
     '--config-dir',
     type=click.Path(),
     default=DEFAULT_CONFIG['CONFIG_DIR'],
     help='Config directory location.')
 @click.option(
-    '--debug',
-    is_flag=True,
-    help='Enable debug output.')
-@click.option(
-    '--output',
-    type=click.Choice(['text', 'json']),
-    default='text',
-    help='preferred output format.')
-@click.option(
-    '--config',
-    default=CONFIG_FILE,
-    type=click.Path())  # this allows us to change config path
+    '--branch',
+    type=str,
+    shell_complete=complete(api.list_branch, set_config),
+    help='Specify a branch other than the project branch.')
 @click.group(
     no_args_is_help=True,
     context_settings={
         'help_option_names': ['-h', '--help'],
-        'auto_envvar_prefix': 'DML',
         'show_default': True})
-@click.version_option(version=__version__, prog_name='dml')
 @clickex
-def cli(ctx, config_dir, project_dir, repo, branch, user, repo_path, debug, config, output):
-    if os.path.exists(config):
-        with open(config) as f:
-            config = load_yaml(f.read())
-        ctx.default_map = config
+def cli(ctx, config_dir, project_dir, repo, branch, user, query, debug):
     set_config(ctx)
-    ctx.obj.output = output
     ctx.with_resource(ctx.obj)
+
+
+###############################################################################
+# STATUS ######################################################################
+###############################################################################
+
+
+@cli.command(name='status', help='Current repo, branch, etc.')
+@clickex
+def cli_status(ctx):
+    click.echo(jsdumps(api.status(ctx.obj), ctx.obj))
+
+
+###############################################################################
+# REF #########################################################################
+###############################################################################
+
+
+@cli.group(name='ref', no_args_is_help=True, help='Load and dump refs.')
+@clickex
+def ref_group(_):
+    pass
+
+
+@click.argument('ref', type=str)
+@ref_group.command(name='dump', help='Dump a ref and all its dependencies to JSON.')
+@clickex
+def ref_dump(ctx, ref):
+    dump = api.dump_ref(ctx.obj, from_json(ref))
+    click.echo(dump)
+
+
+@ref_group.command(name='load', help='Load a previously dumped ref into the repo.')
+@click.argument('json', type=str)
+@clickex
+def ref_load(ctx, json):
+    ref = api.load_ref(ctx.obj, json)
+    click.echo(to_json(ref))
 
 
 ###############################################################################
@@ -142,14 +156,13 @@ def cli(ctx, config_dir, project_dir, repo, branch, user, repo_path, debug, conf
 ###############################################################################
 
 
-@cli.group(name='repo', invoke_without_command=True, help='Repository management commands.')
+@cli.group(name='repo', no_args_is_help=True, help='Repository management commands.')
 @clickex
 def repo_group(ctx):
-    if ctx.invoked_subcommand is None:
-        click.echo(api.current_repo(ctx.obj))
+    pass
 
 
-@click.argument('name', shell_complete=complete(api.list_repo))
+@click.argument('name')
 @repo_group.command(name='create', help='Create a new repository.')
 @clickex
 def repo_create(ctx, name):
@@ -157,7 +170,7 @@ def repo_create(ctx, name):
     click.echo(f'Created repository: {name}')
 
 
-@click.argument('name', shell_complete=complete(api.list_repo))
+@click.argument('name', shell_complete=complete(api.with_query(api.list_repo, '[*].name')))
 @repo_group.command(name='delete', help='Delete a repository.')
 @clickex
 def repo_delete(ctx, name):
@@ -176,12 +189,7 @@ def repo_copy(ctx, name):
 @repo_group.command(name='list', help='List repositories.')
 @clickex
 def repo_list(ctx):
-    output = ctx.obj.output
-    for k in api.list_repo(ctx.obj):
-        if output == 'json':
-            click.echo(json.dumps({'name': k}))
-        else:
-            click.echo(k)
+    click.echo(jsdumps(api.list_repo(ctx.obj), ctx.obj))
 
 
 @repo_group.command(name='gc', help='Delete unreachable objects in the repo.')
@@ -191,45 +199,39 @@ def repo_gc(ctx):
         click.echo(rsrc.uri)
 
 
-@repo_group.command(name='path', help='Filesystem location of the repository.')
-@clickex
-def repo_path(ctx):
-    click.echo(api.repo_path(ctx.obj))
-
-
-@click.argument('ref', type=str)
-@repo_group.command(name='dump-ref', help='dump a ref and all its dependencies to json')
-@clickex
-def dag_dump_ref(ctx, ref):
-    dump = api.dump_ref(ctx.obj, from_json(ref))
-    click.echo(dump)
-
-
-@repo_group.command(name='load-ref', help='load a ref and all its dependencies into the db')
-@click.argument('js', type=str)
-@clickex
-def load_dump_ref(ctx, js):
-    ref = api.load_ref(ctx.obj, js)
-    click.echo(to_json(ref))
-
-
 ###############################################################################
-# PROJECT #####################################################################
+# CONFIG ######################################################################
 ###############################################################################
 
 
-@cli.group(name='project', no_args_is_help=True, help='Project management commands.')
+@cli.group(name='config', no_args_is_help=True, help='Configuration settings.')
 @clickex
-def project_group(_):
+def config_group(_):
     pass
 
 
-@click.argument('repo', shell_complete=complete(api.list_repo))
-@project_group.command(name='init', help='Associate a project with a REPO.')
+@click.argument('repo', shell_complete=complete(api.with_query(api.list_repo, '[*].name')))
+@config_group.command(name='repo', help='Select the repository to use.')
 @clickex
-def project_init(ctx, repo):
-    api.init_project(ctx.obj, repo)
-    click.echo(f'Initialized project with repo: {repo}')
+def config_repo(ctx, repo):
+    api.config_repo(ctx.obj, repo)
+    click.echo(f'Selected repository: {repo}')
+
+
+@click.argument('name', shell_complete=complete(api.list_other_branch))
+@config_group.command(name='branch', help='Select the branch to use.')
+@clickex
+def config_branch(ctx, name):
+    api.config_branch(ctx.obj, name)
+    click.echo(f'Selected branch: {name}')
+
+
+@click.argument('user', shell_complete=complete(api.list_other_branch))
+@config_group.command(name='user', help='Set user name/email/etc.')
+@clickex
+def config_user(ctx, user):
+    api.config_user(ctx.obj, user)
+    click.echo(f'Set user: {user}')
 
 
 ###############################################################################
@@ -237,11 +239,10 @@ def project_init(ctx, repo):
 ###############################################################################
 
 
-@cli.group(name='branch', invoke_without_command=True, help='Branch management commands.')
+@cli.group(name='branch', no_args_is_help=True, help='Branch management commands.')
 @clickex
 def branch_group(ctx):
-    if ctx.invoked_subcommand is None:
-        click.echo(api.current_branch(ctx.obj))
+    pass
 
 
 @click.argument('name')
@@ -263,20 +264,7 @@ def branch_delete(ctx, name):
 @branch_group.command(name='list', help='List branches.')
 @clickex
 def branch_list(ctx):
-    output = ctx.obj.output
-    for k in api.list_branch(ctx.obj):
-        if output == 'json':
-            click.echo(json.dumps({'name': k}))
-        else:
-            click.echo(k)
-
-
-@click.argument('name', shell_complete=complete(api.list_other_branch))
-@branch_group.command(name='use', help='Select the branch to use.')
-@clickex
-def branch_use(ctx, name):
-    api.use_branch(ctx.obj, name)
-    click.echo(f'Using branch: {name}')
+    click.echo(jsdumps(api.list_branch(ctx.obj), ctx.obj))
 
 
 @click.argument('branch', shell_complete=complete(api.list_other_branch))
@@ -287,7 +275,7 @@ def branch_merge(ctx, branch):
 
 
 @click.argument('branch', shell_complete=complete(api.list_other_branch))
-@branch_group.command(name='rebase', help='Rebase the current branch onto BRANCH.')
+@branch_group.command(name='rebase', help='Rebase the current branch onto another one.')
 @clickex
 def branch_rebase(ctx, branch):
     click.echo(api.rebase_branch(ctx.obj, branch))
@@ -306,7 +294,7 @@ def dag_group(_):
 
 @click.argument('message')
 @click.argument('name')
-@click.option('-d', '--dag-dump', help='dag dump', type=str)
+@click.option('--dag-dump', help='dag dump', type=str)
 @dag_group.command(name='create', help='Create a new DAG.')
 @clickex
 def dag_create(ctx, name, message, dag_dump=None):
@@ -317,35 +305,17 @@ def dag_create(ctx, name, message, dag_dump=None):
         click.echo(to_json(Error.from_ex(e)))
 
 
-@dag_group.command(name='describe', help='Get a DAG.')
-@click.argument('id')
-@clickex
-def describe_dag(ctx, id):
-    click.echo(jsdump(api.describe_dag(ctx.obj, id)))
-
-
 @dag_group.command(name='list', help='List DAGs.')
-@click.option('-n', '--dag-names', multiple=True)
 @clickex
-def dag_list(ctx, dag_names):
-    output = ctx.obj.output
-    for k in api.list_dags(ctx.obj, dag_names=dag_names):
-        if output == 'json':
-            dag = k.pop('dag')
-            out = {**k, **asdict(dag)}
-            if isinstance(out['result'], dict):
-                out['result'] = out['result']['to']
-            out.pop('nodes')
-            click.echo(jsdump(out))
-        else:
-            click.echo(k['id'])
+def dag_list(ctx):
+    click.echo(jsdumps(api.list_dags(ctx.obj), ctx.obj))
 
 
 @click.argument('json')
 @click.argument('token')
 @dag_group.command(
     name='invoke',
-    help=f'Invoke API with token returned by create and JSON command.\n\nJSON command ops: {api.format_ops()}')
+    help=f'Invoke API with token returned by create and JSON command body.\n\nJSON command ops: {api.format_ops()}')
 @clickex
 def api_invoke(ctx, token, json):
     try:
@@ -369,20 +339,15 @@ def index_group(_):
 @index_group.command(name='list', help="List indexes.")
 @clickex
 def index_list(ctx):
-    output = ctx.obj.output
-    for k in api.list_indexes(ctx.obj):
-        if output == 'json':
-            dag = k.pop('index')
-            click.echo(jsdump({**k, **asdict(dag)}))
-        else:
-            click.echo(k['id'])
+    click.echo(jsdumps(api.list_indexes(ctx.obj), ctx.obj))
 
 
-@index_group.command(name='delete', help="delete index.")
-@click.argument('id')
+@click.argument('id', shell_complete=complete(api.with_query(api.list_indexes, '[*].id')))
+@index_group.command(name='delete', help="Delete index.")
 @clickex
 def index_delete(ctx, id):
-    click.echo(api.delete_index(ctx.obj, Ref(id)))
+    if api.delete_index(ctx.obj, Ref(f'index/{id}')):
+        click.echo(f'Deleted index: {id}')
 
 
 ###############################################################################
@@ -399,12 +364,7 @@ def commit_group(_):
 @commit_group.command(name='list', help='List commits.')
 @clickex
 def commit_list(ctx):
-    output = ctx.obj.output
-    for id, commit in api.list_commit(ctx.obj):
-        if output == 'json':
-            click.echo(jsdump(dict(id=id, **asdict(commit))))
-        else:
-            click.echo(id)
+    click.echo(jsdumps(api.list_commit(ctx.obj), ctx.obj))
 
 
 @click.option('--graph', is_flag=True, help='Print a graph of all commits.')
@@ -414,7 +374,7 @@ def commit_log(ctx, graph):
     return api.commit_log_graph(ctx.obj)
 
 
-@click.argument('commit', shell_complete=complete(api.list_commit))
+@click.argument('commit', shell_complete=complete(api.with_query(api.list_commit, '[*].id')))
 @commit_group.command(name='revert', help='Revert a commit.')
 @clickex
 def commit_revert(ctx, commit):

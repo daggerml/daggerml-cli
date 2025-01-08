@@ -52,8 +52,8 @@ class Config:
     _REPO: str | None = None
     _BRANCH: str | None = None
     _USER: str | None = None
-    _REPO_PATH: str | None = None
     _DEBUG: bool = False
+    _QUERY: str | None = None
     _writes: list = field(default_factory=list)
 
     @classmethod
@@ -72,6 +72,10 @@ class Config:
     def DEBUG(self):
         return self._DEBUG
 
+    @property
+    def QUERY(self):
+        return self._QUERY
+
     @config_property
     def CONFIG_DIR(self):
         pass
@@ -80,15 +84,15 @@ class Config:
     def PROJECT_DIR(self):
         pass
 
-    @config_property(path=['PROJECT_DIR', 'repo'], cmd='project init')  # type: ignore
+    @config_property(path=['PROJECT_DIR', 'repo'], cmd='config repo')
     def REPO(self):
         pass
 
-    @config_property(path=['PROJECT_DIR', 'head'], cmd='branch use')  # type: ignore
+    @config_property(path=['PROJECT_DIR', 'head'], cmd='config branch')
     def BRANCH(self):
         pass
 
-    @config_property(path=['CONFIG_DIR', 'config', 'user'], cmd='config set user')  # type: ignore
+    @config_property(path=['CONFIG_DIR', 'config', 'user'], cmd='config user')
     def USER(self):
         pass
 
@@ -98,11 +102,11 @@ class Config:
 
     @config_property
     def REPO_DIR(self):
-        return os.path.join(self.CONFIG_DIR, 'repo')  # type: ignore
+        return os.path.join(self.CONFIG_DIR, 'repo')
 
     @config_property
     def REPO_PATH(self):
-        return os.path.join(self.REPO_DIR, self.REPO)  # type: ignore
+        return os.path.join(self.REPO_DIR, self.REPO)
 
     def replace(self, **changes):
         return replace(self, **changes)

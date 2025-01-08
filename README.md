@@ -5,26 +5,26 @@
 
 -----
 
-**Table of Contents**
+## Table of Contents
 
 - [Installation](#installation)
 - [License](#license)
 
 ## Installation
 
-```console
+```sh
 pip install daggerml-cli
 ```
 
 For consistency with `python-lib`, to run the tests:
 
-```console
+```sh
 hatch -e test run pytest .
 ```
 
 To build:
 
-```console
+```sh
 hatch -e test run dml-build pypi
 ```
 
