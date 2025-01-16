@@ -40,4 +40,4 @@ hatch -e test run dml-build pypi
 
 ### License
 
-`daggerml-cli` is distributed under the terms of the [MIT](blob/master/LICENSE.txt) license.
+`daggerml-cli` is distributed under the terms of the [MIT](LICENSE.txt) license.
