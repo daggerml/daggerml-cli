@@ -7,22 +7,33 @@
 
 ## Table of Contents
 
-- [Installation](#installation)
+- [Install](#install)
+- [Usage](#usage)
+- [Test](#test)
+- [Build](#build)
 - [License](#license)
 
-## Installation
+## Install
 
 ```sh
-pip install daggerml-cli
+pipx install daggerml-cli
 ```
 
-For consistency with `python-lib`, to run the tests:
+## Usage
+
+```sh
+dml --help
+dml COMMAND --help
+dml COMMAND SUBCOMMAND --help
+```
+
+## Test
 
 ```sh
 hatch -e test run pytest .
 ```
 
-To build:
+## Build
 
 ```sh
 hatch -e test run dml-build pypi
