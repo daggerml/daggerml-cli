@@ -215,12 +215,7 @@ def begin_dag(config, *, name=None, message, dag_dump=None):
             return db.begin(name=name, message=message, dag=dag)
 
 
-###############################################################################
-# NODE ########################################################################
-###############################################################################
-
-
-def describe_node(config, id):
+def describe_dag(config, id):
     with Repo(config.REPO_PATH, head=config.BRANCHREF) as db:
         with db.tx(False):
             ref = Ref(id)

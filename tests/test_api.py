@@ -162,3 +162,19 @@ class TestApiBase(TestCase):
                         check_keys(n, v)
                         check_dict_get(n, v)
                         check_contains(n, v)
+
+    def test_describe_dag(self):
+        with TemporaryDirectory() as config_dir:
+            with SimpleApi.begin('d0', config_dir=config_dir) as d0:
+                d0.commit(d0.put_literal(23))
+            with SimpleApi.begin('d1', config_dir=config_dir) as d1:
+                nodes = [
+                    d1.put_literal(FN),
+                    d1.put_load('d0'),
+                    d1.put_literal(23),
+                ]
+                result = d1.start_fn(*nodes)
+                ref = d1.commit(result)
+            desc = api.describe_dag(d1.ctx, ref.to)
+            assert len(desc["edges"][result.to]) == len(nodes)
+            assert set(desc["edges"][result.to]) == {x.to for x in nodes}
