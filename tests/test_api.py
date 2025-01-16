@@ -37,17 +37,26 @@ class TestApiBase(TestCase):
         with TemporaryDirectory() as config_dir:
             with SimpleApi.begin('d0', config_dir=config_dir) as d0:
                 data = {'foo': 23, 'bar': {4, 6}, 'baz': [True, 3]}
-                n0 = d0.put_literal(data)
+                n0 = d0.put_literal(data, name='n0', doc='This is my data.')
+                with d0.tx():
+                    assert n0().name == 'n0'
+                    assert n0().doc == 'This is my data.'
                 d0.commit(n0)
             with SimpleApi.begin('d1', config_dir=config_dir) as d1:
-                n0 = d1.put_load('d0')
+                n0 = d1.put_load('d0', name='n0', doc='From dag d0.')
+                with d0.tx():
+                    assert n0().name == 'n0'
+                    assert n0().doc == 'From dag d0.'
                 n1 = d1.put_literal([n0, n0, 2])
                 assert d1.unroll(n1) == [data, data, 2]
                 d1.commit(n1)
 
     def test_fn(self):
         with SimpleApi.begin() as d0:
-            result = d0.start_fn(FN, 1, 2)
+            result = d0.start_fn(FN, 1, 2, name='result', doc='I called a func!')
+            with d0.tx():
+                assert result().name == 'result'
+                assert result().doc == 'I called a func!'
             assert d0.unroll(result)[1] == 3
 
     def test_repo_cache(self):

@@ -285,22 +285,22 @@ def format_ops():
 
 
 @invoke_op
-def op_start_fn(db, index, expr, retry=False):
+def op_start_fn(db, index, expr, retry=False, name=None, doc=None):
     with db.tx(True):
-        return db.start_fn(index, expr=expr, retry=retry)
+        return db.start_fn(index, expr=expr, retry=retry, name=name, doc=doc)
 
 
 @invoke_op
-def op_put_literal(db, index, data):
+def op_put_literal(db, index, data, name=None, doc=None):
     with db.tx(True):
         datum = db.put_datum(data)
-        return db.put_node(Literal(datum), index=index)
+        return db.put_node(Literal(datum), index=index, name=name, doc=doc)
 
 
 @invoke_op
-def op_put_load(db, index, load_dag):
+def op_put_load(db, index, load_dag, name=None, doc=None):
     with db.tx(True):
-        return db.put_node(Import(asserting(db.get_dag(load_dag))), index=index)
+        return db.put_node(Import(asserting(db.get_dag(load_dag))), index=index, name=name, doc=doc)
 
 
 @invoke_op

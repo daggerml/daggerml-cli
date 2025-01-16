@@ -275,6 +275,8 @@ class Fn(Import):
 @dataclass
 class Node:
     data: Literal | Expr | Import | Fn
+    name: str | None = None
+    doc: str | None = None
 
     @property
     def value(self):
@@ -672,9 +674,9 @@ class Repo:
         index = self(Index(self(commit), dag))
         return index
 
-    def put_node(self, data, index: Ref):
+    def put_node(self, data, index: Ref, name=None, doc=None):
         ctx = Ctx.from_head(index)
-        node = self(Node(data))
+        node = self(Node(data, name=name, doc=doc))
         ctx.dag.nodes.add(node)
         self(ctx.head.dag, ctx.dag)
         ctx.commit.tree = self(ctx.tree)
@@ -698,7 +700,7 @@ class Repo:
         *dump, = (self.put(k, v) for k, v in ref_dump)
         return dump[-1] if len(dump) else None
 
-    def start_fn(self, index, *, expr, retry=False):
+    def start_fn(self, index, *, expr, retry=False, name=None, doc=None):
         fn, *data = map(lambda x: x().datum, expr)
         uri = urlparse(fn.uri)
         expr_node = self(Node(Expr(self.put_datum([x().value for x in expr]))))
@@ -728,7 +730,7 @@ class Repo:
                 dump = raise_ex(from_json(proc.stdout or 'null'))
                 self.load_ref(dump or [])
         if fndag().ready():
-            node = self.put_node(Fn(fndag, expr), index=index)
+            node = self.put_node(Fn(fndag, expr), index=index, name=name, doc=doc)
             raise_ex(node().error)
             return node
 
