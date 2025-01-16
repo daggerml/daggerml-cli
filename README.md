@@ -5,7 +5,7 @@
 
 -----
 
-## Table of Contents
+### Table of Contents
 
 - [Install](#install)
 - [Usage](#usage)
@@ -13,13 +13,13 @@
 - [Build](#build)
 - [License](#license)
 
-## Install
+### Install
 
 ```sh
 pipx install daggerml-cli
 ```
 
-## Usage
+### Usage
 
 ```sh
 dml --help
@@ -27,18 +27,18 @@ dml COMMAND --help
 dml COMMAND SUBCOMMAND --help
 ```
 
-## Test
+### Test
 
 ```sh
 hatch -e test run pytest .
 ```
 
-## Build
+### Build
 
 ```sh
 hatch -e test run dml-build pypi
 ```
 
-## License
+### License
 
 `daggerml-cli` is distributed under the terms of the [MIT](https://spdx.org/licenses/MIT.html) license.
