@@ -1,70 +1,20 @@
-import unittest
-from contextlib import contextmanager
-from dataclasses import dataclass, field
+import os
 from tempfile import TemporaryDirectory
-
-from tabulate import tabulate
+from unittest import TestCase, mock
 
 from daggerml_cli import api
 from daggerml_cli.config import Config
-from daggerml_cli.repo import Error, FnWaiter, Node, Ref, Repo, Resource, unroll_datum
+from daggerml_cli.repo import Error, Resource
+from tests.util import SimpleApi
+
+FN = Resource('./tests/fn.py', adapter='./tests/python-local-adapter')
 
 
-def dump(repo, count=None):
-    rows = []
-    for db in repo.dbs.keys():
-        [rows.append([len(rows) + 1, k.to, k()]) for k in repo.cursor(db)]
-    rows = rows[:min(count, len(rows))] if count is not None else rows
-    print('\n' + tabulate(rows, tablefmt="simple_grid"))
+def env(**kwargs):
+    return mock.patch.dict(os.environ, **kwargs)
 
 
-@dataclass
-class SimpleApi:
-    token: Ref
-    ctx: Config
-    tmpdirs: list = field(default_factory=list)
-
-    def __call__(self, op, *args, **kwargs):
-        return api.invoke_api(self.ctx, self.token, [op, args, kwargs])
-
-    @classmethod
-    def begin(cls, name=None, message=None, ctx=None, dag_dump=None):
-        tmpdirs = []
-        if ctx is None:
-            tmpdirs = [TemporaryDirectory(), TemporaryDirectory()]
-            ctx = Config(
-                _CONFIG_DIR=tmpdirs[0].__enter__(),
-                _PROJECT_DIR=tmpdirs[1].__enter__(),
-                _USER='user0',
-            )
-            api.create_repo(ctx, 'test')
-            api.config_repo(ctx, 'test')
-        tok = api.begin_dag(ctx, name=name, message=message, dag_dump=dag_dump)
-        return cls(tok, ctx, tmpdirs)
-
-    @contextmanager
-    def tx(self, write=False):
-        db = Repo(self.ctx.REPO_PATH, self.ctx.USER, self.ctx.BRANCHREF)
-        with db.tx(write):
-            yield db
-
-    def cleanup(self):
-        for x in self.tmpdirs:
-            x.__exit__(None, None, None)
-
-    def start_fn(self, expr, retry=False):
-        waiter, cache_key, dump = self('start_fn', expr, retry=retry)
-        fnapi = SimpleApi.begin('dag', 'message', dag_dump=dump)
-        return waiter, fnapi
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *x):
-        self.cleanup()
-
-
-class TestApiCreate(unittest.TestCase):
+class TestApiCreate(TestCase):
 
     def test_create_dag(self):
         with TemporaryDirectory() as tmpd0, TemporaryDirectory() as tmpd1:
@@ -81,145 +31,125 @@ class TestApiCreate(unittest.TestCase):
             assert api.current_branch(ctx) == 'b0'
 
 
-class TestApiBase(unittest.TestCase):
+class TestApiBase(TestCase):
 
     def test_create_dag(self):
-        # dag 0
-        with SimpleApi.begin(name='d0', message='dag 0') as d0:
-            data = {'foo': 23, 'bar': {4, 6}, 'baz': [True, 3]}
-            n0 = d0('put_literal', data)
-            d0('commit', n0)
-            # dag 1
-            d1 = SimpleApi.begin(name='d1', message='dag 1', ctx=d0.ctx)
-            n0 = d1('put_load', 'd0')
-            with d1.tx():
-                assert isinstance(n0(), Node)
-                val = n0().value
-            n1 = d1('put_literal', [val, val, 2])
-            with d1.tx():
-                assert unroll_datum(n1().value) == [data, data, 2]
-            d1('commit', n1)
+        with TemporaryDirectory() as config_dir:
+            with SimpleApi.begin('d0', config_dir=config_dir) as d0:
+                data = {'foo': 23, 'bar': {4, 6}, 'baz': [True, 3]}
+                n0 = d0.put_literal(data)
+                d0.commit(n0)
+            with SimpleApi.begin('d1', config_dir=config_dir) as d1:
+                n0 = d1.put_load('d0')
+                n1 = d1.put_literal([n0, n0, 2])
+                assert d1.unroll(n1) == [data, data, 2]
+                d1.commit(n1)
 
     def test_fn(self):
-        with SimpleApi.begin('d0', 'dag 0') as d0:
-            rsrc = Resource('a:sdf')
-            n0 = d0('put_literal', rsrc)
-            n1 = d0('put_literal', 1)
-            with d0.tx():
-                assert isinstance(n0(), Node)
-                assert isinstance(n1(), Node)
-            waiter, fnapi = d0.start_fn(expr=[n0, n1])
-            with d0.tx():
-                assert isinstance(waiter(), FnWaiter)
-            expr = fnapi('get_expr')
-            assert expr.type == 'node'
-            assert d0('unroll', expr) == [rsrc, 1]
-            n2 = fnapi('put_literal', {'asdf': 128})
-            n3 = fnapi('commit', n2)
-            dump = api.dump_ref(fnapi.ctx, n3)
-            api.load_ref(d0.ctx, dump)
-            x = d0('get_fn_result', waiter)
-            d0('commit', x)
-            resp = d0('get_node_value', x)
-            assert resp == {'asdf': 128}
+        with SimpleApi.begin() as d0:
+            result = d0.start_fn(FN, 1, 2)
+            assert d0.unroll(result)[1] == 3
 
-    def test_cache(self):
-        with SimpleApi.begin('d0', 'dag 0') as d0:
-            waiter, fnapi = d0.start_fn(expr=[d0('put_literal', Resource('a:sdf')),
-                                              d0('put_literal', 1)])
-            assert d0('get_fn_result', waiter) is None
-            fndag = fnapi('commit', fnapi('put_literal', 2))
-            dump = api.dump_ref(fnapi.ctx, fndag)
-            api.load_ref(d0.ctx, dump)
-            n1 = d0('get_fn_result', waiter)
-            assert d0('get_node_value', n1) == 2
-            waiter, fnapi = d0.start_fn(expr=[d0('put_literal', Resource('a:sdf')),
-                                              d0('put_literal', 1)])
-            n2 = d0('get_fn_result', waiter)
-            assert d0('get_node_value', n2) == 2
+    def test_repo_cache(self):
+        expr = [FN, 1, 2]
+        with SimpleApi.begin() as d0:
+            res0 = d0.unroll(d0.start_fn(*expr))
+            res1 = d0.unroll(d0.start_fn(*expr))
+            assert res0 == res1
+            assert res0[1] == 3
 
-    def test_fn_retry(self):
-        with SimpleApi.begin('d0', 'dag 0') as d0:
-            expr = [d0('put_literal', Resource('a:sdf')), d0('put_literal', 1)]
-            waiter, fnapi = d0.start_fn(expr=expr)
-            fndag = fnapi('commit', Error('foo'))
-            dump = api.dump_ref(fnapi.ctx, fndag)
-            fnapi.cleanup()
-            api.load_ref(d0.ctx, dump)
+    def test_fn_nocache(self):
+        expr = [FN, 1, 2]
+
+        with SimpleApi.begin() as d0:
+            res0 = d0.unroll(d0.start_fn(*expr))
+
+        with SimpleApi.begin() as d0:
+            res1 = d0.unroll(d0.start_fn(*expr))
+
+        assert res0 != res1
+
+    def test_fn_cache(self):
+        expr = [FN, 1, 2]
+
+        with TemporaryDirectory() as fn_cache_dir:
+            with SimpleApi.begin(fn_cache_dir=fn_cache_dir) as d0:
+                res0 = d0.unroll(d0.start_fn(*expr))
+
+            with SimpleApi.begin(fn_cache_dir=fn_cache_dir) as d0:
+                res1 = d0.unroll(d0.start_fn(*expr))
+
+            assert res0 == res1
+
+    def test_fn_error(self):
+        expr = [FN, 1, 2, 'BOGUS']
+
+        with env(DML_FN_FILTER_ARGS='True'):
+            with SimpleApi.begin() as d0:
+                assert d0.unroll(d0.start_fn(*expr))[1] == 3
+
+        with TemporaryDirectory() as config_dir:
             with self.assertRaises(Error):
-                d0('get_fn_result', waiter)
-            waiter, fnapi = d0.start_fn(expr=expr)
-            with self.assertRaises(Error):
-                d0('get_fn_result', waiter)
-            fnapi.cleanup()
-            waiter, fnapi = d0.start_fn(expr=expr, retry=True)
-            with d0.tx():
-                assert not waiter().is_finished()
-            fndag = fnapi('commit', fnapi('put_literal', 1))
-            dump = api.dump_ref(fnapi.ctx, fndag)
-            fnapi.cleanup()
-            api.load_ref(d0.ctx, dump)
-            node = d0('get_fn_result', waiter)
-            assert d0('get_node_value', node) == 1
+                with SimpleApi.begin(config_dir=config_dir) as d0:
+                    d0.start_fn(*expr)
 
+            with env(DML_FN_FILTER_ARGS='True'):
+                with self.assertRaises(Error):
+                    with SimpleApi.begin(config_dir=config_dir) as d0:
+                        d0.start_fn(*expr)
 
-class TestSpecials(unittest.TestCase):
+                with SimpleApi.begin(config_dir=config_dir) as d0:
+                    res0 = d0.start_fn(*expr, retry=True)
+                    assert d0.unroll(res0)[1] == 3
 
-    @staticmethod
-    def call(api, expr):
-        waiter, fnapi = api.start_fn(expr=expr)
-        n1 = api('get_fn_result', waiter)
-        if isinstance(n1, Error):
-            raise n1
-        return api('get_node_value', n1)
+                with SimpleApi.begin(config_dir=config_dir) as d0:
+                    assert d0.start_fn(*expr) == res0
 
-    def test_len_list(self):
-        with SimpleApi.begin('d0', 'dag 0') as d0:
-            n0 = d0('put_literal', [1, 2])
-            rsrc = d0('put_literal', Resource('daggerml:op/len'))
-            assert self.call(d0, [rsrc, n0]) == 2
-
-    def test_len_map(self):
-        with SimpleApi.begin('d0', 'dag 0') as d0:
-            n0 = d0('put_literal', {'a': 1, 'c': 48, 'b': 2})
-            rsrc = d0('put_literal', Resource('daggerml:op/len'))
-            assert self.call(d0, [rsrc, n0]) == 3
-
-    def test_keys_map(self):
-        with SimpleApi.begin('d0', 'dag 0') as d0:
-            n0 = d0('put_literal', {'a': 1, 'c': 48, 'b': 2})
-            rsrc = d0('put_literal', Resource('daggerml:op/keys'))
-            assert self.call(d0, [rsrc, n0]) == ['a', 'b', 'c']
-
-    def test_get_list(self):
-        with SimpleApi.begin('d0', 'dag 0') as d0:
-            n0 = d0('put_literal', [1, 2])
-            rsrc = d0('put_literal', Resource('daggerml:op/get'))
-            assert self.call(d0, [rsrc, n0, d0('put_literal', 0)]) == 1
-
-    def test_get_map(self):
-        with SimpleApi.begin('d0', 'dag 0') as d0:
-            n0 = d0('put_literal', [1, 2])
-            rsrc = d0('put_literal', Resource('daggerml:op/get'))
-            assert self.call(d0, [rsrc, n0, d0('put_literal', 0)]) == 1
-            with self.assertRaises(Error):
-                self.call(d0, [rsrc, n0, d0('put_literal', 2)])
-
-    def test_error(self):
-        with SimpleApi.begin('d0', 'dag 0') as d0:
-            n0 = d0('put_literal', [1, 2])
-            rsrc = d0('put_literal', Resource('daggerml:op/asdfqwefr'))
-            with self.assertRaises(Error):
-                self.call(d0, [rsrc, n0])
-
-    def test_type(self):
-        with SimpleApi.begin('d0', 'dag 0') as d0:
-            rsrc = d0('put_literal', Resource('daggerml:op/type'))
-
-            def doit(x):
-                n0 = d0('put_literal', x)
-                return self.call(d0, [rsrc, n0])
-            assert doit({'a': 2}) == 'dict'
-            assert doit(['a', 2]) == 'list'
-            assert doit('a') == 'str'
-            assert doit(2) == 'int'
+    def test_specials(self):
+        with SimpleApi.begin() as d0:
+            def check_len(n, v):
+                assert d0.unroll(d0.len(n)) == len(v)
+            def check_keys(n, v):
+                assert d0.unroll(d0.keys(n)) == sorted(v.keys())
+            def check_contains(n, v):
+                for i in v:
+                    assert d0.unroll(d0.contains(n, d0.put_literal(i)))
+                assert not d0.unroll(d0.contains(n, d0.put_literal('BOGUS')))
+            def check_list_get(n, v):
+                for i in range(len(v)):
+                    assert d0.unroll(d0.get(n, d0.put_literal(i))) == v[i]
+                with self.assertRaises(Error):
+                    d0.unroll(d0.get(n, d0.put_literal(len(v))))
+            def check_dict_get(n, v):
+                for i in v:
+                    assert d0.unroll(d0.get(n, d0.put_literal(i)))
+                with self.assertRaises(Error):
+                    d0.unroll(d0.get(n, d0.put_literal('BOGUS')))
+            x0 = {
+                'list': [1, 2, 3],
+                'set': {1, 2, 3},
+                'dict': {'x': 1, 'y': 2, 'z': 3},
+                'int': 0,
+                'float': 0.1,
+                'bool': True,
+                'NoneType': None,
+                'Resource': Resource('test')
+            }
+            n0 = d0.put_literal(x0)
+            for k, v in x0.items():
+                n = d0.get(n0, d0.put_literal(k))
+                assert d0.unroll(n) == v
+                assert d0.unroll(d0.type(n)) == k
+                match k:
+                    case 'list':
+                        check_len(n, v)
+                        check_list_get(n, v)
+                        check_contains(n, v)
+                    case 'set':
+                        check_len(n, v)
+                        check_contains(n, v)
+                    case 'dict':
+                        check_len(n, v)
+                        check_keys(n, v)
+                        check_dict_get(n, v)
+                        check_contains(n, v)

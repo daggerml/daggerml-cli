@@ -10,6 +10,7 @@ from click import ClickException
 from daggerml_cli import api
 from daggerml_cli.__about__ import __version__
 from daggerml_cli.config import Config
+from daggerml_cli.db import DB_TYPES
 from daggerml_cli.repo import Error, Ref, from_json, to_json
 
 SYSTEM_CONFIG_DIR = str(Path(os.getenv('XDG_CONFIG_HOME', str(Path.home() / '.config'))))
@@ -135,19 +136,27 @@ def ref_group(_):
     pass
 
 
+@click.argument('id', type=str)
+@click.argument('type', type=click.Choice(DB_TYPES))
+@ref_group.command(name='describe', help='Get the properties of a ref as JSON.')
+@clickex
+def ref_describe(ctx, type, id):
+    click.echo(jsdumps(api.dump_ref(ctx.obj, Ref(f'{type}/{id}'), False)[0][1]))
+
+
 @click.argument('ref', type=str)
 @ref_group.command(name='dump', help='Dump a ref and all its dependencies to JSON.')
 @clickex
 def ref_dump(ctx, ref):
     dump = api.dump_ref(ctx.obj, from_json(ref))
-    click.echo(dump)
+    click.echo(to_json(dump))
 
 
 @ref_group.command(name='load', help='Load a previously dumped ref into the repo.')
 @click.argument('json', type=str)
 @clickex
 def ref_load(ctx, json):
-    ref = api.load_ref(ctx.obj, json)
+    ref = api.load_ref(ctx.obj, from_json(json))
     click.echo(to_json(ref))
 
 
@@ -245,11 +254,12 @@ def branch_group(ctx):
     pass
 
 
+@click.argument('commit', required=False, shell_complete=complete(api.with_query(api.list_commit, '[*].id')))
 @click.argument('name')
 @branch_group.command(name='create', help='Create a new branch.')
 @clickex
-def branch_create(ctx, name):
-    api.create_branch(ctx.obj, name)
+def branch_create(ctx, name, commit):
+    api.create_branch(ctx.obj, name, commit)
     click.echo(f'Created branch: {name}')
 
 
@@ -294,7 +304,7 @@ def dag_group(_):
 
 @click.argument('message')
 @click.argument('name')
-@click.option('--dag-dump', help='dag dump', type=str)
+@click.option('--dag-dump', help='Import DAG from a dump.', type=str)
 @dag_group.command(name='create', help='Create a new DAG.')
 @clickex
 def dag_create(ctx, name, message, dag_dump=None):

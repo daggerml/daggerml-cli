@@ -1,11 +1,14 @@
 import json
 import logging
 import os
+import shutil
+import subprocess
 import traceback as tb
 from contextlib import contextmanager
 from dataclasses import InitVar, dataclass, field, fields, is_dataclass
 from hashlib import md5
 from typing import List
+from urllib.parse import urlparse
 from uuid import uuid4
 
 from daggerml_cli.db import db_type, dbenv
@@ -14,6 +17,14 @@ from daggerml_cli.util import asserting, makedirs, now
 
 DEFAULT_BRANCH = 'head/main'
 DATA_TYPE = {}
+
+BUILTIN_OPS = {
+    'type': lambda x: str(type(x).__name__),
+    'len': lambda x: len(x),
+    'keys': lambda x: sorted(x.keys()),
+    'get': lambda x, k: x[k],
+    'contains': lambda x, k: k in unroll_datum(x),
+}
 
 
 logger = logging.getLogger(__name__)
@@ -74,6 +85,12 @@ def unroll_datum(value):
             return {k: get(v) for k, v in value.items()}
         raise TypeError(f'unroll_datum unknown type: {type(value)}')
     return get(value)
+
+
+def raise_ex(x):
+    if isinstance(x, Exception):
+        raise x
+    return x
 
 
 def repo_type(cls=None, **kwargs):
@@ -140,8 +157,8 @@ class FnWaiter:
     fndag: Ref  # -> FnDag
     dump: str | None = None
 
-    def is_finished(self):
-        return self.fndag().is_finished()
+    def ready(self):
+        return self.fndag().ready()
 
 
 @repo_type(db=False)
@@ -166,21 +183,8 @@ class Error(Exception):
 @dataclass(frozen=True, slots=True)
 class Resource:
     uri: str
-    data: str = ''
-
-    def __post_init__(self):
-        if ':' not in self.uri:
-            raise Error('invalid resource ID (must contain ":")', code='type-error')
-
-    @property
-    def type(self):
-        car, cdr = self.uri.split(':', 1)
-        return car
-
-    @property
-    def id(self):
-        car, cdr = self.uri.split(':', 1)
-        return cdr
+    data: Ref | None = None  # -> Datum
+    adapter: str | None = None
 
 
 @repo_type(hash=[])
@@ -193,7 +197,6 @@ class Head:
 @dataclass
 class Index(Head):
     dag: Ref
-    id: Ref | None = None
 
 
 @repo_type
@@ -220,10 +223,8 @@ class Dag:
     nodes: set[Ref]  # -> node
     result: Ref | None  # -> node
     error: Error | None
-    id: Ref | None = None
-    name: str | None = None
 
-    def is_finished(self):
+    def ready(self):
         return (self.result or self.error) is not None
 
 
@@ -251,7 +252,7 @@ class Expr(Literal):
 
 @repo_type(db=False)
 @dataclass
-class Load:
+class Import:
     dag: Ref  # -> dag | fndag
 
     @property
@@ -266,14 +267,14 @@ class Load:
 
 @repo_type(db=False)
 @dataclass
-class Fn(Load):
+class Fn(Import):
     expr: list[Ref]  # -> node
 
 
 @repo_type
 @dataclass
 class Node:
-    data: Literal | Expr | Load | Fn
+    data: Literal | Expr | Import | Fn
 
     @property
     def value(self):
@@ -282,6 +283,10 @@ class Node:
     @property
     def error(self):
         return self.data.error
+
+    @property
+    def datum(self):
+        return self.value().value
 
 
 @repo_type
@@ -319,7 +324,7 @@ class Repo:
     head: Ref = field(default_factory=lambda: Ref(DEFAULT_BRANCH))  # -> head
     create: InitVar[bool] = False
 
-    def __post_init__(self, create=False):
+    def __post_init__(self, create):
         self._tx = []
         dbfile = str(os.path.join(self.path, 'data.mdb'))
         dbfile_exists = os.path.exists(dbfile)
@@ -350,8 +355,8 @@ class Repo:
     def __exit__(self, *errs, **err_kw):
         self.close()
 
-    def __call__(self, key, obj=None, *, return_on_error=False) -> Ref:
-        return self.put(key, obj, return_on_error=return_on_error)
+    def __call__(self, key, obj=None, *, return_existing=False) -> Ref:
+        return self.put(key, obj, return_existing=return_existing)
 
     def db(self, type):
         return self.dbs[type] if type else None
@@ -385,7 +390,7 @@ class Repo:
                 obj = unpackb(self._tx[0].get(key.to.encode(), db=self.db(key.type)))
                 return obj
 
-    def put(self, key, obj=None, *, return_on_error=False) -> Ref:
+    def put(self, key, obj=None, *, return_existing=False) -> Ref:
         key, obj = (key, obj) if obj else (obj, key)
         assert obj is not None
         key = key if isinstance(key, Ref) else Ref(key)
@@ -396,7 +401,7 @@ class Repo:
         if key.to is None:
             comp = self._tx[0].get(key2.encode(), db=self.db(db))
             if comp not in [None, data]:
-                if return_on_error:
+                if return_existing:
                     return Ref(key2)
                 msg = f'attempt to update immutable object: {key2}'
                 raise AssertionError(msg)
@@ -611,8 +616,8 @@ class Repo:
         assert branch.type == 'head', f'unexpected branch type: {branch.type}'
         assert branch() is None, 'branch already exists'
         assert ref.type in ['head', 'commit'], f'unexpected ref type: {ref.type}'
-        ref = self(Head(ref)) if ref.type == 'commit' else ref
-        return self(branch, ref())
+        ref = Head(ref) if ref.type == 'commit' else ref()
+        return self(branch, ref)
 
     def delete_branch(self, branch):
         assert self.head != branch, 'cannot delete the current branch'
@@ -686,79 +691,46 @@ class Repo:
         assert isinstance(val, Datum)
         return unroll_datum(val)
 
-    def dump_ref(self, ref):
-        objs = [[x, x()] for x in self.walk_ordered(ref)]
-        return to_json(objs)
+    def dump_ref(self, ref, recursive=True):
+        return [[x, x()] for x in self.walk_ordered(ref)] if recursive else [[ref.to, ref()]]
 
     def load_ref(self, ref_dump):
-        *_, new_dag = (self.put(a, b) for a, b in from_json(ref_dump))
-        return new_dag
+        *dump, = (self.put(k, v) for k, v in ref_dump)
+        return dump[-1] if len(dump) else None
 
-    def start_fn(self, *, expr, retry=False):
-        expr_datum = self.put_datum([x().value for x in expr])
-        expr_node = self(Node(Expr(expr_datum)))
-        fndag = self(FnDag(set([expr_node]), None, None, expr=expr_node), return_on_error=True)
-        assert fndag.to is not None
+    def start_fn(self, index, *, expr, retry=False):
+        fn, *data = map(lambda x: x().datum, expr)
+        uri = urlparse(fn.uri)
+        expr_node = self(Node(Expr(self.put_datum([x().value for x in expr]))))
+        fndag = self(FnDag(set([expr_node]), None, None, expr_node), return_existing=True)
         if fndag().error is not None and retry:
-            self(fndag, FnDag(set([expr_node]), None, None, expr=expr_node))
-        out = self.dump_ref(fndag)
-        waiter = self(FnWaiter(expr, fndag, dump=out))
-        # FIXME: send this to a general purpose execution thing
-        # check for db executor
-        car, *cdr = expr
-        car = car().value().value
-        if car.type == 'daggerml' and not fndag().is_finished():
-            result = error = None
-            nodes = [expr_node]
-            try:
-                match car.id:
-                    case 'op/len':
-                        coll, = cdr
-                        coll = coll().value().value
-                        result = len(coll)
-                    case 'op/keys':
-                        coll, = cdr
-                        coll = coll().value().value
-                        result = sorted(coll.keys())
-                    case 'op/get':
-                        coll, key = cdr
-                        coll = coll().value().value
-                        key = key().value().value
-                        if isinstance(coll, dict) and key in coll.keys():
-                            result = coll[key]
-                        elif isinstance(coll, dict):
-                            error = Error(f'Key: {key} not in collection', code='key')
-                        elif isinstance(coll, list) and 0 <= key < len(coll):
-                            result = coll[key]
-                        elif isinstance(coll, list):
-                            error = Error(f'index: {key} is out of bounds for len: {len(coll)}', code='index')
-                        else:
-                            msg = f'Key {key} not in collection.'
-                            raise Error(msg, code='keyerror')
-                    case 'op/type':
-                        item, = cdr
-                        item = item().value().value
-                        result = str(type(item).__name__)
-                    case _:
-                        error = Error(f'unrecognized db execution ID: {car.id}', code='value')
-            except Exception as e:
-                error = Error.from_ex(e)
-            if result is not None:
-                result = self(Node(Literal(self.put_datum(result))))
-                nodes.append(result)
-            self(fndag, FnDag(set(nodes), result, error, expr=expr_node))
-        return waiter
-
-    def get_fn_result(self, index, waiter):
-        waiter = waiter()
-        assert isinstance(waiter, FnWaiter)
-        if not waiter.is_finished():
-            return
-        fn = Fn(dag=waiter.fndag, expr=waiter.expr)
-        node = self.put_node(fn, index=index)
-        if node().error is not None:
-            raise node().error
-        return node
+            self(fndag, FnDag(set([expr_node]), None, None, expr_node))
+        if not fndag().ready():
+            if uri.scheme == 'daggerml':
+                result = error = None
+                nodes = [expr_node]
+                try:
+                    result = BUILTIN_OPS[uri.path](*data)
+                except Exception as e:
+                    error = Error.from_ex(e)
+                if result is not None:
+                    result = self(Node(Literal(self.put_datum(result))))
+                    nodes.append(result)
+                self(fndag, FnDag(set(nodes), result, error, expr_node))
+            else:
+                cmd = shutil.which(fn.adapter or '')
+                assert cmd, f'no such adapter: {fn.adapter}'
+                args = [cmd, fn.uri, fn.adapter]
+                data = to_json([fndag, self.dump_ref(fndag)])
+                proc = subprocess.run(args, input=data, capture_output=True, text=True, check=True)
+                err = '' if not proc.stderr else f'\n{proc.stderr}'
+                assert proc.returncode == 0, f'{cmd}: exit status: {proc.returncode}{err}'
+                dump = raise_ex(from_json(proc.stdout or 'null'))
+                self.load_ref(dump or [])
+        if fndag().ready():
+            node = self.put_node(Fn(fndag, expr), index=index)
+            raise_ex(node().error)
+            return node
 
     def commit(self, res_or_err, index: Ref):
         result, error = (res_or_err, None) if isinstance(res_or_err, Ref) else (None, res_or_err)

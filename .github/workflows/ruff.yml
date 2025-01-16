@@ -14,7 +14,9 @@ jobs:
           python -m pip install --upgrade pip
           pip install .[test]
       - name: pytest
-        run: pytest -m "not slow" .
+        run: |
+          cd /home/runner/work/daggerml-cli/daggerml-cli
+          PYTHONPATH=. python -m pytest -m "not slow" .
       - name: Install ruff
         run: pip install ruff
       # Update output format to enable automatic inline annotations.

@@ -1,13 +1,13 @@
 import os
+from contextlib import contextmanager
 from dataclasses import dataclass, is_dataclass
-from datetime import datetime
 from shutil import rmtree
 
 import jmespath
 from asciidag.graph import Graph as AsciiGraph
 from asciidag.node import Node as AsciiNode
 
-from daggerml_cli.repo import DEFAULT_BRANCH, Ctx, Error, Fn, Index, Literal, Load, Ref, Repo, unroll_datum
+from daggerml_cli.repo import DEFAULT_BRANCH, Ctx, Error, Fn, Import, Index, Literal, Ref, Repo, unroll_datum
 from daggerml_cli.util import asserting, makedirs
 
 ###############################################################################
@@ -22,8 +22,6 @@ def jsdata(x):
         return {k: jsdata(v) for k, v in x.items()}
     if isinstance(x, Ref):
         return x.name
-    if isinstance(x, datetime):
-        return x.isoformat()
     if is_dataclass(x):
         return jsdata(x.__dict__)
     return x
@@ -38,6 +36,13 @@ def with_attrs(x, **kwargs):
     for k, v in kwargs.items():
         setattr(y, k, v)
     return y
+
+
+@contextmanager
+def tx(config, write=False):
+    with Repo(config.REPO_PATH, head=config.BRANCHREF, user=config.USER) as db:
+        with db.tx(write):
+            yield db
 
 
 ###############################################################################
@@ -87,10 +92,16 @@ def gc_repo(config):
 ###############################################################################
 
 
-def dump_ref(config, ref):
+def describe_ref(config, type, id):
     with Repo(config.REPO_PATH, head=config.BRANCHREF) as db:
         with db.tx():
-            return db.dump_ref(ref)
+            return db.dump_ref(Ref(f'{type}/{id}'), False)[0][1]
+
+
+def dump_ref(config, ref, recursive=True):
+    with Repo(config.REPO_PATH, head=config.BRANCHREF) as db:
+        with db.tx():
+            return db.dump_ref(ref, recursive)
 
 
 def load_ref(config, ref):
@@ -127,7 +138,7 @@ def config_repo(config, name):
 
 
 def config_branch(config, name):
-    assert name in jsdata(list_branch(config)), f"branch not found: {name}"
+    assert name in jsdata(list_branch(config)), f"no such branch: {name}"
     config.BRANCH = name
 
 
@@ -154,10 +165,11 @@ def list_other_branch(config):
     return [k for k in list_branch(config) if k.name != config.BRANCH]
 
 
-def create_branch(config, name):
+def create_branch(config, name, commit=None):
     with Repo(config.REPO_PATH, head=config.BRANCHREF) as db:
         with db.tx(True):
-            db.create_branch(Ref(f"head/{name}"), db.head)
+            ref = db.head if commit is None else Ref(f'commit/{commit}')
+            db.create_branch(Ref(f"head/{name}"), ref)
     config_branch(config, name)
 
 
@@ -214,13 +226,13 @@ def describe_node(config, id):
             ref = Ref(id)
             dag = ref()
             if dag is None:
-                raise Error(f'dag not found: {id}')
+                raise Error(f'no such dag: {id}')
             edges = {}
             for node_ref in dag.nodes:
                 node = node_ref()
                 if isinstance(node.data, Fn):
                     edges[node_ref.to] = [x.to for x in node.data.expr]
-                elif isinstance(node.data, Load):
+                elif isinstance(node.data, Import):
                     edges[node_ref.to] = node.data.dag.to
             return {
                 'id': ref.to,
@@ -240,7 +252,7 @@ def describe_node(config, id):
 def list_indexes(config):
     with Repo(config.REPO_PATH, head=config.BRANCHREF) as db:
         with db.tx():
-            return [with_attrs(x, id=x) for x in db.indexes()]
+            return [with_attrs(x, id=x, foo='bar') for x in db.indexes()]
 
 
 def delete_index(config, index: Ref):
@@ -264,33 +276,23 @@ def invoke_op(f):
     return f
 
 
+def list_ops():
+    return list(invoke_op.fns.keys())
+
+
 def format_ops():
-    return ', '.join(list(invoke_op.fns.keys()))
+    return ', '.join(list_ops())
 
 
 @invoke_op
 def op_start_fn(db, index, expr, retry=False):
     with db.tx(True):
-        fn = db.start_fn(expr=expr, retry=retry)
-        dump = fn().dump
-        cache_key = fn().fndag.to
-        return [fn, cache_key, dump]
-
-
-@invoke_op
-def op_get_fn_result(db, index, waiter_ref):
-    with db.tx(True):
-        result = db.get_fn_result(index, waiter_ref)
-        if isinstance(result, Ref) and result().error is not None:
-            return result().error
-        return result
+        return db.start_fn(index, expr=expr, retry=retry)
 
 
 @invoke_op
 def op_put_literal(db, index, data):
     with db.tx(True):
-        from daggerml_cli.repo import Index
-        assert isinstance(index(), Index)
         datum = db.put_datum(data)
         return db.put_node(Literal(datum), index=index)
 
@@ -298,7 +300,7 @@ def op_put_literal(db, index, data):
 @invoke_op
 def op_put_load(db, index, load_dag):
     with db.tx(True):
-        return db.put_node(Load(asserting(db.get_dag(load_dag))), index=index)
+        return db.put_node(Import(asserting(db.get_dag(load_dag))), index=index)
 
 
 @invoke_op
@@ -334,8 +336,9 @@ def invoke_api(config, token, data):
         return inner
 
     try:
-        # db = token if token else Repo(config.REPO_PATH, config.USER, config.BRANCHREF)
         with Repo(config.REPO_PATH, config.USER, config.BRANCHREF) as db:
+            with db.tx():
+                assert isinstance(token(), Index), 'invalid token'
             op, args, kwargs = data
             return invoke_op.fns.get(op, no_such_op(op))(db, token, *args, **kwargs)
     except Exception as e:
