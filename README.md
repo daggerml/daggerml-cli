@@ -3,7 +3,7 @@
 [![PyPI - Version](https://img.shields.io/pypi/v/daggerml-cli.svg)](https://pypi.org/project/daggerml-cli)
 [![PyPI - Python Version](https://img.shields.io/pypi/pyversions/daggerml-cli.svg)](https://pypi.org/project/daggerml-cli)
 
-![satan's DAG](img/satan.jpg)
+![The Prince of DAGness](img/prince-of-dagness.jpg)
 
 
 ## Table of Contents
