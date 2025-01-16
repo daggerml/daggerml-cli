@@ -25,6 +25,10 @@ dml COMMAND --help
 dml COMMAND SUBCOMMAND --help
 ```
 
+> [!TIP]
+> Shell completion is available for bash/zsh via [argcomplete](https://github.com/kislyuk/argcomplete).
+
+
 ## Test
 
 ```sh
