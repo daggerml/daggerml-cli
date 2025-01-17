@@ -7,7 +7,7 @@ import jmespath
 from asciidag.graph import Graph as AsciiGraph
 from asciidag.node import Node as AsciiNode
 
-from daggerml_cli.repo import DEFAULT_BRANCH, Ctx, Error, Fn, Import, Index, Literal, Ref, Repo, unroll_datum
+from daggerml_cli.repo import DEFAULT_BRANCH, Ctx, Error, Fn, Import, Index, Literal, Node, Ref, Repo, unroll_datum
 from daggerml_cli.util import asserting, makedirs
 
 ###############################################################################
@@ -215,12 +215,7 @@ def begin_dag(config, *, name=None, message, dag_dump=None):
             return db.begin(name=name, message=message, dag=dag)
 
 
-###############################################################################
-# NODE ########################################################################
-###############################################################################
-
-
-def describe_node(config, id):
+def describe_dag(config, id):
     with Repo(config.REPO_PATH, head=config.BRANCHREF) as db:
         with db.tx(False):
             ref = Ref(id)
@@ -293,6 +288,8 @@ def op_start_fn(db, index, expr, retry=False, name=None, doc=None):
 @invoke_op
 def op_put_literal(db, index, data, name=None, doc=None):
     with db.tx(True):
+        if isinstance(data, Ref) and isinstance(data(), Node):
+            return data
         datum = db.put_datum(data)
         return db.put_node(Literal(datum), index=index, name=name, doc=doc)
 
