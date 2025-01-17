@@ -13,18 +13,10 @@ from uuid import uuid4
 
 from daggerml_cli.db import db_type, dbenv
 from daggerml_cli.pack import packb, register, unpackb
-from daggerml_cli.util import asserting, makedirs, now
+from daggerml_cli.util import asserting, assoc, conj, makedirs, now
 
 DEFAULT_BRANCH = 'head/main'
 DATA_TYPE = {}
-
-BUILTIN_OPS = {
-    'type': lambda x: str(type(x).__name__),
-    'len': lambda x: len(x),
-    'keys': lambda x: sorted(x.keys()),
-    'get': lambda x, k: x[k],
-    'contains': lambda x, k: k in unroll_datum(x),
-}
 
 
 logger = logging.getLogger(__name__)
@@ -712,7 +704,18 @@ class Repo:
                 result = error = None
                 nodes = [expr_node]
                 try:
-                    result = BUILTIN_OPS[uri.path](*data)
+                    result = {
+                        'type': lambda x: str(type(x).__name__),
+                        'len': lambda x: len(x),
+                        'keys': lambda x: sorted(x.keys()),
+                        'get': lambda x, k: x[k],
+                        'contains': lambda x, k: k in unroll_datum(x),
+                        'list': lambda *xs: list(xs),
+                        'dict': lambda *kvs: {k: v for k, v in [kvs[i:i + 2] for i in range(0, len(kvs), 2)]},
+                        'set': lambda *xs: set(xs),
+                        'assoc': assoc,
+                        'conj': conj,
+                    }[uri.path](*data)
                 except Exception as e:
                     error = Error.from_ex(e)
                 if result is not None:

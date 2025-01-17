@@ -5,6 +5,7 @@ from unittest import TestCase, mock
 from daggerml_cli import api
 from daggerml_cli.config import Config
 from daggerml_cli.repo import Error, Resource
+from daggerml_cli.util import assoc, conj
 from tests.util import SimpleApi
 
 FN = Resource('./tests/fn.py', adapter='./tests/python-local-adapter')
@@ -134,6 +135,10 @@ class TestApiBase(TestCase):
                     assert d0.unroll(d0.get(n, d0.put_literal(i)))
                 with self.assertRaises(Error):
                     d0.unroll(d0.get(n, d0.put_literal('BOGUS')))
+            def check_assoc(n, v, k, x):
+                assert d0.unroll(d0.assoc(n, k, x)) == assoc(v, k, x)
+            def check_conj(n, v, x):
+                assert d0.unroll(d0.conj(n, x)) == conj(v, x)
             x0 = {
                 'list': [1, 2, 3],
                 'set': {1, 2, 3},
@@ -154,14 +159,27 @@ class TestApiBase(TestCase):
                         check_len(n, v)
                         check_list_get(n, v)
                         check_contains(n, v)
+                        check_conj(n, v, 4)
+                        check_assoc(n, v, 0, 0)
                     case 'set':
                         check_len(n, v)
                         check_contains(n, v)
+                        check_conj(n, v, 4)
                     case 'dict':
                         check_len(n, v)
                         check_keys(n, v)
                         check_dict_get(n, v)
                         check_contains(n, v)
+                        check_assoc(n, v, 'x', 0)
+
+            assert d0.unroll(d0.list()) == []
+            assert d0.unroll(d0.list(0, 1, 2, 3)) == [0, 1, 2, 3]
+
+            assert d0.unroll(d0.dict()) == {}
+            assert d0.unroll(d0.dict('x', 1, 'y', 2, 'z', 3)) == {'x': 1, 'y': 2, 'z': 3}
+
+            assert d0.unroll(d0.set()) == set()
+            assert d0.unroll(d0.set(0, 1, 2, 3)) == {0, 1, 2, 3}
 
     def test_describe_dag(self):
         with TemporaryDirectory() as config_dir:
@@ -174,6 +192,7 @@ class TestApiBase(TestCase):
                     d1.put_literal(23),
                 ]
                 result = d1.start_fn(*nodes)
+                assert d1.unroll(result)[1] == 46
                 ref = d1.commit(result)
             desc = api.describe_dag(d1.ctx, ref.to)
             assert len(desc["edges"][result.to]) == len(nodes)

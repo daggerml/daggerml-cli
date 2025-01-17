@@ -288,6 +288,7 @@ def op_start_fn(db, index, expr, retry=False, name=None, doc=None):
 @invoke_op
 def op_put_literal(db, index, data, name=None, doc=None):
     with db.tx(True):
+        # FIXME: Broken when nodes are nested like {'a': some_node}.
         if isinstance(data, Ref) and isinstance(data(), Node):
             return data
         datum = db.put_datum(data)

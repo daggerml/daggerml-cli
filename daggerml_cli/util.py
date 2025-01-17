@@ -2,6 +2,16 @@ import os
 from datetime import datetime, timezone
 
 
+def assoc(xs, k, v):
+    xs = xs.copy()
+    xs[k] = v
+    return xs
+
+
+def conj(xs, x):
+    return {*xs, x} if isinstance(xs, set) else [*xs, x]
+
+
 def asserting(x, message=None):
     if isinstance(message, str):
         assert x, message
