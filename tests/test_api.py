@@ -181,6 +181,8 @@ class TestApiBase(TestCase):
             assert d0.unroll(d0.set()) == set()
             assert d0.unroll(d0.set(0, 1, 2, 3)) == {0, 1, 2, 3}
 
+            assert d0.unroll(d0.build([1, {'x': 42}], d0.put_literal(42))) == [1, {'x': 42}]
+
     def test_describe_dag(self):
         with TemporaryDirectory() as config_dir:
             with SimpleApi.begin('d0', config_dir=config_dir) as d0:

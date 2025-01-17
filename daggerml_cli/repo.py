@@ -626,6 +626,22 @@ class Repo:
         assert ref(), f'ref not found: {ref.to}'
         self.head = ref
 
+    def extract_nodes(self, obj):
+        result = []
+        def extract(obj):
+            if isinstance(obj, Ref):
+                extract(obj())
+            elif isinstance(obj, Node):
+                if obj not in result:
+                    result.append(obj)
+            elif isinstance(obj, (list, set, tuple)):
+                for x in obj:
+                    extract(x)
+            elif isinstance(obj, dict):
+                for v in obj.values():
+                    extract(v)
+        return extract(obj) or result
+
     def put_datum(self, value):
         def put(value):
             if isinstance(value, Ref):
@@ -715,10 +731,11 @@ class Repo:
                         'set': lambda *xs: set(xs),
                         'assoc': assoc,
                         'conj': conj,
+                        'build': lambda x, *_: x,
                     }[uri.path](*data)
                 except Exception as e:
                     error = Error.from_ex(e)
-                if result is not None:
+                if error is None:
                     result = self(Node(Literal(self.put_datum(result))))
                     nodes.append(result)
                 self(fndag, FnDag(set(nodes), result, error, expr_node))

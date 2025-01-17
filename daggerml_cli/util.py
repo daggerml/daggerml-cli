@@ -61,6 +61,10 @@ def now():
     return datetime.now(timezone.utc).isoformat()
 
 
+def sort_vals(x):
+    return {k: v for k, v in sorted(x.items(), key=lambda item: item[1])}
+
+
 def sort_dict(x):
     return {k: x[k] for k in sorted(x.keys())} if isinstance(x, dict) else x
 

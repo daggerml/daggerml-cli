@@ -7,8 +7,21 @@ import jmespath
 from asciidag.graph import Graph as AsciiGraph
 from asciidag.node import Node as AsciiNode
 
-from daggerml_cli.repo import DEFAULT_BRANCH, Ctx, Error, Fn, Import, Index, Literal, Node, Ref, Repo, unroll_datum
-from daggerml_cli.util import asserting, makedirs
+from daggerml_cli.repo import (
+    DEFAULT_BRANCH,
+    Ctx,
+    Error,
+    Fn,
+    Import,
+    Index,
+    Literal,
+    Node,
+    Ref,
+    Repo,
+    Resource,
+    unroll_datum,
+)
+from daggerml_cli.util import asserting, makedirs, sort_vals
 
 ###############################################################################
 # HELPERS #####################################################################
@@ -218,6 +231,14 @@ def begin_dag(config, *, name=None, message, dag_dump=None):
 def describe_dag(config, id):
     with Repo(config.REPO_PATH, head=config.BRANCHREF) as db:
         with db.tx(False):
+            def index(x):
+                if isinstance(x, Fn):
+                    return f'F: {x.expr[0]().value().value}'
+                if isinstance(x, Literal):
+                    return f'L: {x.value().value}'
+                if isinstance(x, Import):
+                    return f'I: {x.dag().result().value().value}'
+                return x
             ref = Ref(id)
             dag = ref()
             if dag is None:
@@ -235,6 +256,7 @@ def describe_dag(config, id):
                 'nodes': [x.to for x in dag.nodes],
                 'result': dag.result.to if dag.result is not None else None,
                 'error': None if dag.error is None else str(dag.error),
+                'info': sort_vals({x.to: index(x().data) for x in dag.nodes}),
                 'edges': edges,
             }
 
@@ -288,11 +310,20 @@ def op_start_fn(db, index, expr, retry=False, name=None, doc=None):
 @invoke_op
 def op_put_literal(db, index, data, name=None, doc=None):
     with db.tx(True):
-        # FIXME: Broken when nodes are nested like {'a': some_node}.
         if isinstance(data, Ref) and isinstance(data(), Node):
-            return data
-        datum = db.put_datum(data)
-        return db.put_node(Literal(datum), index=index, name=name, doc=doc)
+            data = data()
+            diff = [name, doc] != [data.name, data.doc]
+            return db(data.replace(name=name, doc=doc) if diff else data)
+        nodes = db.extract_nodes(data)
+        result = Literal(db.put_datum(data))
+        if not len(nodes):
+            return db.put_node(result, index=index, name=name, doc=doc)
+        else:
+            fn = Literal(db.put_datum(Resource('daggerml:build')))
+            nodes = [db.put_node(x.data, index=index, name=x.name, doc=x.doc) for x in nodes]
+            expr = [*[db.put_node(x, index=index) for x in [fn, result]], *nodes]
+            result = db.start_fn(index, expr=expr, name=name, doc=doc)
+            return result
 
 
 @invoke_op
