@@ -1,6 +1,8 @@
+import json
 import os
 from contextlib import contextmanager
 from dataclasses import dataclass, is_dataclass, replace
+from pathlib import Path
 from shutil import rmtree
 
 import jmespath
@@ -22,7 +24,7 @@ from daggerml_cli.repo import (
     Resource,
     unroll_datum,
 )
-from daggerml_cli.util import asserting, makedirs, sort_vals
+from daggerml_cli.util import asserting, makedirs
 
 ###############################################################################
 # HELPERS #####################################################################
@@ -229,37 +231,50 @@ def begin_dag(config, *, name=None, message, dag_dump=None):
             return db.begin(name=name, message=message, dag=dag)
 
 
-def describe_dag(config, id):
+def describe_dag(config, dag_id):
     with Repo(config.REPO_PATH, head=config.BRANCHREF) as db:
         with db.tx(False):
             def index(x):
                 if isinstance(x, Fn):
-                    return f'F: {x.expr[0]().value().value}'
+                    return f'{x.expr[0]().value().value}'
                 if isinstance(x, Literal):
-                    return f'L: {x.value().value}'
+                    return f'{x.value().value}'
                 if isinstance(x, Import):
-                    return f'I: {x.dag().result().value().value}'
+                    return f'{x.dag().result().value().value}'
                 return x
-            ref = Ref(id)
-            dag = ref()
+            def parse_node(node):
+                _type = type(node.data).__name__.lower()
+                return {"name": node.name, "doc": node.doc, "type": _type, "info": index(node.data)}
+            dag = Ref(f"dag/{dag_id}")()
             if dag is None:
-                raise Error(f'no such dag: {id}')
-            edges = {}
+                raise Error(f'no such dag: {dag_id}')
+            edges = []
             for node_ref in dag.nodes:
                 node = node_ref()
                 if isinstance(node.data, Fn):
-                    edges[node_ref.to] = [x.to for x in node.data.expr]
+                    edges.extend([
+                        {"source": x.name, "target": node_ref.name, "type": "node"} for x in set(node.data.expr)
+                    ])
                 elif isinstance(node.data, Import):
-                    edges[node_ref.to] = node.data.dag.to
+                    edges.append({"target": node.data.dag.name, "source": node_ref.name, "type": "dag"})
+            nodes = [{"id": x.name, **parse_node(x())} for x in dag.nodes]
+            # FIXME: lots of nodes aren't showing up but the edges are, so we have to filter the edges.
+            edges = [x for x in edges if x["type"] == "dag" or ({x["source"], x["target"]} < {x["id"] for x in nodes})]
             return {
-                'id': ref.to,
-                'expr': dag.expr.to if hasattr(dag, 'expr') else None,
-                'nodes': [x.to for x in dag.nodes],
-                'result': dag.result.to if dag.result is not None else None,
-                'error': None if dag.error is None else str(dag.error),
-                'info': sort_vals({x.to: index(x().data) for x in dag.nodes}),
+                'id': dag_id,
+                'expr': dag.expr.name if hasattr(dag, 'expr') else None,
+                'nodes': nodes,
                 'edges': edges,
+                'result': dag.result.name if dag.result is not None else None,
+                'error': None if dag.error is None else str(dag.error),
             }
+
+
+def write_dag_html(config, dag_ref):
+    desc = describe_dag(config, dag_ref)
+    with open(Path(__file__).parent/"dag-viz.html") as f:
+        html = f.read()
+    return html.replace('"REPLACEMENT_TEXT"', json.dumps(desc, indent=2))
 
 
 ###############################################################################

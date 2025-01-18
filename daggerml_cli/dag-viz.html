@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>DAG Visualization</title>
+    <style>
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+        }
+        #cy {
+            width: 100%;
+            height: 500px;
+            position: relative;
+            background-color: #f5f5f5;
+        }
+        .tooltip {
+            position: absolute;
+            background-color: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 5px 10px;
+            border-radius: 3px;
+            font-size: 12px;
+            pointer-events: none;
+            display: none;
+            max-width: 300px;
+            white-space: pre-line;
+        }
+        .legend {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            background-color: rgba(255, 255, 255, 0.9);
+            padding: 15px;
+            border-radius: 5px;
+            border: 1px solid #ddd;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+        .legend-color {
+            width: 20px;
+            height: 20px;
+            margin-right: 10px;
+            border: 2px solid;
+        }
+        .legend-shape {
+            width: 20px;
+            height: 20px;
+            margin-right: 10px;
+            background-color: #666;
+        }
+        .table-container {
+            margin: 20px;
+            max-height: 300px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background-color: white;
+        }
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+        th {
+            background-color: #f5f5f5;
+            position: sticky;
+            top: 0;
+        }
+        tr:hover {
+            background-color: #f9f9f9;
+        }
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.26.0/cytoscape.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/dagre/0.8.5/dagre.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/cytoscape-dagre@2.5.0/cytoscape-dagre.min.js"></script>
+</head>
+<body>
+    <div id="cy">
+        <div class="legend">
+            <h3 style="margin-top: 0">Legend</h3>
+            <div class="legend-item">
+                <div class="legend-color" style="border-color: green; background-color: #666"></div>
+                <span>Literal</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color" style="border-color: red; background-color: #666"></div>
+                <span>Function</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color" style="border-color: yellow; background-color: #666"></div>
+                <span>Import</span>
+            </div>
+            <h4>Shapes</h4>
+            <div class="legend-item">
+                <div class="legend-shape" style="border-radius: 3px;"></div>
+                <span>Internal</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-shape" style="border-radius: 50%;"></div>
+                <span>Dag result</span>
+            </div>
+        </div>
+    </div>
+    <div class="tooltip"></div>
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Name</th>
+                    <th>Type</th>
+                    <th>Is Commit Value?</th>
+                    <th>Docstring</th>
+                </tr>
+            </thead>
+            <tbody id="nodeTable">
+            </tbody>
+        </table>
+    </div>
+
+    <script>
+        function populate(graphData) {
+            const color_map = {
+                "literal": "green",
+                "fn": "red",
+                "import": "yellow",
+            };
+            const cyNodes = graphData.nodes.map(node => ({
+                data: {
+                    id: node.id,
+                    label: node.name? node.name: "#" + node.id.substring(0,8),
+                    shape: node.id == graphData.result? "ellipse": "roundrectangle",
+                    color: color_map[node.type],
+                    hover: `ID: ${node.id}\nInfo: ${node.info}\n\nDocstring:\n${node.doc}`,
+                    doc: node.doc,
+                }
+            }));
+            const cyEdges = graphData.edges.filter((x) => x.type == "node").map(edge => ({
+                data: {
+                    source: edge.source,
+                    target: edge.target
+                }
+            }));
+
+            const cy = cytoscape({
+                container: document.getElementById('cy'),
+                elements: {
+                    nodes: cyNodes,
+                    edges: cyEdges
+                },
+                style: [
+                    {
+                        selector: 'node',
+                        style: {
+                            'label': 'data(label)',
+                            'background-color': '#666',
+                            'border-width': 2,
+                            'border-color': 'data(color)',
+                            'color': '#fff',
+                            'text-valign': 'center',
+                            'text-halign': 'center',
+                            'width': 80,
+                            'height': 30,
+                            'font-size': 12,
+                            'shape': 'data(shape)',
+                        }
+                    },
+                    {
+                        selector: 'edge',
+                        style: {
+                            'width': 2,
+                            'line-color': '#000',
+                            'target-arrow-color': '#000',
+                            'target-arrow-shape': 'triangle',
+                            'curve-style': 'bezier'
+                        }
+                    }
+                ],
+                layout: {
+                    name: 'dagre',
+                    rankDir: 'TB',
+                    nodeSep: 50,
+                    rankSep: 100,
+                    padding: 50
+                }
+            });
+
+            const tooltip = document.querySelector('.tooltip');
+
+            cy.on('mouseover', 'node', function(e) {
+                const node = e.target;
+                tooltip.style.display = 'block';
+                tooltip.style.left = e.renderedPosition.x + 'px';
+                tooltip.style.top = (e.renderedPosition.y + 20) + 'px';
+                tooltip.textContent = node.data("hover");
+            });
+
+            cy.on('mouseout', 'node', function() {
+                tooltip.style.display = 'none';
+            });
+
+            cy.on('mousemove', 'node', function(e) {
+                tooltip.style.left = (e.renderedPosition.x + 5) + 'px';
+                tooltip.style.top = (e.renderedPosition.y + 20) + 'px';
+            });
+
+            // Populate the table
+            const nodeTable = document.getElementById('nodeTable');
+            // FIXME: add references to this table (both directions)
+            graphData.nodes.forEach(node => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${node.id}</td>
+                    <td>${node.name}</td>
+                    <td>${node.type}</td>
+                    <td>${node.id == graphData.result}</td>
+                    <td>${node.doc || ""}</td>
+                `;
+                nodeTable.appendChild(row);
+            });
+        }
+        document.addEventListener('DOMContentLoaded', function() {
+            const data = "REPLACEMENT_TEXT";
+            populate(data);
+        });
+    </script>
+</body>
+</html>

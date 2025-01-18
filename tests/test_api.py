@@ -198,8 +198,8 @@ class TestApiBase(TestCase):
                 ]
                 result = d1.start_fn(*nodes)
                 assert d1.unroll(result)[1] == 46
-                ref = d1.commit(result)
-            ref, = (x.id.to for x in api.list_dags(d1.ctx) if x.name == 'd1')
+                d1.commit(result)
+            ref, = (x.id.name for x in api.list_dags(d1.ctx) if x.name == 'd1')
             desc = api.describe_dag(d1.ctx, ref)
-            assert len(desc["edges"][result.to]) == len(nodes)
-            assert set(desc["edges"][result.to]) == {x.to for x in nodes}
+            assert len(desc["edges"]) == len(nodes) + 1  # +1 because dag->node edge
+            assert {e["source"] for e in desc["edges"] if e["type"] == "node"} == {x.name for x in nodes}
