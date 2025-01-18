@@ -8,7 +8,7 @@ from daggerml_cli.repo import Error, Resource
 from daggerml_cli.util import assoc, conj
 from tests.util import SimpleApi
 
-FN = Resource('./tests/fn.py', adapter='./tests/python-local-adapter')
+SUM = Resource('./tests/fn/sum.py', adapter='dml-python-in-process-adapter')
 
 
 def env(**kwargs):
@@ -54,14 +54,14 @@ class TestApiBase(TestCase):
 
     def test_fn(self):
         with SimpleApi.begin() as d0:
-            result = d0.start_fn(FN, 1, 2, name='result', doc='I called a func!')
+            result = d0.start_fn(SUM, 1, 2, name='result', doc='I called a func!')
             with d0.tx():
                 assert result().name == 'result'
                 assert result().doc == 'I called a func!'
             assert d0.unroll(result)[1] == 3
 
     def test_repo_cache(self):
-        expr = [FN, 1, 2]
+        expr = [SUM, 1, 2]
         with SimpleApi.begin() as d0:
             res0 = d0.unroll(d0.start_fn(*expr))
             res1 = d0.unroll(d0.start_fn(*expr))
@@ -69,7 +69,7 @@ class TestApiBase(TestCase):
             assert res0[1] == 3
 
     def test_fn_nocache(self):
-        expr = [FN, 1, 2]
+        expr = [SUM, 1, 2]
 
         with SimpleApi.begin() as d0:
             res0 = d0.unroll(d0.start_fn(*expr))
@@ -80,7 +80,7 @@ class TestApiBase(TestCase):
         assert res0 != res1
 
     def test_fn_cache(self):
-        expr = [FN, 1, 2]
+        expr = [SUM, 1, 2]
 
         with TemporaryDirectory() as fn_cache_dir:
             with SimpleApi.begin(fn_cache_dir=fn_cache_dir) as d0:
@@ -92,7 +92,7 @@ class TestApiBase(TestCase):
             assert res0 == res1
 
     def test_fn_error(self):
-        expr = [FN, 1, 2, 'BOGUS']
+        expr = [SUM, 1, 2, 'BOGUS']
 
         with env(DML_FN_FILTER_ARGS='True'):
             with SimpleApi.begin() as d0:
@@ -189,7 +189,7 @@ class TestApiBase(TestCase):
                 d0.commit(d0.put_literal(23))
             with SimpleApi.begin('d1', config_dir=config_dir) as d1:
                 nodes = [
-                    d1.put_literal(FN),
+                    d1.put_literal(SUM),
                     d1.put_load('d0'),
                     d1.put_literal(23),
                 ]

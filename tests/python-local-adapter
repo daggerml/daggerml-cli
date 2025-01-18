@@ -1,3 +1,0 @@
-#!/usr/bin/env bash
-set -eo pipefail
-exec python "$(echo "${1:?}" |python -c 'from urllib.parse import urlparse; print(urlparse(input()).path)')"

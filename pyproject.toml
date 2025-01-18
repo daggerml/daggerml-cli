@@ -52,6 +52,7 @@ Source = "https://github.com/daggerml/daggerml-cli"
 
 [project.scripts]
 dml = "daggerml_cli.cli:cli"
+dml-python-in-process-adapter = "daggerml_cli.python_in_process_adapter:main"
 
 [tool.hatch.version]
 path = "daggerml_cli/__about__.py"
