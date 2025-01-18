@@ -69,6 +69,11 @@ def complete(f, prelude=None):
     return inner
 
 
+def json_spec(ctx, param, value):
+    click.echo(json.dumps(ctx.find_root().command.to_info_dict(ctx)))
+    ctx.exit()
+
+
 @click.version_option(version=__version__, prog_name='dml')
 @click.option(
     '--user',
@@ -103,6 +108,14 @@ def complete(f, prelude=None):
     type=str,
     shell_complete=complete(api.list_branch, set_config),
     help='Specify a branch other than the project branch.')
+@click.option(
+    '--spec',
+    help='Print command info as JSON and exit.',
+    is_flag=True,
+    expose_value=False,
+    callback=json_spec,
+    is_eager=True,
+)
 @click.group(
     no_args_is_help=True,
     context_settings={
