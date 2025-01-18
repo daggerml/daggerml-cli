@@ -8,7 +8,6 @@ from contextlib import contextmanager
 from dataclasses import InitVar, dataclass, field, fields, is_dataclass
 from hashlib import md5
 from typing import List
-from urllib.parse import urlparse
 from uuid import uuid4
 
 from daggerml_cli.db import db_type, dbenv
@@ -710,7 +709,6 @@ class Repo:
 
     def start_fn(self, index, *, expr, retry=False, name=None, doc=None):
         fn, *data = map(lambda x: x().datum, expr)
-        uri = urlparse(fn.uri)
         expr_node = self(Node(Expr(self.put_datum([x().value for x in expr]))))
         fndag = self(FnDag(set([expr_node]), None, None, expr_node), return_existing=True)
         if fndag().error is not None and retry:
