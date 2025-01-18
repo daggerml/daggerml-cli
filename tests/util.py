@@ -26,7 +26,7 @@ class SimpleApi:
 
     def __getattr__(self, name):
         def builtin(*args, **kwargs):
-            return self.start_fn(Resource(f'daggerml:{name}'), *args, **kwargs)
+            return self.start_fn(Resource(name), *args, **kwargs)
         def invoke(*args, **kwargs):
             return api.invoke_api(self.ctx, self.token, [name, args, kwargs])
         return invoke if name in api.list_ops() else builtin

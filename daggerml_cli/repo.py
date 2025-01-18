@@ -716,7 +716,7 @@ class Repo:
         if fndag().error is not None and retry:
             self(fndag, FnDag(set([expr_node]), None, None, expr_node))
         if not fndag().ready():
-            if uri.scheme == 'daggerml':
+            if fn.adapter is None:
                 result = error = None
                 nodes = [expr_node]
                 try:
@@ -732,7 +732,7 @@ class Repo:
                         'assoc': assoc,
                         'conj': conj,
                         'build': lambda x, *_: x,
-                    }[uri.path](*data)
+                    }[fn.uri](*data)
                 except Exception as e:
                     error = Error.from_ex(e)
                 if error is None:

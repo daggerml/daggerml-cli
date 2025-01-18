@@ -319,7 +319,7 @@ def op_put_literal(db, index, data, name=None, doc=None):
         if not len(nodes):
             return db.put_node(result, index=index, name=name, doc=doc)
         else:
-            fn = Literal(db.put_datum(Resource('daggerml:build')))
+            fn = Literal(db.put_datum(Resource('build')))
             nodes = [db.put_node(x.data, index=index, name=x.name, doc=x.doc) for x in nodes]
             expr = [*[db.put_node(x, index=index) for x in [fn, result]], *nodes]
             result = db.start_fn(index, expr=expr, name=name, doc=doc)
