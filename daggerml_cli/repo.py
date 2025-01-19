@@ -714,10 +714,10 @@ class Repo:
         return unroll_datum(val)
 
     def dump_ref(self, ref, recursive=True):
-        return [[x, x()] for x in self.walk_ordered(ref)] if recursive else [[ref.to, ref()]]
+        return to_json([[x, x()] for x in self.walk_ordered(ref)] if recursive else [[ref.to, ref()]])
 
     def load_ref(self, ref_dump):
-        *dump, = (self.put(k, v) for k, v in ref_dump)
+        *dump, = (self.put(k, v) for k, v in raise_ex(from_json(ref_dump)))
         return dump[-1] if len(dump) else None
 
     def start_fn(self, index, *, expr, retry=False, name=None, doc=None):
@@ -746,8 +746,7 @@ class Repo:
                 proc = subprocess.run(args, input=data, capture_output=True, text=True, check=True)
                 err = '' if not proc.stderr else f'\n{proc.stderr}'
                 assert proc.returncode == 0, f'{cmd}: exit status: {proc.returncode}{err}'
-                dump = raise_ex(from_json(proc.stdout or 'null'))
-                self.load_ref(dump or [])
+                self.load_ref(proc.stdout or to_json([]))
         if fndag().ready():
             node = self.put_node(Fn(fndag, expr), index=index, name=name, doc=doc)
             raise_ex(node().error)
