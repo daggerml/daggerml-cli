@@ -23,7 +23,6 @@ DEFAULT_CONFIG = {
     'REPO': None,
     'BRANCH': None,
     'USER': None,
-    'REPO_PATH': None,
     'QUERY': None,
 }
 
@@ -33,7 +32,6 @@ BASE_CONFIG = Config(
     os.getenv('DML_REPO', DEFAULT_CONFIG['REPO']),
     os.getenv('DML_BRANCH', DEFAULT_CONFIG['BRANCH']),
     os.getenv('DML_USER', DEFAULT_CONFIG['USER']),
-    os.getenv('DML_REPO_PATH', DEFAULT_CONFIG['REPO_PATH']),
 )
 
 
