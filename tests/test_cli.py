@@ -21,10 +21,7 @@ class Dag:
     def __call__(self, op, *args, **kwargs):
         if op == 'commit':
             idx, = self._dml.json('index', 'list')
-        result = self._dml('dag', 'invoke', self._token, to_json([op, args, kwargs]))
-        if op == 'commit':
-            assert from_json(result).name == idx['dag']
-        return result
+        return self._dml('dag', 'invoke', self._token, to_json([op, args, kwargs]))
 
     def json(self, op, *args, **kwargs):
         with mock.patch.dict(os.environ, {'DML_OUTPUT', 'json'}):

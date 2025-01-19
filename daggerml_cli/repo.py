@@ -769,8 +769,8 @@ class Repo:
         ctx.dag.error = error
         ctx.commit.tree = self(ctx.tree)
         ctx.commit.created = ctx.commit.modified = now()
-        dag_ref = self(dag, ctx.dag)
+        ref = self(dag, ctx.dag)
         commit = self.merge(self.head().commit, self(ctx.commit))
         self.set_head(self.head, commit)
         self.delete(index)
-        return dag_ref
+        return self.dump_ref(ref)

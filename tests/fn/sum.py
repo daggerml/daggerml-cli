@@ -24,7 +24,7 @@ try:
                 n0 = d0.put_literal([uuid4().hex, sum(args)])
             except Exception as e:
                 n0 = Error(e)
-            result = d0.dump_ref(d0.commit(n0))
+            result = d0.commit(n0)
             writefile(result, cache_file)
             print(result)
 except Exception as e:
