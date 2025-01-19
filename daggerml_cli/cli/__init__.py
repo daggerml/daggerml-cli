@@ -70,6 +70,8 @@ def complete(f, prelude=None):
 
 
 def json_spec(ctx, param, value):
+    if not value or ctx.resilient_parsing:
+        return
     click.echo(json.dumps(ctx.find_root().command.to_info_dict(ctx)))
     ctx.exit()
 

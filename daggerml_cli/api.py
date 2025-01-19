@@ -8,6 +8,7 @@ from asciidag.graph import Graph as AsciiGraph
 from asciidag.node import Node as AsciiNode
 
 from daggerml_cli.repo import (
+    BUILTIN_FNS,
     DEFAULT_BRANCH,
     Ctx,
     Error,
@@ -312,8 +313,9 @@ def op_put_literal(db, index, data, name=None, doc=None):
     with db.tx(True):
         if isinstance(data, Ref) and isinstance(data(), Node):
             data = data()
-            diff = [name, doc] != [data.name, data.doc]
-            return db(data.replace(name=name, doc=doc) if diff else data)
+            setattr(data, 'name', name)  # noqa: B010
+            setattr(data, 'doc', doc)  # noqa: B010
+            return db(data)
         nodes = db.extract_nodes(data)
         result = Literal(db.put_datum(data))
         if not len(nodes):
@@ -369,6 +371,11 @@ def invoke_api(config, token, data):
             with db.tx():
                 assert isinstance(token(), Index), 'invalid token'
             op, args, kwargs = data
+            if op in BUILTIN_FNS:
+                with db.tx(True):
+                    fn = db.put_datum(Resource(op))
+                    expr = [op_put_literal(db, token, x) for x in [fn, *args]]
+                return op_start_fn(db, token, expr, **kwargs)
             return invoke_op.fns.get(op, no_such_op(op))(db, token, *args, **kwargs)
     except Exception as e:
         raise Error.from_ex(e) from e

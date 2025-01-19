@@ -17,6 +17,19 @@ from daggerml_cli.util import asserting, assoc, conj, makedirs, now
 DEFAULT_BRANCH = 'head/main'
 DATA_TYPE = {}
 
+BUILTIN_FNS = {
+    'type': lambda x: str(type(x).__name__),
+    'len': lambda x: len(x),
+    'keys': lambda x: sorted(x.keys()),
+    'get': lambda x, k: x[k],
+    'contains': lambda x, k: k in unroll_datum(x),
+    'list': lambda *xs: list(xs),
+    'dict': lambda *kvs: {k: v for k, v in [kvs[i:i + 2] for i in range(0, len(kvs), 2)]},
+    'set': lambda *xs: set(xs),
+    'assoc': assoc,
+    'conj': conj,
+    'build': lambda x, *_: x,
+}
 
 logger = logging.getLogger(__name__)
 register(set, lambda x, _: sorted(list(x), key=packb), lambda x: [tuple(x)])
@@ -718,19 +731,7 @@ class Repo:
                 result = error = None
                 nodes = [expr_node]
                 try:
-                    result = {
-                        'type': lambda x: str(type(x).__name__),
-                        'len': lambda x: len(x),
-                        'keys': lambda x: sorted(x.keys()),
-                        'get': lambda x, k: x[k],
-                        'contains': lambda x, k: k in unroll_datum(x),
-                        'list': lambda *xs: list(xs),
-                        'dict': lambda *kvs: {k: v for k, v in [kvs[i:i + 2] for i in range(0, len(kvs), 2)]},
-                        'set': lambda *xs: set(xs),
-                        'assoc': assoc,
-                        'conj': conj,
-                        'build': lambda x, *_: x,
-                    }[fn.uri](*data)
+                    result = BUILTIN_FNS[fn.uri](*data)
                 except Exception as e:
                     error = Error.from_ex(e)
                 if error is None:

@@ -151,7 +151,10 @@ class TestApiBase(TestCase):
             }
             n0 = d0.put_literal(x0)
             for k, v in x0.items():
-                n = d0.get(n0, d0.put_literal(k))
+                n = d0.get(n0, d0.put_literal(k), name='n', doc='a node')
+                with d0.tx():
+                    assert n().name == 'n'
+                    assert n().doc == 'a node'
                 assert d0.unroll(n) == v
                 assert d0.unroll(d0.type(n)) == k
                 match k:
