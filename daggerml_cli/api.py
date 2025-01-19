@@ -301,12 +301,14 @@ def format_ops():
 @invoke_op
 def op_start_fn(db, index, expr, retry=False, name=None, doc=None):
     with db.tx(True):
+        assert isinstance(index(), Index), 'invalid token'
         return db.start_fn(index, expr=expr, retry=retry, name=name, doc=doc)
 
 
 @invoke_op
 def op_put_literal(db, index, data, name=None, doc=None):
     with db.tx(True):
+        assert isinstance(index(), Index), 'invalid token'
         if isinstance(data, Ref) and isinstance(data(), Node):
             data = data()
             setattr(data, 'name', name)  # noqa: B010
@@ -327,12 +329,14 @@ def op_put_literal(db, index, data, name=None, doc=None):
 @invoke_op
 def op_put_load(db, index, load_dag, name=None, doc=None):
     with db.tx(True):
+        assert isinstance(index(), Index), 'invalid token'
         return db.put_node(Import(asserting(db.get_dag(load_dag))), index=index, name=name, doc=doc)
 
 
 @invoke_op
 def op_commit(db, index, result):
     with db.tx(True):
+        assert isinstance(index(), Index), 'invalid token'
         return db.commit(res_or_err=result, index=index)
 
 
@@ -364,8 +368,6 @@ def invoke_api(config, token, data):
 
     try:
         with Repo(config.REPO_PATH, config.USER, config.BRANCHREF) as db:
-            with db.tx():
-                assert isinstance(token(), Index), 'invalid token'
             op, args, kwargs = data
             if op in BUILTIN_FNS:
                 with db.tx(True):
