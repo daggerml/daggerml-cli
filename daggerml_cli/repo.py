@@ -168,19 +168,26 @@ class FnWaiter:
 @repo_type(db=False)
 @dataclass
 class Error(Exception):
-    message: str
+    message: str | Exception
     context: dict = field(default_factory=dict)
     code: str | None = None
 
     def __post_init__(self):
-        self.code = type(self).__name__ if self.code is None else self.code
+        if isinstance(self.message, Error):
+            ex = self.message
+            self.message = ex.message
+            self.context = ex.context
+            self.code = ex.code
+        elif isinstance(self.message, Exception):
+            ex = self.message
+            self.message = str(ex)
+            self.context = {'trace': tb.format_exception(type(ex), value=ex, tb=ex.__traceback__)}
+            self.code = type(ex).__name__
+        else:
+            self.code = type(self).__name__ if self.code is None else self.code
 
-    @classmethod
-    def from_ex(cls, ex):
-        if isinstance(ex, Error):
-            return ex
-        formatted_tb = tb.format_exception(type(ex), value=ex, tb=ex.__traceback__)
-        return cls(str(ex), {'trace': formatted_tb}, type(ex).__name__)
+    def __str__(self):
+        return ''.join(self.context.get('trace', [self.message]))
 
 
 @repo_type(db=False)
@@ -716,8 +723,8 @@ class Repo:
     def dump_ref(self, ref, recursive=True):
         return to_json([[x, x()] for x in self.walk_ordered(ref)] if recursive else [[ref.to, ref()]])
 
-    def load_ref(self, ref_dump):
-        *dump, = (self.put(k, v) for k, v in raise_ex(from_json(ref_dump)))
+    def load_ref(self, dump):
+        *dump, = (self.put(k, v) for k, v in raise_ex(from_json(dump)))
         return dump[-1] if len(dump) else None
 
     def start_fn(self, index, *, expr, retry=False, name=None, doc=None):
@@ -733,7 +740,7 @@ class Repo:
                 try:
                     result = BUILTIN_FNS[fn.uri](*data)
                 except Exception as e:
-                    error = Error.from_ex(e)
+                    error = Error(e)
                 if error is None:
                     result = self(Node(Literal(self.put_datum(result))))
                     nodes.append(result)

@@ -1,6 +1,6 @@
 import os
 from contextlib import contextmanager
-from dataclasses import dataclass, is_dataclass
+from dataclasses import dataclass, is_dataclass, replace
 from shutil import rmtree
 
 import jmespath
@@ -310,10 +310,7 @@ def op_put_literal(db, index, data, name=None, doc=None):
     with db.tx(True):
         assert isinstance(index(), Index), 'invalid token'
         if isinstance(data, Ref) and isinstance(data(), Node):
-            data = data()
-            setattr(data, 'name', name)  # noqa: B010
-            setattr(data, 'doc', doc)  # noqa: B010
-            return db(data)
+            return db(replace(data(), name=name, doc=doc))
         nodes = db.extract_nodes(data)
         result = Literal(db.put_datum(data))
         if not len(nodes):
@@ -376,7 +373,7 @@ def invoke_api(config, token, data):
                 return op_start_fn(db, token, expr, **kwargs)
             return invoke_op.fns.get(op, no_such_op(op))(db, token, *args, **kwargs)
     except Exception as e:
-        raise Error.from_ex(e) from e
+        raise Error(e) from e
 
 
 ###############################################################################

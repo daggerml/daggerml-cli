@@ -327,7 +327,7 @@ def dag_create(ctx, name, message, dag_dump=None):
         idx = api.begin_dag(ctx.obj, name=name, message=message, dag_dump=dag_dump)
         click.echo(to_json(idx))
     except Exception as e:
-        click.echo(to_json(Error.from_ex(e)))
+        click.echo(to_json(Error(e)))
 
 
 @dag_group.command(name='list', help='List DAGs.')
@@ -347,7 +347,7 @@ def api_invoke(ctx, token, json):
         click.echo(to_json(api.invoke_api(
             ctx.obj, from_json(token), from_json(json))))
     except Exception as e:
-        click.echo(to_json(Error.from_ex(e)))
+        click.echo(to_json(Error(e)))
 
 
 ###############################################################################
