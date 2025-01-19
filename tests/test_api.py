@@ -8,7 +8,7 @@ from daggerml_cli.repo import Error, Resource
 from daggerml_cli.util import assoc, conj
 from tests.util import SimpleApi
 
-SUM = Resource('./tests/fn/sum.py', adapter='dml-python-in-process-adapter')
+SUM = Resource('./tests/fn/sum.py', adapter='dml-python-fork-adapter')
 
 
 def env(**kwargs):
