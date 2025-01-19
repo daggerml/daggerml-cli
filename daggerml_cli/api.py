@@ -294,12 +294,8 @@ def invoke_op(f):
     return f
 
 
-def list_ops():
-    return list(invoke_op.fns.keys())
-
-
 def format_ops():
-    return ', '.join(list_ops())
+    return ', '.join(sorted([*list(invoke_op.fns.keys()), *BUILTIN_FNS.keys()]))
 
 
 @invoke_op
