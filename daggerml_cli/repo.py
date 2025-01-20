@@ -21,6 +21,7 @@ BUILTIN_FNS = {
     'len': lambda x: len(x),
     'keys': lambda x: sorted(x.keys()),
     'get': lambda x, k: x[k],
+    'slice': lambda xs, *k: xs[slice(*k)],
     'contains': lambda x, k: k in unroll_datum(x),
     'list': lambda *xs: list(xs),
     'dict': lambda *kvs: {k: v for k, v in [kvs[i:i + 2] for i in range(0, len(kvs), 2)]},
