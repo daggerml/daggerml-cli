@@ -27,6 +27,7 @@ classifiers = [
   "Programming Language :: Python :: Implementation :: PyPy",
 ]
 dependencies = [
+  "boto3",
   "click",
   "jmespath",
   "lmdb",
@@ -56,6 +57,7 @@ daggerml_cli = ["*.html"]
 [project.scripts]
 dml = "daggerml_cli.cli:cli"
 dml-python-fork-adapter = "daggerml_cli.python_fork_adapter:main"
+dml-lambda-adapter = "daggerml_cli.contrib.lambda_adapter:main"
 
 [tool.hatch.version]
 path = "daggerml_cli/__about__.py"
