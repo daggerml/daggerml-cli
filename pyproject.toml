@@ -50,6 +50,9 @@ Documentation = "https://github.com/daggerml/daggerml-cli#readme"
 Issues = "https://github.com/daggerml/daggerml-cli/issues"
 Source = "https://github.com/daggerml/daggerml-cli"
 
+[tool.setuptools.package-data]
+daggerml_cli = ["*.html"]
+
 [project.scripts]
 dml = "daggerml_cli.cli:cli"
 dml-python-fork-adapter = "daggerml_cli.python_fork_adapter:main"
