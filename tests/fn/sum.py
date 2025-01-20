@@ -8,10 +8,10 @@ try:
     from daggerml_cli.util import readfile, writefile
     from tests.util import SimpleApi
 
-    fndag, dag_dump = repo.from_json(sys.stdin.read())
+    cache_key, dag_dump = repo.from_json(sys.stdin.read())
     filter_args = os.getenv('DML_FN_FILTER_ARGS', '')
     cache_dir = os.getenv('DML_FN_CACHE_DIR', '')
-    cache_file = os.path.join(cache_dir, fndag.name) if cache_dir else None
+    cache_file = os.path.join(cache_dir, cache_key) if cache_dir else None
     result = readfile(cache_file)
 
     if result:

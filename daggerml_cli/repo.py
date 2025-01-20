@@ -7,7 +7,6 @@ import traceback as tb
 from contextlib import contextmanager
 from dataclasses import InitVar, dataclass, field, fields, is_dataclass
 from hashlib import md5
-from typing import List
 from uuid import uuid4
 
 from daggerml_cli.db import db_type, dbenv
