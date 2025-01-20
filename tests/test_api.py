@@ -130,8 +130,8 @@ class TestApiBase(TestCase):
                     assert d0.unroll(d0.get(n, d0.put_literal(i))) == v[i]
                 with self.assertRaises(Error):
                     d0.unroll(d0.get(n, d0.put_literal(len(v))))
-            def check_slice(n, v, start, stop, step):
-                assert d0.unroll(d0.slice(n, start, stop, step)) == v[slice(start, stop, step)]
+            def check_slice(n, v, *k):
+                assert d0.unroll(d0.get(n, d0.put_literal(list(k)))) == v[slice(*k)]
             def check_dict_get(n, v):
                 for i in v:
                     assert d0.unroll(d0.get(n, d0.put_literal(i)))

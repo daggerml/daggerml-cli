@@ -16,12 +16,12 @@ from daggerml_cli.util import asserting, assoc, conj, makedirs, now
 DEFAULT_BRANCH = 'head/main'
 DATA_TYPE = {}
 
+
 BUILTIN_FNS = {
     'type': lambda x: str(type(x).__name__),
     'len': lambda x: len(x),
     'keys': lambda x: sorted(x.keys()),
-    'get': lambda x, k: x[k],
-    'slice': lambda xs, *k: xs[slice(*k)],
+    'get': lambda x, k: x[slice(*[x().value for x in k])] if isinstance(k, list) else x[k],
     'contains': lambda x, k: k in unroll_datum(x),
     'list': lambda *xs: list(xs),
     'dict': lambda *kvs: {k: v for k, v in [kvs[i:i + 2] for i in range(0, len(kvs), 2)]},
