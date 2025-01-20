@@ -345,7 +345,7 @@ def dag_describe(ctx, id):
 @dag_group.command(name='html', help='Get the dag html page printed to stdout.')
 @clickex
 def dag_html(ctx, id):
-    click.echo(api.write_dag_html(ctx.obj, Ref(f"dag/{id}")))
+    click.echo(api.write_dag_html(ctx.obj, id))
 
 
 @click.argument('json')
