@@ -154,17 +154,6 @@ class Ref:
         return Repo.curr.get(self)
 
 
-@repo_type
-@dataclass
-class FnWaiter:
-    expr: List[Ref]  # -> [Node]
-    fndag: Ref  # -> FnDag
-    dump: str | None = None
-
-    def ready(self):
-        return self.fndag().ready()
-
-
 @repo_type(db=False)
 @dataclass
 class Error(Exception):
@@ -749,7 +738,7 @@ class Repo:
                 cmd = shutil.which(fn.adapter or '')
                 assert cmd, f'no such adapter: {fn.adapter}'
                 args = [cmd, fn.uri, fn.adapter]
-                data = to_json([fndag, self.dump_ref(fndag)])
+                data = to_json([expr_node.name, self.dump_ref(fndag)])
                 proc = subprocess.run(args, input=data, capture_output=True, text=True, check=True)
                 err = '' if not proc.stderr else f'\n{proc.stderr}'
                 assert proc.returncode == 0, f'{cmd}: exit status: {proc.returncode}{err}'
