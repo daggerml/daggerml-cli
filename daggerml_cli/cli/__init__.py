@@ -119,6 +119,7 @@ def json_spec(ctx, param, value):
 @click.group(
     no_args_is_help=True,
     context_settings={
+        "auto_envvar_prefix": "DML",
         'help_option_names': ['-h', '--help'],
         'show_default': True})
 @clickex
