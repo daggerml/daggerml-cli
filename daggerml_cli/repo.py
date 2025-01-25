@@ -741,6 +741,8 @@ class Repo:
                 data = to_json([expr_node.name, self.dump_ref(fndag)])
                 proc = subprocess.run(args, input=data, capture_output=True, text=True, check=False)
                 err = '' if not proc.stderr else f'\n{proc.stderr}'
+                if proc.stderr:
+                    logger.error(proc.stderr.rstrip())
                 assert proc.returncode == 0, f'{cmd}: exit status: {proc.returncode}{err}'
                 self.load_ref(proc.stdout or to_json([]))
         if fndag().ready():

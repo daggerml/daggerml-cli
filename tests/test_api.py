@@ -4,7 +4,7 @@ from unittest import TestCase, mock
 
 from daggerml_cli import api
 from daggerml_cli.config import Config
-from daggerml_cli.repo import Error, Resource
+from daggerml_cli.repo import Error, Ref, Resource
 from daggerml_cli.util import assoc, conj
 from tests.util import SimpleApi
 
@@ -203,6 +203,6 @@ class TestApiBase(TestCase):
                 assert d1.unroll(result)[1] == 46
                 d1.commit(result)
             ref, = (x.id.name for x in api.list_dags(d1.ctx) if x.name == 'd1')
-            desc = api.describe_dag(d1.ctx, ref)
+            desc = api.describe_dag(d1.ctx, Ref(f'dag/{ref}'))
             assert len(desc["edges"]) == len(nodes) + 1  # +1 because dag->node edge
             assert {e["source"] for e in desc["edges"] if e["type"] == "node"} == {x.name for x in nodes}

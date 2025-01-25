@@ -1,7 +1,8 @@
 import json
+import logging
 import os
 from contextlib import contextmanager
-from dataclasses import dataclass, is_dataclass, replace
+from dataclasses import dataclass, is_dataclass
 from pathlib import Path
 from shutil import rmtree
 
@@ -29,6 +30,8 @@ from daggerml_cli.util import asserting, makedirs
 ###############################################################################
 # HELPERS #####################################################################
 ###############################################################################
+
+logger = logging.getLogger(__name__)
 
 
 def jsdata(x):
@@ -231,12 +234,12 @@ def begin_dag(config, *, name=None, message, dag_dump=None):
             return db.begin(name=name, message=message, dag=dag)
 
 
-def describe_dag(config, dag_id):
+def describe_dag(config, ref):
     with Repo(config.REPO_PATH, head=config.BRANCHREF) as db:
-        with db.tx(False):
+        with db.tx():
             def index(x):
                 if isinstance(x, Fn):
-                    return f'{x.expr[0]().value().value}'
+                    return index(x.dag().result().data)
                 if isinstance(x, Literal):
                     return f'{x.value().value}'
                 if isinstance(x, Import):
@@ -245,9 +248,9 @@ def describe_dag(config, dag_id):
             def parse_node(node):
                 _type = type(node.data).__name__.lower()
                 return {"name": node.name, "doc": node.doc, "type": _type, "info": index(node.data)}
-            dag = Ref(f"dag/{dag_id}")()
+            dag = ref()
             if dag is None:
-                raise Error(f'no such dag: {dag_id}')
+                raise Error(f'no such dag: {ref.name}')
             edges = []
             for node_ref in dag.nodes:
                 node = node_ref()
@@ -258,10 +261,10 @@ def describe_dag(config, dag_id):
                 elif isinstance(node.data, Import):
                     edges.append({"target": node.data.dag.name, "source": node_ref.name, "type": "dag"})
             nodes = [{"id": x.name, **parse_node(x())} for x in dag.nodes]
-            # FIXME: lots of nodes aren't showing up but the edges are, so we have to filter the edges.
+            # Remove edges to hidden nodes (eg. fndags)
             edges = [x for x in edges if x["type"] == "dag" or ({x["source"], x["target"]} < {x["id"] for x in nodes})]
             return {
-                'id': dag_id,
+                'id': ref.name,
                 'expr': dag.expr.name if hasattr(dag, 'expr') else None,
                 'nodes': nodes,
                 'edges': edges,
@@ -270,11 +273,10 @@ def describe_dag(config, dag_id):
             }
 
 
-def write_dag_html(config, dag_ref):
-    desc = describe_dag(config, dag_ref)
-    with open(Path(__file__).parent/"dag-viz.html") as f:
+def write_dag_html(config, ref):
+    with open(Path(__file__).parent / "dag-viz.html") as f:
         html = f.read()
-    return html.replace('"REPLACEMENT_TEXT"', json.dumps(desc, indent=2))
+    return html.replace('"REPLACEMENT_TEXT"', json.dumps(describe_dag(config, ref), indent=2))
 
 
 ###############################################################################
@@ -325,7 +327,7 @@ def op_put_literal(db, index, data, name=None, doc=None):
     with db.tx(True):
         assert isinstance(index(), Index), 'invalid token'
         if isinstance(data, Ref) and isinstance(data(), Node):
-            return db(replace(data(), name=name, doc=doc))
+            return data
         nodes = db.extract_nodes(data)
         result = Literal(db.put_datum(data))
         if not len(nodes):

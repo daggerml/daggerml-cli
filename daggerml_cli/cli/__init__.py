@@ -339,14 +339,14 @@ def dag_list(ctx):
 @dag_group.command(name='describe', help='Get the properties of a dag as JSON.')
 @clickex
 def dag_describe(ctx, id):
-    click.echo(jsdumps(api.describe_dag(ctx.obj, Ref(f"dag/{id}"))))
+    click.echo(jsdumps(api.describe_dag(ctx.obj, Ref(f'dag/{id}'))))
 
 
 @click.argument('id', type=str)
 @dag_group.command(name='html', help='Get the dag html page printed to stdout.')
 @clickex
 def dag_html(ctx, id):
-    click.echo(api.write_dag_html(ctx.obj, id))
+    click.echo(api.write_dag_html(ctx.obj, Ref(f'dag/{id}')))
 
 
 @click.argument('json')
