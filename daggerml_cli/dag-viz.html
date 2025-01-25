@@ -117,7 +117,8 @@
                     <th>ID</th>
                     <th>Name</th>
                     <th>Type</th>
-                    <th>Is Commit Value?</th>
+                    <th>Value</th>
+                    <th>Result?</th>
                     <th>Docstring</th>
                 </tr>
             </thead>
@@ -139,7 +140,11 @@
                     label: node.name? node.name: "#" + node.id.substring(0,8),
                     shape: node.id == graphData.result? "ellipse": "roundrectangle",
                     color: color_map[node.type],
-                    hover: `ID: ${node.id}\nInfo: ${node.info}\n\nDocstring:\n${node.doc}`,
+                    hover: [
+                      `id:    ${node.id}`,
+                      `value: ${node.info}`,
+                      ...(node.doc ? [`doc:   ${node.doc}`] : [])
+                    ].join('\n'),
                     doc: node.doc,
                 }
             }));
@@ -198,6 +203,8 @@
             cy.on('mouseover', 'node', function(e) {
                 const node = e.target;
                 tooltip.style.display = 'block';
+                tooltip.style.fontFamily = 'monospace';
+                tooltip.style.whiteSpace = 'pre';
                 tooltip.style.left = e.renderedPosition.x + 'px';
                 tooltip.style.top = (e.renderedPosition.y + 20) + 'px';
                 tooltip.textContent = node.data("hover");
@@ -215,12 +222,13 @@
             // Populate the table
             const nodeTable = document.getElementById('nodeTable');
             // FIXME: add references to this table (both directions)
-            graphData.nodes.forEach(node => {
+            graphData.nodes.sort((a, b) => (a.name || '') > (b.name || '') ? 1 : -1).forEach(node => {
                 const row = document.createElement('tr');
                 row.innerHTML = `
                     <td>${node.id}</td>
                     <td>${node.name}</td>
                     <td>${node.type}</td>
+                    <td>${node.info}</td>
                     <td>${node.id == graphData.result}</td>
                     <td>${node.doc || ""}</td>
                 `;
