@@ -335,18 +335,22 @@ def dag_list(ctx):
     click.echo(jsdumps(api.list_dags(ctx.obj), ctx.obj))
 
 
-@click.argument('id', type=str)
+@click.argument('name', type=str, shell_complete=complete(api.with_query(api.list_dags, '[*].name')))
 @dag_group.command(name='describe', help='Get the properties of a dag as JSON.')
 @clickex
-def dag_describe(ctx, id):
-    click.echo(jsdumps(api.describe_dag(ctx.obj, Ref(f'dag/{id}'))))
+def dag_describe(ctx, name):
+    ref = ([x.id for x in api.list_dags(ctx.obj) if x.name == name] or [None])[0]
+    assert ref, f'no such dag: {name}'
+    click.echo(jsdumps(api.describe_dag(ctx.obj, ref)))
 
 
-@click.argument('id', type=str)
+@click.argument('name', type=str, shell_complete=complete(api.with_query(api.list_dags, '[*].name')))
 @dag_group.command(name='html', help='Get the dag html page printed to stdout.')
 @clickex
-def dag_html(ctx, id):
-    click.echo(api.write_dag_html(ctx.obj, Ref(f'dag/{id}')))
+def dag_html(ctx, name):
+    ref = ([x.id for x in api.list_dags(ctx.obj) if x.name == name] or [None])[0]
+    assert ref, f'no such dag: {name}'
+    click.echo(api.write_dag_html(ctx.obj, ref))
 
 
 @click.argument('json')
