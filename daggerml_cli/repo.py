@@ -222,7 +222,7 @@ class Tree:
 @repo_type(hash=[])
 @dataclass
 class Dag:
-    nodes: set[Ref]  # -> node
+    nodes: list[Ref]  # -> node
     result: Ref | None  # -> node
     error: Error | None
 
@@ -681,7 +681,7 @@ class Repo:
             raise ValueError(msg)
         ctx = Ctx.from_head(self.head)
         if dag is None:
-            dag = self(Dag(set(), None, None))
+            dag = self(Dag([], None, None))
         ctx.dags[name] = dag
         commit = Commit(
             [ctx.head.commit],
@@ -693,12 +693,10 @@ class Repo:
         return index
 
     def put_node(self, data, index: Ref, name=None, doc=None):
-        val = data.value().value
-        if isinstance(val, Resource) and val.uri.startswith('daggerml:'):
-            name = val.uri
         ctx = Ctx.from_head(index)
         node = self(Node(data, name=name, doc=doc))
-        ctx.dag.nodes.add(node)
+        if node not in ctx.dag.nodes:
+            ctx.dag.nodes.append(node)
         self(ctx.head.dag, ctx.dag)
         ctx.commit.tree = self(ctx.tree)
         ctx.commit.created = ctx.commit.modified = now()
@@ -724,9 +722,9 @@ class Repo:
     def start_fn(self, index, *, expr, retry=False, name=None, doc=None):
         fn, *data = map(lambda x: x().datum, expr)
         expr_node = self(Node(Expr(self.put_datum([x().value for x in expr]))))
-        fndag = self(FnDag(set([expr_node]), None, None, expr_node), return_existing=True)
+        fndag = self(FnDag([expr_node], None, None, expr_node), return_existing=True)
         if fndag().error is not None and retry:
-            self(fndag, FnDag(set([expr_node]), None, None, expr_node))
+            self(fndag, FnDag([expr_node], None, None, expr_node))
         if not fndag().ready():
             uri = urlparse(fn.uri)
             if fn.adapter is None and uri.scheme == 'daggerml':
@@ -739,7 +737,7 @@ class Repo:
                 if error is None:
                     result = self(Node(Literal(self.put_datum(result))))
                     nodes.append(result)
-                self(fndag, FnDag(set(nodes), result, error, expr_node))
+                self(fndag, FnDag(nodes, result, error, expr_node))
             else:
                 cmd = shutil.which(fn.adapter or '')
                 assert cmd, f'no such adapter: {fn.adapter}'

@@ -136,7 +136,6 @@ def status(config):
         'user': config.get('USER'),
         'config_dir': config.get('CONFIG_DIR'),
         'project_dir': config.get('PROJECT_DIR') and os.path.abspath(config.get('PROJECT_DIR')),
-        'repo_path': config.get('REPO_PATH'),
     }
 
 
@@ -340,9 +339,10 @@ def op_put_literal(db, index, data, name=None, doc=None):
             return db.put_node(result, index=index, name=name, doc=doc)
         else:
             fn = Literal(db.put_datum(Resource('daggerml:build')))
+            fn = db.put_node(fn, index=index, name='daggerml:build')
+            result = db.put_node(result, index=index)
             nodes = [db.put_node(x.data, index=index, name=x.name, doc=x.doc) for x in nodes]
-            expr = [*[db.put_node(x, index=index) for x in [fn, result]], *nodes]
-            result = db.start_fn(index, expr=expr, name=name, doc=doc)
+            result = db.start_fn(index, expr=[fn, result, *nodes], name=name, doc=doc)
             return result
 
 
@@ -350,7 +350,9 @@ def op_put_literal(db, index, data, name=None, doc=None):
 def op_put_load(db, index, load_dag, name=None, doc=None):
     with db.tx(True):
         assert isinstance(index(), Index), 'invalid token'
-        return db.put_node(Import(asserting(db.get_dag(load_dag))), index=index, name=name, doc=doc)
+        dag = db.get_dag(load_dag)
+        assert dag, f'no such dag: {load_dag}'
+        return db.put_node(Import(dag), index=index, name=name, doc=doc)
 
 
 @invoke_op
@@ -392,7 +394,8 @@ def invoke_api(config, token, data):
             if op in BUILTIN_FNS:
                 with db.tx(True):
                     fn = db.put_datum(Resource(f'daggerml:{op}'))
-                    expr = [op_put_literal(db, token, x) for x in [fn, *args]]
+                    fn = op_put_literal(db, token, fn, name=f'daggerml:{op}')
+                    expr = [fn, *[op_put_literal(db, token, x) for x in args]]
                 return op_start_fn(db, token, expr, **kwargs)
             return invoke_op.fns.get(op, no_such_op(op))(db, token, *args, **kwargs)
     except Exception as e:
