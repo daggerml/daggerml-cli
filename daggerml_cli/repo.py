@@ -7,6 +7,7 @@ import traceback as tb
 from contextlib import contextmanager
 from dataclasses import InitVar, dataclass, field, fields, is_dataclass
 from hashlib import md5
+from urllib.parse import urlparse
 from uuid import uuid4
 
 from daggerml_cli.db import db_type, dbenv
@@ -15,13 +16,14 @@ from daggerml_cli.util import asserting, assoc, conj, makedirs, now
 
 DEFAULT_BRANCH = 'head/main'
 DATA_TYPE = {}
+NONE = {}
 
 
 BUILTIN_FNS = {
     'type': lambda x: str(type(x).__name__),
     'len': lambda x: len(x),
     'keys': lambda x: sorted(x.keys()),
-    'get': lambda x, k: x[slice(*[x().value for x in k])] if isinstance(k, list) else x[k],
+    'get': lambda x, k, d=NONE: x[slice(*[x().value for x in k])] if isinstance(k, list) else x[k] if d is NONE else x.get(k, d),
     'contains': lambda x, k: k in unroll_datum(x),
     'list': lambda *xs: list(xs),
     'dict': lambda *kvs: {k: v for k, v in [kvs[i:i + 2] for i in range(0, len(kvs), 2)]},
@@ -691,6 +693,9 @@ class Repo:
         return index
 
     def put_node(self, data, index: Ref, name=None, doc=None):
+        val = data.value().value
+        if isinstance(val, Resource) and val.uri.startswith('daggerml:'):
+            name = val.uri
         ctx = Ctx.from_head(index)
         node = self(Node(data, name=name, doc=doc))
         ctx.dag.nodes.add(node)
@@ -723,11 +728,12 @@ class Repo:
         if fndag().error is not None and retry:
             self(fndag, FnDag(set([expr_node]), None, None, expr_node))
         if not fndag().ready():
-            if fn.adapter is None:
+            uri = urlparse(fn.uri)
+            if fn.adapter is None and uri.scheme == 'daggerml':
                 result = error = None
                 nodes = [expr_node]
                 try:
-                    result = BUILTIN_FNS[fn.uri](*data)
+                    result = BUILTIN_FNS[uri.path](*data)
                 except Exception as e:
                     error = Error(e)
                 if error is None:

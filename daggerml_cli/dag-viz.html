@@ -142,7 +142,7 @@
                     color: color_map[node.type],
                     hover: [
                       `id:    ${node.id}`,
-                      `value: ${node.info}`,
+                      `value: ${node.value}`,
                       ...(node.doc ? [`doc:   ${node.doc}`] : [])
                     ].join('\n'),
                     doc: node.doc,
@@ -228,7 +228,7 @@
                     <td>${node.id}</td>
                     <td>${node.name}</td>
                     <td>${node.type}</td>
-                    <td>${node.info}</td>
+                    <td>${node.value}</td>
                     <td>${node.id == graphData.result}</td>
                     <td>${node.doc || ""}</td>
                 `;

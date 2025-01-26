@@ -14,6 +14,7 @@ from daggerml_cli.repo import (
     BUILTIN_FNS,
     DEFAULT_BRANCH,
     Ctx,
+    Datum,
     Error,
     Fn,
     Import,
@@ -109,12 +110,6 @@ def gc_repo(config):
 ###############################################################################
 # REF #########################################################################
 ###############################################################################
-
-
-def describe_ref(config, type, id):
-    with Repo(config.REPO_PATH, head=config.BRANCHREF) as db:
-        with db.tx():
-            return db.dump_ref(Ref(f'{type}/{id}'), False)[0][1]
 
 
 def dump_ref(config, ref, recursive=True):
@@ -238,16 +233,27 @@ def describe_dag(config, ref):
     with Repo(config.REPO_PATH, head=config.BRANCHREF) as db:
         with db.tx():
             def index(x):
+                if isinstance(x, Ref):
+                    return index(x())
+                if isinstance(x, Datum):
+                    return unroll_datum(x)
+                if isinstance(x, (list, tuple)):
+                    return f'{[index(y) for y in x]}'
                 if isinstance(x, Fn):
                     return index(x.dag().result().data)
                 if isinstance(x, Literal):
-                    return f'{x.value().value}'
+                    return f'{index(x.value().value)}'
                 if isinstance(x, Import):
                     return f'{x.dag().result().value().value}'
                 return x
             def parse_node(node):
                 _type = type(node.data).__name__.lower()
-                return {"name": node.name, "doc": node.doc, "type": _type, "info": index(node.data)}
+                return {
+                    "name": node.name,
+                    "doc": node.doc,
+                    "type": _type,
+                    "value": index(node.data)
+                }
             dag = ref()
             if dag is None:
                 raise Error(f'no such dag: {ref.name}')
@@ -333,7 +339,7 @@ def op_put_literal(db, index, data, name=None, doc=None):
         if not len(nodes):
             return db.put_node(result, index=index, name=name, doc=doc)
         else:
-            fn = Literal(db.put_datum(Resource('build')))
+            fn = Literal(db.put_datum(Resource('daggerml:build')))
             nodes = [db.put_node(x.data, index=index, name=x.name, doc=x.doc) for x in nodes]
             expr = [*[db.put_node(x, index=index) for x in [fn, result]], *nodes]
             result = db.start_fn(index, expr=expr, name=name, doc=doc)
@@ -385,7 +391,7 @@ def invoke_api(config, token, data):
             op, args, kwargs = data
             if op in BUILTIN_FNS:
                 with db.tx(True):
-                    fn = db.put_datum(Resource(op))
+                    fn = db.put_datum(Resource(f'daggerml:{op}'))
                     expr = [op_put_literal(db, token, x) for x in [fn, *args]]
                 return op_start_fn(db, token, expr, **kwargs)
             return invoke_op.fns.get(op, no_such_op(op))(db, token, *args, **kwargs)
