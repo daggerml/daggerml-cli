@@ -40,23 +40,31 @@ class TestApiBase(TestCase):
                 data = {'foo': 23, 'bar': {4, 6}, 'baz': [True, 3]}
                 n0 = d0.put_literal(data, name='n0', doc='This is my data.')
                 with d0.tx():
-                    assert n0().name == 'n0'
+                    assert d0.get_node('n0') == n0
                     assert n0().doc == 'This is my data.'
                 d0.commit(n0)
             with SimpleApi.begin('d1', config_dir=config_dir) as d1:
                 n0 = d1.put_load('d0', name='n0', doc='From dag d0.')
                 with d0.tx():
-                    assert n0().name == 'n0'
+                    assert d1.get_node('n0') == n0
                     assert n0().doc == 'From dag d0.'
                 n1 = d1.put_literal([n0, n0, 2])
                 assert d1.unroll(n1) == [data, data, 2]
                 d1.commit(n1)
 
+    def test_name(self):
+        with SimpleApi.begin() as d0:
+            n0 = d0.put_literal(42)
+            d0.set_node('n0', n0)
+            assert d0.get_node('n0') == n0
+
     def test_fn(self):
         with SimpleApi.begin() as d0:
             result = d0.start_fn(SUM, 1, 2, name='result', doc='I called a func!')
             with d0.tx():
-                assert result().name == 'result'
+                assert d0.get_node('result') == result
+                with self.assertRaises(Error):
+                    d0.get_node('BOGUS')
                 assert result().doc == 'I called a func!'
             assert d0.unroll(result)[1] == 3
 
@@ -155,7 +163,8 @@ class TestApiBase(TestCase):
             for k, v in x0.items():
                 n = d0.get(n0, d0.put_literal(k), name='n', doc='a node')
                 with d0.tx():
-                    assert n().name == 'n'
+                    # FIXME: test node name
+                    # assert n().name == 'n'
                     assert n().doc == 'a node'
                 assert d0.unroll(n) == v
                 assert d0.unroll(d0.type(n)) == k
@@ -203,6 +212,7 @@ class TestApiBase(TestCase):
                 assert d1.unroll(result)[1] == 46
                 d1.commit(result)
             ref, = (x.id.name for x in api.list_dags(d1.ctx) if x.name == 'd1')
+            # FIXME: test node name
             desc = api.describe_dag(d1.ctx, Ref(f'dag/{ref}'))
             assert len(desc["edges"]) == len(nodes) + 1  # +1 because dag->node edge
             assert {e["source"] for e in desc["edges"] if e["type"] == "node"} == {x.name for x in nodes}

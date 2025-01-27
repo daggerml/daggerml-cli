@@ -7,6 +7,7 @@ import traceback as tb
 from contextlib import contextmanager
 from dataclasses import InitVar, dataclass, field, fields, is_dataclass
 from hashlib import md5
+from typing import Dict
 from urllib.parse import urlparse
 from uuid import uuid4
 
@@ -223,6 +224,7 @@ class Tree:
 @dataclass
 class Dag:
     nodes: list[Ref]  # -> node
+    names: Dict[str, Ref]  # -> node
     result: Ref | None  # -> node
     error: Error | None
 
@@ -256,28 +258,29 @@ class Expr(Literal):
 @dataclass
 class Import:
     dag: Ref  # -> dag | fndag
+    node: Ref | None = None  # -> node
 
     @property
     def value(self):
-        return self.dag().result().value
+        ref = self.node or self.dag().result
+        return ref().value
 
     @property
     def error(self):
-        dag = self.dag()
-        return dag.error
+        ref = self.node or self.dag
+        return ref().error
 
 
 @repo_type(db=False)
 @dataclass
 class Fn(Import):
-    expr: list[Ref]  # -> node
+    expr: list[Ref] | None = None  # -> node
 
 
 @repo_type
 @dataclass
 class Node:
     data: Literal | Expr | Import | Fn
-    name: str | None = None
     doc: str | None = None
 
     @property
@@ -681,7 +684,7 @@ class Repo:
             raise ValueError(msg)
         ctx = Ctx.from_head(self.head)
         if dag is None:
-            dag = self(Dag([], None, None))
+            dag = self(Dag([], {}, None, None))
         ctx.dags[name] = dag
         commit = Commit(
             [ctx.head.commit],
@@ -694,9 +697,11 @@ class Repo:
 
     def put_node(self, data, index: Ref, name=None, doc=None):
         ctx = Ctx.from_head(index)
-        node = self(Node(data, name=name, doc=doc))
+        node = data if isinstance(data, Ref) else self(Node(data, doc=doc))
         if node not in ctx.dag.nodes:
             ctx.dag.nodes.append(node)
+        if name:
+            ctx.dag.names[name] = node
         self(ctx.head.dag, ctx.dag)
         ctx.commit.tree = self(ctx.tree)
         ctx.commit.created = ctx.commit.modified = now()
@@ -722,9 +727,9 @@ class Repo:
     def start_fn(self, index, *, expr, retry=False, name=None, doc=None):
         fn, *data = map(lambda x: x().datum, expr)
         expr_node = self(Node(Expr(self.put_datum([x().value for x in expr]))))
-        fndag = self(FnDag([expr_node], None, None, expr_node), return_existing=True)
+        fndag = self(FnDag([expr_node], {}, None, None, expr_node), return_existing=True)
         if fndag().error is not None and retry:
-            self(fndag, FnDag([expr_node], None, None, expr_node))
+            self(fndag, FnDag([expr_node], {}, None, None, expr_node))
         if not fndag().ready():
             uri = urlparse(fn.uri)
             if fn.adapter is None and uri.scheme == 'daggerml':
@@ -737,7 +742,7 @@ class Repo:
                 if error is None:
                     result = self(Node(Literal(self.put_datum(result))))
                     nodes.append(result)
-                self(fndag, FnDag(nodes, result, error, expr_node))
+                self(fndag, FnDag(nodes, {}, result, error, expr_node))
             else:
                 cmd = shutil.which(fn.adapter or '')
                 assert cmd, f'no such adapter: {fn.adapter}'
@@ -750,7 +755,7 @@ class Repo:
                 assert proc.returncode == 0, f'{cmd}: exit status: {proc.returncode}{err}'
                 self.load_ref(proc.stdout or to_json([]))
         if fndag().ready():
-            node = self.put_node(Fn(fndag, expr), index=index, name=name, doc=doc)
+            node = self.put_node(Fn(fndag, None, expr), index=index, name=name, doc=doc)
             raise_ex(node().error)
             return node
 

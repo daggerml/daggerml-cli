@@ -245,10 +245,15 @@ def describe_dag(config, ref):
                 if isinstance(x, Import):
                     return f'{x.dag().result().value().value}'
                 return x
-            def parse_node(node):
+            def parse_node(ref, node):
                 _type = type(node.data).__name__.lower()
+                name = None
+                for k, v in dag.names.items():
+                    if v == ref:
+                        name = k
+                        break
                 return {
-                    "name": node.name,
+                    "name": name,
                     "doc": node.doc,
                     "type": _type,
                     "value": index(node.data)
@@ -260,12 +265,12 @@ def describe_dag(config, ref):
             for node_ref in dag.nodes:
                 node = node_ref()
                 if isinstance(node.data, Fn):
-                    edges.extend([
-                        {"source": x.name, "target": node_ref.name, "type": "node"} for x in set(node.data.expr)
-                    ])
+                    edges.extend([{
+                        "source": x.name, "target": node_ref.name, "type": "node"
+                    } for x in set(node.data.expr)])
                 elif isinstance(node.data, Import):
                     edges.append({"target": node.data.dag.name, "source": node_ref.name, "type": "dag"})
-            nodes = [{"id": x.name, **parse_node(x())} for x in dag.nodes]
+            nodes = [{"id": x.name, **parse_node(x, x())} for x in dag.nodes]
             # Remove edges to hidden nodes (eg. fndags)
             edges = [x for x in edges if x["type"] == "dag" or ({x["source"], x["target"]} < {x["id"] for x in nodes})]
             return {
@@ -332,7 +337,7 @@ def op_put_literal(db, index, data, name=None, doc=None):
     with db.tx(True):
         assert isinstance(index(), Index), 'invalid token'
         if isinstance(data, Ref) and isinstance(data(), Node):
-            return data
+            return op_set_node(db, index, name, data) if name else data
         nodes = db.extract_nodes(data)
         result = Literal(db.put_datum(data))
         if not len(nodes):
@@ -341,18 +346,17 @@ def op_put_literal(db, index, data, name=None, doc=None):
             fn = Literal(db.put_datum(Resource('daggerml:build')))
             fn = db.put_node(fn, index=index, name='daggerml:build')
             result = db.put_node(result, index=index)
-            nodes = [db.put_node(x.data, index=index, name=x.name, doc=x.doc) for x in nodes]
+            nodes = [db.put_node(x.data, index=index, doc=x.doc) for x in nodes]
             result = db.start_fn(index, expr=[fn, result, *nodes], name=name, doc=doc)
             return result
 
 
 @invoke_op
-def op_put_load(db, index, load_dag, name=None, doc=None):
+def op_put_load(db, index, dag, node=None, name=None, doc=None):
     with db.tx(True):
         assert isinstance(index(), Index), 'invalid token'
-        dag = db.get_dag(load_dag)
-        assert dag, f'no such dag: {load_dag}'
-        return db.put_node(Import(dag), index=index, name=name, doc=doc)
+        dag = op_get_dag(db, index, dag) if isinstance(dag, str) else dag
+        return db.put_node(Import(dag, node), index=index, name=name, doc=doc)
 
 
 @invoke_op
@@ -360,6 +364,30 @@ def op_commit(db, index, result):
     with db.tx(True):
         assert isinstance(index(), Index), 'invalid token'
         return db.commit(res_or_err=result, index=index)
+
+
+@invoke_op
+def op_get_dag(db, index, name=None):
+    with db.tx():
+        ref = db.get_dag(name)
+        assert ref, f'no such dag: {name}'
+        return ref
+
+
+@invoke_op
+def op_get_node(db, index, name, dag: Ref = None):
+    with db.tx():
+        if dag is None:
+            assert isinstance(index(), Index), 'invalid token'
+            dag = index().dag
+        return dag().names[name]
+
+
+@invoke_op
+def op_set_node(db, index, name, node: Ref):
+    with db.tx(True):
+        assert isinstance(index(), Index), 'invalid token'
+        return db.put_node(node, index, name=name)
 
 
 @invoke_op
@@ -372,6 +400,15 @@ def op_get_node_value(db, _, node: Ref):
 def op_get_expr(db, index):
     with db.tx():
         return index().dag().expr
+
+
+@invoke_op
+def op_get_result(db, index, dag: Ref = None):
+    with db.tx():
+        if not dag:
+            assert isinstance(index(), Index), 'invalid token'
+        dag = dag() if dag else index().dag()
+        return dag.result or dag.error
 
 
 @invoke_op
