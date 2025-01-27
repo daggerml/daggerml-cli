@@ -155,7 +155,7 @@ def ref_group(_):
 @ref_group.command(name='describe', help='Get the properties of a ref as JSON.')
 @clickex
 def ref_describe(ctx, type, id):
-    click.echo(jsdumps(api.dump_ref(ctx.obj, Ref(f'{type}/{id}'), False)[0][1]))
+    click.echo(jsdumps(from_json(api.dump_ref(ctx.obj, Ref(f'{type}/{id}'), False))[0][1]))
 
 
 @click.argument('ref', type=str)
