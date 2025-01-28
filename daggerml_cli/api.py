@@ -375,6 +375,12 @@ def op_get_dag(db, index, name=None):
 
 
 @invoke_op
+def op_get_fndag(db, index, node):
+    with db.tx():
+        return node().data.dag
+
+
+@invoke_op
 def op_get_node(db, index, name, dag: Ref = None):
     with db.tx():
         if dag is None:

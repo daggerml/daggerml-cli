@@ -68,6 +68,18 @@ class TestApiBase(TestCase):
                 assert result().doc == 'I called a func!'
             assert d0.unroll(result)[1] == 3
 
+    def test_fn2(self):
+        with SimpleApi.begin() as d0:
+            result = d0.start_fn(SUM, 1, 2, name='result', doc='I called a func!')
+            with d0.tx():
+                print(f'{result()=}')
+                print(f'{result().data.dag=}')
+                assert d0.get_node('result') == result
+                with self.assertRaises(Error):
+                    d0.get_node('BOGUS')
+                assert result().doc == 'I called a func!'
+            assert d0.unroll(result)[1] == 3
+
     def test_repo_cache(self):
         expr = [SUM, 1, 2]
         with SimpleApi.begin() as d0:
