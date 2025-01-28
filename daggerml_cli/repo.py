@@ -150,7 +150,7 @@ class Ref:
         return self.to.split('/', 1)[0] if self.to else None
 
     @property
-    def name(self):
+    def id(self):
         return self.to.split('/', 1)[1] if self.to else None
 
     def __call__(self):
@@ -566,7 +566,7 @@ class Repo:
             merge_trees(c0().tree, c1().tree, c2().tree),
             author or self.user,
             self.user,
-            message or f'merge {c2.name} with {c1.name}',
+            message or f'merge {c2.id} with {c1.id}',
             created or now()))
 
     def rebase(self, c1, c2):
@@ -747,7 +747,7 @@ class Repo:
                 cmd = shutil.which(fn.adapter or '')
                 assert cmd, f'no such adapter: {fn.adapter}'
                 args = [cmd, fn.uri, fn.adapter]
-                data = to_json([expr_node.name, self.dump_ref(fndag)])
+                data = to_json([expr_node.id, self.dump_ref(fndag)])
                 proc = subprocess.run(args, input=data, capture_output=True, text=True, check=False)
                 err = '' if not proc.stderr else f'\n{proc.stderr}'
                 if proc.stderr:

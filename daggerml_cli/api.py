@@ -41,7 +41,7 @@ def jsdata(x):
     if isinstance(x, dict):
         return {k: jsdata(v) for k, v in x.items()}
     if isinstance(x, Ref):
-        return x.name
+        return x.id
     if is_dataclass(x):
         return jsdata(x.__dict__)
     return x
@@ -147,7 +147,7 @@ def status(config):
 def config_repo(config, name):
     assert name in with_query(list_repo, '[*].name')(config), f"no such repo: {name}"
     config.REPO = name
-    config_branch(config, Ref(DEFAULT_BRANCH).name)
+    config_branch(config, Ref(DEFAULT_BRANCH).id)
 
 
 def config_branch(config, name):
@@ -171,11 +171,11 @@ def current_branch(config):
 def list_branch(config):
     with Repo(config.REPO_PATH) as db:
         with db.tx():
-            return sorted([x for x in db.heads()], key=lambda y: y.name)
+            return sorted([x for x in db.heads()], key=lambda y: y.id)
 
 
 def list_other_branch(config):
-    return [k for k in list_branch(config) if k.name != config.BRANCH]
+    return [k for k in list_branch(config) if k.id != config.BRANCH]
 
 
 def create_branch(config, name, commit=None):
@@ -197,7 +197,7 @@ def merge_branch(config, name):
         with db.tx(True):
             ref = db.merge(db.head().commit, Ref(f"head/{name}")().commit)
             db.checkout(db.set_head(db.head, ref))
-        return ref.name
+        return ref.id
 
 
 def rebase_branch(config, name):
@@ -205,7 +205,7 @@ def rebase_branch(config, name):
         with db.tx(True):
             ref = db.rebase(Ref(f"head/{name}")().commit, db.head().commit)
             db.checkout(db.set_head(db.head, ref))
-        return ref.name
+        return ref.id
 
 
 ###############################################################################
@@ -260,25 +260,31 @@ def describe_dag(config, ref):
                 }
             dag = ref()
             if dag is None:
-                raise Error(f'no such dag: {ref.name}')
+                raise Error(f'no such dag: {ref.id}')
             edges = []
             for node_ref in dag.nodes:
                 node = node_ref()
                 if isinstance(node.data, Fn):
                     edges.extend([{
-                        "source": x.name, "target": node_ref.name, "type": "node"
+                        "source": x.id,
+                        "target": node_ref.id,
+                        "type": "node",
                     } for x in set(node.data.expr)])
                 elif isinstance(node.data, Import):
-                    edges.append({"target": node.data.dag.name, "source": node_ref.name, "type": "dag"})
-            nodes = [{"id": x.name, **parse_node(x, x())} for x in dag.nodes]
+                    edges.append({
+                        "source": node_ref.id,
+                        "target": node.data.dag.id,
+                        "type": "dag",
+                    })
+            nodes = [{"id": x.id, **parse_node(x, x())} for x in dag.nodes]
             # Remove edges to hidden nodes (eg. fndags)
             edges = [x for x in edges if x["type"] == "dag" or ({x["source"], x["target"]} < {x["id"] for x in nodes})]
             return {
-                'id': ref.name,
-                'expr': dag.expr.name if hasattr(dag, 'expr') else None,
+                'id': ref.id,
+                'expr': dag.expr.id if hasattr(dag, 'expr') else None,
                 'nodes': nodes,
                 'edges': edges,
-                'result': dag.result.name if dag.result is not None else None,
+                'result': dag.result.id if dag.result is not None else None,
                 'error': None if dag.error is None else str(dag.error),
             }
 
@@ -303,7 +309,7 @@ def list_indexes(config):
 def delete_index(config, index: Ref):
     with Repo(config.REPO_PATH, head=config.BRANCHREF) as db:
         with db.tx(True):
-            assert isinstance(index(), Index), f'no such index: {index.name}'
+            assert isinstance(index(), Index), f'no such index: {index.id}'
             db.delete(index)
     return True
 
@@ -468,9 +474,9 @@ def commit_log_graph(config):
         with db.tx():
             def walk_names(x, head=None):
                 if x and x[0]:
-                    k = names[x[0]] if x[0] in names else x[0].name
+                    k = names[x[0]] if x[0] in names else x[0].id
                     tag1 = " HEAD" if head and head.to == db.head.to else ""
-                    tag2 = f" {head.name}" if head else ""
+                    tag2 = f" {head.id}" if head else ""
                     names[x[0]] = f"{k}{tag1}{tag2}"
                     [walk_names(p) for p in x[1]]
 
