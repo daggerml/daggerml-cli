@@ -121,9 +121,11 @@ def json_spec(ctx, param, value):
     context_settings={
         "auto_envvar_prefix": "DML",
         'help_option_names': ['-h', '--help'],
-        'show_default': True})
+        'show_default': True,
+    })
 @clickex
 def cli(ctx, config_dir, project_dir, repo, branch, user, query, debug):
+    """The DaggerML command line tool."""
     set_config(ctx)
     ctx.with_resource(ctx.obj)
 
