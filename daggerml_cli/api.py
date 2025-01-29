@@ -409,9 +409,10 @@ def op_get_node_value(db, _, node: Ref):
 
 
 @invoke_op
-def op_get_argv(db, index):
+def op_get_argv(db, index, dag: Ref = None):
     with db.tx():
-        return index().dag().argv
+        dag = dag() if dag else index().dag()
+        return dag.argv
 
 
 @invoke_op
