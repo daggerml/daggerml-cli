@@ -72,8 +72,6 @@ class TestApiBase(TestCase):
         with SimpleApi.begin() as d0:
             result = d0.start_fn(SUM, 1, 2, name='result', doc='I called a func!')
             with d0.tx():
-                print(f'{result()=}')
-                print(f'{result().data.dag=}')
                 assert d0.get_node('result') == result
                 with self.assertRaises(Error):
                     d0.get_node('BOGUS')
@@ -225,4 +223,4 @@ class TestApiBase(TestCase):
             ref, = (x.id.id for x in api.list_dags(d1.ctx) if x.name == 'd1')
             desc = api.describe_dag(d1.ctx, Ref(f'dag/{ref}'))
             assert len(desc["edges"]) == len(nodes) + 1  # +1 because dag->node edge
-            assert {e["source"] for e in desc["edges"] if e["type"] == "node"} == {x.id for x in nodes}
+            assert {e["source"] for e in desc["edges"] if e["type"] == "node"} == {x for x in nodes}

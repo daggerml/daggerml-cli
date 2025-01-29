@@ -14,9 +14,8 @@ from daggerml_cli.repo import (
     BUILTIN_FNS,
     DEFAULT_BRANCH,
     Ctx,
-    Datum,
+    Dag,
     Error,
-    Fn,
     Import,
     Index,
     Literal,
@@ -26,6 +25,7 @@ from daggerml_cli.repo import (
     Resource,
     unroll_datum,
 )
+from daggerml_cli.topology import topology
 from daggerml_cli.util import asserting, makedirs
 
 ###############################################################################
@@ -231,68 +231,14 @@ def begin_dag(config, *, name=None, message, dag_dump=None):
 def describe_dag(config, ref):
     with Repo(config.REPO_PATH, head=config.BRANCHREF) as db:
         with db.tx():
-            def index(x):
-                if isinstance(x, Ref):
-                    return index(x())
-                if isinstance(x, Datum):
-                    return unroll_datum(x)
-                if isinstance(x, (list, tuple)):
-                    return f'{[index(y) for y in x]}'
-                if isinstance(x, Fn):
-                    return index(x.dag().result().data)
-                if isinstance(x, Literal):
-                    return f'{index(x.value().value)}'
-                if isinstance(x, Import):
-                    return f'{x.dag().result().value().value}'
-                return x
-            def parse_node(ref, node):
-                _type = type(node.data).__name__.lower()
-                name = None
-                for k, v in dag.names.items():
-                    if v == ref:
-                        name = k
-                        break
-                return {
-                    "name": name,
-                    "doc": node.doc,
-                    "type": _type,
-                    "value": index(node.data)
-                }
-            dag = ref()
-            if dag is None:
-                raise Error(f'no such dag: {ref.id}')
-            edges = []
-            for node_ref in dag.nodes:
-                node = node_ref()
-                if isinstance(node.data, Fn):
-                    edges.extend([{
-                        "source": x.id,
-                        "target": node_ref.id,
-                        "type": "node",
-                    } for x in set(node.data.argv)])
-                elif isinstance(node.data, Import):
-                    edges.append({
-                        "source": node_ref.id,
-                        "target": node.data.dag.id,
-                        "type": "dag",
-                    })
-            nodes = [{"id": x.id, **parse_node(x, x())} for x in dag.nodes]
-            # Remove edges to hidden nodes (eg. fndags)
-            edges = [x for x in edges if x["type"] == "dag" or ({x["source"], x["target"]} < {x["id"] for x in nodes})]
-            return {
-                'id': ref.id,
-                'argv': dag.argv.id if hasattr(dag, 'argv') else None,
-                'nodes': nodes,
-                'edges': edges,
-                'result': dag.result.id if dag.result is not None else None,
-                'error': None if dag.error is None else str(dag.error),
-            }
+            assert isinstance(ref(), Dag)
+            return topology(ref)
 
 
 def write_dag_html(config, ref):
     with open(Path(__file__).parent / "dag-viz.html") as f:
         html = f.read()
-    return html.replace('"REPLACEMENT_TEXT"', json.dumps(describe_dag(config, ref), indent=2))
+    return html.replace('"REPLACEMENT_TEXT"', json.dumps(jsdata(describe_dag(config, ref)), indent=2))
 
 
 ###############################################################################

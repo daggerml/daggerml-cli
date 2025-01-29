@@ -12,6 +12,10 @@ def conj(xs, x):
     return {*xs, x} if isinstance(xs, set) else [*xs, x]
 
 
+def flatten(nested: list[list]) -> list:
+    return [x for xs in nested for x in xs]
+
+
 def asserting(x, message=None):
     if isinstance(message, str):
         assert x, message
