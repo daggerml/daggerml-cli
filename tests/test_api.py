@@ -180,24 +180,23 @@ class TestApiBase(TestCase):
                     assert n().doc == 'a node'
                 assert d0.unroll(n) == v
                 assert d0.unroll(d0.type(n)) == k
-                match k:
-                    case 'list':
-                        check_len(n, v)
-                        check_list_get(n, v)
-                        check_contains(n, v)
-                        check_conj(n, v, 4)
-                        check_assoc(n, v, 0, 0)
-                        check_slice(n, v, 1, None, None)
-                    case 'set':
-                        check_len(n, v)
-                        check_contains(n, v)
-                        check_conj(n, v, 4)
-                    case 'dict':
-                        check_len(n, v)
-                        check_keys(n, v)
-                        check_dict_get(n, v)
-                        check_contains(n, v)
-                        check_assoc(n, v, 'x', 0)
+                if k == "list":
+                    check_len(n, v)
+                    check_list_get(n, v)
+                    check_contains(n, v)
+                    check_conj(n, v, 4)
+                    check_assoc(n, v, 0, 0)
+                    check_slice(n, v, 1, None, None)
+                elif k == 'set':
+                    check_len(n, v)
+                    check_contains(n, v)
+                    check_conj(n, v, 4)
+                elif k == 'dict':
+                    check_len(n, v)
+                    check_keys(n, v)
+                    check_dict_get(n, v)
+                    check_contains(n, v)
+                    check_assoc(n, v, 'x', 0)
 
             assert d0.unroll(d0.list()) == []
             assert d0.unroll(d0.list(0, 1, 2, 3)) == [0, 1, 2, 3]
