@@ -163,11 +163,12 @@ class CheckedRef(Ref):
     message: Optional[str] = None
 
     def __call__(self):
+        result = None
         try:
             result = super().__call__()
-            assert isinstance(result, self.check_type), self.message
         except Exception as e:
-            raise ValueError(self.message) from e
+            raise Error(self.message) from e
+        assert isinstance(result, self.check_type), self.message
         return result
 
 
