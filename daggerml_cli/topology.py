@@ -47,11 +47,10 @@ def filter_edges(topology):
 
 def topology(ref):
     dag = ref()
-    names = {v: k for k, v in dag.names.items()}
     return filter_edges({
         'id': ref,
         'argv': dag.argv.id if hasattr(dag, 'argv') else None,
-        'nodes': [make_node(names.get(x), x) for x in dag.nodes],
+        'nodes': [make_node(dag.nameof(x), x) for x in dag.nodes],
         'edges': flatten([make_edges(x) for x in dag.nodes]),
         'result': dag.result.id if dag.result is not None else None,
         'error': None if dag.error is None else str(dag.error),

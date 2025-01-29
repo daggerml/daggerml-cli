@@ -228,8 +228,12 @@ class Dag:
     result: Optional[Ref]  # -> node
     error: Optional[Error]
 
+    @property
     def ready(self):
         return (self.result or self.error) is not None
+
+    def nameof(self, ref):
+        return {v: k for k, v in self.names.items()}.get(ref)
 
 
 @repo_type(hash=['argv'])
@@ -730,7 +734,7 @@ class Repo:
         fndag = self(FnDag([argv_node], {}, None, None, argv_node), return_existing=True)
         if fndag().error is not None and retry:
             self(fndag, FnDag([argv_node], {}, None, None, argv_node))
-        if not fndag().ready():
+        if not fndag().ready:
             uri = urlparse(fn.uri)
             if fn.adapter is None and uri.scheme == 'daggerml':
                 result = error = None
@@ -754,7 +758,7 @@ class Repo:
                     logger.error(proc.stderr.rstrip())
                 assert proc.returncode == 0, f'{cmd}: exit status: {proc.returncode}{err}'
                 self.load_ref(proc.stdout or to_json([]))
-        if fndag().ready():
+        if fndag().ready:
             node = self.put_node(Fn(fndag, None, argv), index=index, name=name, doc=doc)
             raise_ex(node().error)
             return node
