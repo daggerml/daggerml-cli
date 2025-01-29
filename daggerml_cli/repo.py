@@ -232,10 +232,10 @@ class Dag:
         return (self.result or self.error) is not None
 
 
-@repo_type(hash=['expr'])
+@repo_type(hash=['argv'])
 @dataclass
 class FnDag(Dag):
-    expr: Ref | None = None  # -> node(expr)
+    argv: Ref | None = None  # -> node(argv)
 
 
 @repo_type(db=False)
@@ -250,7 +250,7 @@ class Literal:
 
 @repo_type(db=False)
 @dataclass
-class Expr(Literal):
+class Argv(Literal):
     pass
 
 
@@ -274,13 +274,13 @@ class Import:
 @repo_type(db=False)
 @dataclass
 class Fn(Import):
-    expr: list[Ref] | None = None  # -> node
+    argv: list[Ref] | None = None  # -> node
 
 
 @repo_type
 @dataclass
 class Node:
-    data: Literal | Expr | Import | Fn
+    data: Literal | Argv | Import | Fn
     doc: str | None = None
 
     @property
@@ -724,17 +724,17 @@ class Repo:
         *dump, = (self.put(k, v) for k, v in raise_ex(from_json(dump)))
         return dump[-1] if len(dump) else None
 
-    def start_fn(self, index, *, expr, retry=False, name=None, doc=None):
-        fn, *data = map(lambda x: x().datum, expr)
-        expr_node = self(Node(Expr(self.put_datum([x().value for x in expr]))))
-        fndag = self(FnDag([expr_node], {}, None, None, expr_node), return_existing=True)
+    def start_fn(self, index, *, argv, retry=False, name=None, doc=None):
+        fn, *data = map(lambda x: x().datum, argv)
+        argv_node = self(Node(Argv(self.put_datum([x().value for x in argv]))))
+        fndag = self(FnDag([argv_node], {}, None, None, argv_node), return_existing=True)
         if fndag().error is not None and retry:
-            self(fndag, FnDag([expr_node], {}, None, None, expr_node))
+            self(fndag, FnDag([argv_node], {}, None, None, argv_node))
         if not fndag().ready():
             uri = urlparse(fn.uri)
             if fn.adapter is None and uri.scheme == 'daggerml':
                 result = error = None
-                nodes = [expr_node]
+                nodes = [argv_node]
                 try:
                     result = BUILTIN_FNS[uri.path](*data)
                 except Exception as e:
@@ -742,12 +742,12 @@ class Repo:
                 if error is None:
                     result = self(Node(Literal(self.put_datum(result))))
                     nodes.append(result)
-                self(fndag, FnDag(nodes, {}, result, error, expr_node))
+                self(fndag, FnDag(nodes, {}, result, error, argv_node))
             else:
                 cmd = shutil.which(fn.adapter or '')
                 assert cmd, f'no such adapter: {fn.adapter}'
                 args = [cmd, fn.uri, fn.adapter]
-                data = to_json([expr_node.id, self.dump_ref(fndag)])
+                data = to_json([argv_node.id, self.dump_ref(fndag)])
                 proc = subprocess.run(args, input=data, capture_output=True, text=True, check=False)
                 err = '' if not proc.stderr else f'\n{proc.stderr}'
                 if proc.stderr:
@@ -755,7 +755,7 @@ class Repo:
                 assert proc.returncode == 0, f'{cmd}: exit status: {proc.returncode}{err}'
                 self.load_ref(proc.stdout or to_json([]))
         if fndag().ready():
-            node = self.put_node(Fn(fndag, None, expr), index=index, name=name, doc=doc)
+            node = self.put_node(Fn(fndag, None, argv), index=index, name=name, doc=doc)
             raise_ex(node().error)
             return node
 

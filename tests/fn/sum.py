@@ -18,7 +18,7 @@ try:
         print(result)
     else:
         with SimpleApi.begin('test', 'test', config_dir=cache_dir, dag_dump=dag_dump) as d0:
-            _, *args = d0.unroll(d0.get_expr())
+            _, *args = d0.unroll(d0.get_argv())
             args = filter(lambda x: isinstance(x, int), args) if filter_args else args
             try:
                 n0 = d0.put_literal([uuid4().hex, sum(args)])

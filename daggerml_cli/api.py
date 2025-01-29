@@ -269,7 +269,7 @@ def describe_dag(config, ref):
                         "source": x.id,
                         "target": node_ref.id,
                         "type": "node",
-                    } for x in set(node.data.expr)])
+                    } for x in set(node.data.argv)])
                 elif isinstance(node.data, Import):
                     edges.append({
                         "source": node_ref.id,
@@ -281,7 +281,7 @@ def describe_dag(config, ref):
             edges = [x for x in edges if x["type"] == "dag" or ({x["source"], x["target"]} < {x["id"] for x in nodes})]
             return {
                 'id': ref.id,
-                'expr': dag.expr.id if hasattr(dag, 'expr') else None,
+                'argv': dag.argv.id if hasattr(dag, 'argv') else None,
                 'nodes': nodes,
                 'edges': edges,
                 'result': dag.result.id if dag.result is not None else None,
@@ -332,10 +332,10 @@ def format_ops():
 
 
 @invoke_op
-def op_start_fn(db, index, expr, retry=False, name=None, doc=None):
+def op_start_fn(db, index, argv, retry=False, name=None, doc=None):
     with db.tx(True):
         assert isinstance(index(), Index), 'invalid token'
-        return db.start_fn(index, expr=expr, retry=retry, name=name, doc=doc)
+        return db.start_fn(index, argv=argv, retry=retry, name=name, doc=doc)
 
 
 @invoke_op
@@ -353,7 +353,7 @@ def op_put_literal(db, index, data, name=None, doc=None):
             fn = db.put_node(fn, index=index, name='daggerml:build')
             result = db.put_node(result, index=index)
             nodes = [db.put_node(x.data, index=index, doc=x.doc) for x in nodes]
-            result = db.start_fn(index, expr=[fn, result, *nodes], name=name, doc=doc)
+            result = db.start_fn(index, argv=[fn, result, *nodes], name=name, doc=doc)
             return result
 
 
@@ -409,9 +409,9 @@ def op_get_node_value(db, _, node: Ref):
 
 
 @invoke_op
-def op_get_expr(db, index):
+def op_get_argv(db, index):
     with db.tx():
-        return index().dag().expr
+        return index().dag().argv
 
 
 @invoke_op
@@ -444,8 +444,8 @@ def invoke_api(config, token, data):
                 with db.tx(True):
                     fn = db.put_datum(Resource(f'daggerml:{op}'))
                     fn = op_put_literal(db, token, fn, name=f'daggerml:{op}')
-                    expr = [fn, *[op_put_literal(db, token, x) for x in args]]
-                return op_start_fn(db, token, expr, **kwargs)
+                    argv = [fn, *[op_put_literal(db, token, x) for x in args]]
+                return op_start_fn(db, token, argv, **kwargs)
             return invoke_op.fns.get(op, no_such_op(op))(db, token, *args, **kwargs)
     except Exception as e:
         raise Error(e) from e

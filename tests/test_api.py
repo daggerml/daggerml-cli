@@ -81,59 +81,59 @@ class TestApiBase(TestCase):
             assert d0.unroll(result)[1] == 3
 
     def test_repo_cache(self):
-        expr = [SUM, 1, 2]
+        argv = [SUM, 1, 2]
         with SimpleApi.begin() as d0:
-            res0 = d0.unroll(d0.start_fn(*expr))
-            res1 = d0.unroll(d0.start_fn(*expr))
+            res0 = d0.unroll(d0.start_fn(*argv))
+            res1 = d0.unroll(d0.start_fn(*argv))
             assert res0 == res1
             assert res0[1] == 3
 
     def test_fn_nocache(self):
-        expr = [SUM, 1, 2]
+        argv = [SUM, 1, 2]
 
         with SimpleApi.begin() as d0:
-            res0 = d0.unroll(d0.start_fn(*expr))
+            res0 = d0.unroll(d0.start_fn(*argv))
 
         with SimpleApi.begin() as d0:
-            res1 = d0.unroll(d0.start_fn(*expr))
+            res1 = d0.unroll(d0.start_fn(*argv))
 
         assert res0 != res1
 
     def test_fn_cache(self):
-        expr = [SUM, 1, 2]
+        argv = [SUM, 1, 2]
 
         with TemporaryDirectory() as fn_cache_dir:
             with SimpleApi.begin(fn_cache_dir=fn_cache_dir) as d0:
-                res0 = d0.unroll(d0.start_fn(*expr))
+                res0 = d0.unroll(d0.start_fn(*argv))
 
             with SimpleApi.begin(fn_cache_dir=fn_cache_dir) as d0:
-                res1 = d0.unroll(d0.start_fn(*expr))
+                res1 = d0.unroll(d0.start_fn(*argv))
 
             assert res0 == res1
 
     def test_fn_error(self):
-        expr = [SUM, 1, 2, 'BOGUS']
+        argv = [SUM, 1, 2, 'BOGUS']
 
         with env(DML_FN_FILTER_ARGS='True'):
             with SimpleApi.begin() as d0:
-                assert d0.unroll(d0.start_fn(*expr))[1] == 3
+                assert d0.unroll(d0.start_fn(*argv))[1] == 3
 
         with TemporaryDirectory() as config_dir:
             with self.assertRaises(Error):
                 with SimpleApi.begin(config_dir=config_dir) as d0:
-                    d0.start_fn(*expr)
+                    d0.start_fn(*argv)
 
             with env(DML_FN_FILTER_ARGS='True'):
                 with self.assertRaises(Error):
                     with SimpleApi.begin(config_dir=config_dir) as d0:
-                        d0.start_fn(*expr)
+                        d0.start_fn(*argv)
 
                 with SimpleApi.begin(config_dir=config_dir) as d0:
-                    res0 = d0.start_fn(*expr, retry=True)
+                    res0 = d0.start_fn(*argv, retry=True)
                     assert d0.unroll(res0)[1] == 3
 
                 with SimpleApi.begin(config_dir=config_dir) as d0:
-                    assert d0.start_fn(*expr) == res0
+                    assert d0.start_fn(*argv) == res0
 
     def test_specials(self):
         with SimpleApi.begin() as d0:

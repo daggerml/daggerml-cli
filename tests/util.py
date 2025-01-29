@@ -62,7 +62,7 @@ class SimpleApi:
             yield db
 
     def start_fn(self, *args, **kwargs):
-        kwargs['expr'] = kwargs.get('expr', [self.put_literal(x) for x in args])
+        kwargs['argv'] = kwargs.get('argv', [self.put_literal(x) for x in args])
         return api.invoke_api(self.ctx, self.token, ['start_fn', [], kwargs])
 
     def dump_ref(self, ref):
