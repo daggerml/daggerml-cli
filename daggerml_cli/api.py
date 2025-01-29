@@ -222,10 +222,10 @@ def list_dags(config):
             return sorted(result, key=lambda x: x.name)
 
 
-def begin_dag(config, *, name=None, message, dag_dump=None):
+def begin_dag(config, *, name=None, message, dump=None):
     with Repo(config.REPO_PATH, config.USER, head=config.BRANCHREF) as db:
         with db.tx(True):
-            dag = None if dag_dump is None else db.load_ref(dag_dump)
+            dag = None if dump is None else db.load_ref(dump)
             return db.begin(name=name, message=message, dag=dag)
 
 
@@ -318,15 +318,11 @@ def op_commit(db, index, result):
 @invoke_op
 def op_get_dag(db, index, name=None):
     with db.tx():
-        ref = db.get_dag(name)
-        assert ref, f'no such dag: {name}'
-        return ref
-
-
-@invoke_op
-def op_get_fndag(db, index, node):
-    with db.tx():
-        return node().data.dag
+        if isinstance(name, str):
+            ref = db.get_dag(name)
+            assert ref, f'no such dag: {name}'
+            return ref
+        return name().data.dag
 
 
 @invoke_op

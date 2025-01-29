@@ -318,19 +318,6 @@ def dag_group(_):
     pass
 
 
-@click.argument('message')
-@click.argument('name')
-@click.option('--dag-dump', help='Import DAG from a dump.', type=str)
-@dag_group.command(name='create', help='Create a new DAG.')
-@clickex
-def dag_create(ctx, name, message, dag_dump=None):
-    try:
-        idx = api.begin_dag(ctx.obj, name=name, message=message, dag_dump=dag_dump)
-        click.echo(to_json(idx))
-    except Exception as e:
-        click.echo(to_json(Error(e)))
-
-
 @dag_group.command(name='list', help='List DAGs.')
 @clickex
 def dag_list(ctx):
@@ -355,9 +342,33 @@ def dag_html(ctx, name):
     click.echo(api.write_dag_html(ctx.obj, ref))
 
 
+###############################################################################
+# API #########################################################################
+###############################################################################
+
+
+@cli.group(name='api', no_args_is_help=True, help='DAG builder API commands.')
+@clickex
+def api_group(_):
+    pass
+
+
+@click.argument('message')
+@click.argument('name')
+@click.option('--dump', help='Import DAG from a dump.', type=str)
+@api_group.command(name='create', help='Create a new DAG.')
+@clickex
+def api_create(ctx, name, message, dump=None):
+    try:
+        idx = api.begin_dag(ctx.obj, name=name, message=message, dump=dump)
+        click.echo(to_json(idx))
+    except Exception as e:
+        click.echo(to_json(Error(e)))
+
+
 @click.argument('json')
 @click.argument('token')
-@dag_group.command(
+@api_group.command(
     name='invoke',
     help=f'Invoke API with token returned by create and JSON command body.\n\nJSON command ops: {api.format_ops()}')
 @clickex
