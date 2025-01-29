@@ -1,6 +1,7 @@
 import os
 from dataclasses import dataclass, field, fields, replace
 from functools import wraps
+from typing import Optional
 
 from daggerml_cli.repo import Ref
 from daggerml_cli.util import readfile, writefile
@@ -47,13 +48,13 @@ def config_property(f=None, **opts):
 @dataclass
 class Config:
     """This class holds the global configuration options."""
-    _CONFIG_DIR: str | None = None
-    _PROJECT_DIR: str | None = None
-    _REPO: str | None = None
-    _BRANCH: str | None = None
-    _USER: str | None = None
+    _CONFIG_DIR: Optional[str] = None
+    _PROJECT_DIR: Optional[str] = None
+    _REPO: Optional[str] = None
+    _BRANCH: Optional[str] = None
+    _USER: Optional[str] = None
     _DEBUG: bool = False
-    _QUERY: str | None = None
+    _QUERY: Optional[str] = None
     _writes: list = field(default_factory=list)
 
     @classmethod

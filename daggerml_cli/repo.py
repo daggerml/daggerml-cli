@@ -7,7 +7,7 @@ import traceback as tb
 from contextlib import contextmanager
 from dataclasses import InitVar, dataclass, field, fields, is_dataclass
 from hashlib import md5
-from typing import Dict
+from typing import Dict, Optional, Union
 from urllib.parse import urlparse
 from uuid import uuid4
 
@@ -143,7 +143,7 @@ def repo_type(cls=None, **kwargs):
 @repo_type(db=False)
 @dataclass(frozen=True, order=True)
 class Ref:
-    to: str | None = None
+    to: Optional[str] = None
 
     @property
     def type(self):
@@ -160,9 +160,9 @@ class Ref:
 @repo_type(db=False)
 @dataclass
 class Error(Exception):
-    message: str | Exception
+    message: Union[str, Exception]
     context: dict = field(default_factory=dict)
-    code: str | None = None
+    code: Optional[str] = None
 
     def __post_init__(self):
         if isinstance(self.message, Error):
@@ -186,8 +186,8 @@ class Error(Exception):
 @dataclass(frozen=True, slots=True)
 class Resource:
     uri: str
-    data: Ref | None = None  # -> Datum
-    adapter: str | None = None
+    data: Optional[Ref] = None  # -> Datum
+    adapter: Optional[str] = None
 
 
 @repo_type(hash=[])
@@ -225,8 +225,8 @@ class Tree:
 class Dag:
     nodes: list[Ref]  # -> node
     names: Dict[str, Ref]  # -> node
-    result: Ref | None  # -> node
-    error: Error | None
+    result: Optional[Ref]  # -> node
+    error: Optional[Error]
 
     def ready(self):
         return (self.result or self.error) is not None
@@ -235,7 +235,7 @@ class Dag:
 @repo_type(hash=['argv'])
 @dataclass
 class FnDag(Dag):
-    argv: Ref | None = None  # -> node(argv)
+    argv: Optional[Ref] = None  # -> node(expr)
 
 
 @repo_type(db=False)
@@ -258,7 +258,7 @@ class Argv(Literal):
 @dataclass
 class Import:
     dag: Ref  # -> dag | fndag
-    node: Ref | None = None  # -> node
+    node: Optional[Ref] = None  # -> node
 
     @property
     def value(self):
@@ -274,14 +274,14 @@ class Import:
 @repo_type(db=False)
 @dataclass
 class Fn(Import):
-    argv: list[Ref] | None = None  # -> node
+    argv: Optional[list[Ref]] = None  # -> node
 
 
 @repo_type
 @dataclass
 class Node:
-    data: Literal | Argv | Import | Fn
-    doc: str | None = None
+    data: Union[Literal, Argv, Import, Fn]
+    doc: Optional[str] = None
 
     @property
     def value(self):
@@ -299,16 +299,16 @@ class Node:
 @repo_type
 @dataclass
 class Datum:
-    value: None | str | bool | int | float | Resource | list | dict | set
+    value: Union[None, str, bool, int, float, Resource, list, dict, set]
 
 
 @dataclass
 class Ctx:
-    head: Head | Index
+    head: Union[Head, Index]
     commit: Commit
     tree: Tree
     dags: dict
-    dag: Dag | None
+    dag: Optional[Dag]
 
     @classmethod
     def from_head(cls, ref, dag=None):
