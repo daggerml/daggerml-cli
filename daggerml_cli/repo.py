@@ -183,7 +183,7 @@ class Error(Exception):
 
 
 @repo_type(db=False)
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class Resource:
     uri: str
     data: Optional[Ref] = None  # -> Datum
