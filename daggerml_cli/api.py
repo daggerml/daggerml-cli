@@ -330,6 +330,13 @@ def op_get_fndag(db, index, node):
 
 
 @invoke_op
+def op_get_names(db, index, dag: Ref = None):
+    with db.tx():
+        dag = dag or index().dag
+        return dag().names
+
+
+@invoke_op
 def op_get_node(db, index, name, dag: Ref = None):
     with db.tx():
         dag = dag or index().dag
