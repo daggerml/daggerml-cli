@@ -7,7 +7,7 @@ import traceback as tb
 from contextlib import contextmanager
 from dataclasses import InitVar, dataclass, field, fields, is_dataclass
 from hashlib import md5
-from typing import Dict, Optional, Union
+from typing import Any, Dict, Optional, Union
 from urllib.parse import urlparse
 from uuid import uuid4
 
@@ -155,6 +155,20 @@ class Ref:
 
     def __call__(self):
         return Repo.curr.get(self)
+
+
+@dataclass(frozen=True, order=True)
+class CheckedRef(Ref):
+    check_type: Optional[Any] = None
+    message: Optional[str] = None
+
+    def __call__(self):
+        try:
+            result = super().__call__()
+            assert isinstance(result, self.check_type), self.message
+        except Exception as e:
+            raise ValueError(self.message) from e
+        return result
 
 
 @repo_type(db=False)

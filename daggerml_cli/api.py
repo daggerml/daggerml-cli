@@ -13,6 +13,7 @@ from asciidag.node import Node as AsciiNode
 from daggerml_cli.repo import (
     BUILTIN_FNS,
     DEFAULT_BRANCH,
+    CheckedRef,
     Ctx,
     Dag,
     Error,
@@ -280,14 +281,12 @@ def format_ops():
 @invoke_op
 def op_start_fn(db, index, argv, retry=False, name=None, doc=None):
     with db.tx(True):
-        assert isinstance(index(), Index), 'invalid token'
         return db.start_fn(index, argv=argv, retry=retry, name=name, doc=doc)
 
 
 @invoke_op
 def op_put_literal(db, index, data, name=None, doc=None):
     with db.tx(True):
-        assert isinstance(index(), Index), 'invalid token'
         if isinstance(data, Ref) and isinstance(data(), Node):
             return op_set_node(db, index, name, data) if name else data
         nodes = db.extract_nodes(data)
@@ -306,7 +305,6 @@ def op_put_literal(db, index, data, name=None, doc=None):
 @invoke_op
 def op_put_load(db, index, dag, node=None, name=None, doc=None):
     with db.tx(True):
-        assert isinstance(index(), Index), 'invalid token'
         dag = op_get_dag(db, index, dag) if isinstance(dag, str) else dag
         return db.put_node(Import(dag, node), index=index, name=name, doc=doc)
 
@@ -314,7 +312,6 @@ def op_put_load(db, index, dag, node=None, name=None, doc=None):
 @invoke_op
 def op_commit(db, index, result):
     with db.tx(True):
-        assert isinstance(index(), Index), 'invalid token'
         return db.commit(res_or_err=result, index=index)
 
 
@@ -335,16 +332,13 @@ def op_get_fndag(db, index, node):
 @invoke_op
 def op_get_node(db, index, name, dag: Ref = None):
     with db.tx():
-        if dag is None:
-            assert isinstance(index(), Index), 'invalid token'
-            dag = index().dag
+        dag = dag or index().dag
         return dag().names[name]
 
 
 @invoke_op
 def op_set_node(db, index, name, node: Ref):
     with db.tx(True):
-        assert isinstance(index(), Index), 'invalid token'
         return db.put_node(node, index, name=name)
 
 
@@ -364,8 +358,6 @@ def op_get_argv(db, index, dag: Ref = None):
 @invoke_op
 def op_get_result(db, index, dag: Ref = None):
     with db.tx():
-        if not dag:
-            assert isinstance(index(), Index), 'invalid token'
         dag = dag() if dag else index().dag()
         return dag.result or dag.error
 
@@ -377,23 +369,21 @@ def op_unroll(db, index, node):
 
 
 def invoke_api(config, token, data):
-    db = None
-
     def no_such_op(name):
         def inner(*_args, **_kwargs):
             raise ValueError(f"no such op: {name}")
         return inner
-
+    index = CheckedRef(getattr(token, 'to', 'NONE'), Index, 'invalid token')
     try:
         with Repo(config.REPO_PATH, config.USER, config.BRANCHREF) as db:
             op, args, kwargs = data
             if op in BUILTIN_FNS:
                 with db.tx(True):
                     fn = db.put_datum(Resource(f'daggerml:{op}'))
-                    fn = op_put_literal(db, token, fn, name=f'daggerml:{op}')
-                    argv = [fn, *[op_put_literal(db, token, x) for x in args]]
-                return op_start_fn(db, token, argv, **kwargs)
-            return invoke_op.fns.get(op, no_such_op(op))(db, token, *args, **kwargs)
+                    fn = op_put_literal(db, index, fn, name=f'daggerml:{op}')
+                    argv = [fn, *[op_put_literal(db, index, x) for x in args]]
+                return op_start_fn(db, index, argv, **kwargs)
+            return invoke_op.fns.get(op, no_such_op(op))(db, index, *args, **kwargs)
     except Exception as e:
         raise Error(e) from e
 
