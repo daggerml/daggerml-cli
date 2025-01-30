@@ -32,13 +32,13 @@ dml COMMAND SUBCOMMAND --help
 ## Test
 
 ```sh
-hatch -e test run pytest .
+hatch run pytest .
 ```
 
 ## Build
 
 ```sh
-hatch -e test run dml-build pypi
+hatch run dml-build pypi
 ```
 
 ## License
