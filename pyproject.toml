@@ -80,6 +80,9 @@ relative_to = "{root:uri}"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/daggerml_cli"]
+artifacts = [
+  "src/daggerml_cli/__about__.py"
+]
 
 [tool.hatch.envs.default]
 python = "3.10"

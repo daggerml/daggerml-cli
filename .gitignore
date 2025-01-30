@@ -1,5 +1,5 @@
 /.dml/
-# __about__.py
+__about__.py
 
 # copied from the gitignore project on github
 # Byte-compiled / optimized / DLL files
