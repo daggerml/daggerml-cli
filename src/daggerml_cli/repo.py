@@ -15,23 +15,25 @@ from daggerml_cli.db import db_type, dbenv
 from daggerml_cli.pack import packb, register, unpackb
 from daggerml_cli.util import asserting, assoc, conj, makedirs, now
 
-DEFAULT_BRANCH = 'head/main'
+DEFAULT_BRANCH = "head/main"
 DATA_TYPE = {}
 NONE = {}
 
 
 BUILTIN_FNS = {
-    'type': lambda x: str(type(x).__name__),
-    'len': lambda x: len(x),
-    'keys': lambda x: sorted(x.keys()),
-    'get': lambda x, k, d=NONE: x[slice(*[x().value for x in k])] if isinstance(k, list) else x[k] if d is NONE else x.get(k, d),  # noqa: E501
-    'contains': lambda x, k: k in unroll_datum(x),
-    'list': lambda *xs: list(xs),
-    'dict': lambda *kvs: {k: v for k, v in [kvs[i:i + 2] for i in range(0, len(kvs), 2)]},
-    'set': lambda *xs: set(xs),
-    'assoc': assoc,
-    'conj': conj,
-    'build': lambda x, *_: x,
+    "type": lambda x: str(type(x).__name__),
+    "len": lambda x: len(x),
+    "keys": lambda x: sorted(x.keys()),
+    "get": lambda x, k, d=NONE: (
+        x[slice(*[x().value for x in k])] if isinstance(k, list) else x[k] if d is NONE else x.get(k, d)
+    ),
+    "contains": lambda x, k: k in unroll_datum(x),
+    "list": lambda *xs: list(xs),
+    "dict": lambda *kvs: {k: v for k, v in [kvs[i : i + 2] for i in range(0, len(kvs), 2)]},
+    "set": lambda *xs: set(xs),
+    "assoc": assoc,
+    "conj": conj,
+    "build": lambda x, *_: x,
 }
 
 logger = logging.getLogger(__name__)
@@ -43,22 +45,22 @@ def from_json(text):
 
 
 def to_json(obj):
-    return json.dumps(to_data(obj), separators=(',', ':'))
+    return json.dumps(to_data(obj), separators=(",", ":"))
 
 
 def from_data(data):
     n, *args = data if isinstance(data, list) else [None, data]
     if n is None:
         return args[0]
-    if n == 'l':
+    if n == "l":
         return [from_data(x) for x in args]
-    if n == 's':
+    if n == "s":
         return {from_data(x) for x in args}
-    if n == 'd':
+    if n == "d":
         return {k: from_data(v) for (k, v) in args}
     if n in DATA_TYPE:
         return DATA_TYPE[n](*[from_data(x) for x in args])
-    raise ValueError(f'no data encoding for type: {n}')
+    raise ValueError(f"no data encoding for type: {n}")
 
 
 def to_data(obj):
@@ -73,7 +75,7 @@ def to_data(obj):
         return [n[0], *[[k, to_data(v)] for k, v in obj.items()]]
     if n in DATA_TYPE:
         return [n, *[to_data(getattr(obj, x.name)) for x in fields(obj)]]
-    raise ValueError(f'no data encoding for type: {n}')
+    raise ValueError(f"no data encoding for type: {n}")
 
 
 def unroll_datum(value):
@@ -90,7 +92,8 @@ def unroll_datum(value):
             return {get(x) for x in value}
         if isinstance(value, dict):
             return {k: get(v) for k, v in value.items()}
-        raise TypeError(f'unroll_datum unknown type: {type(value)}')
+        raise TypeError(f"unroll_datum unknown type: {type(value)}")
+
     return get(value)
 
 
@@ -119,9 +122,9 @@ def repo_type(cls=None, **kwargs):
     -------
     Decorated class
     """
-    tohash = kwargs.pop('hash', None)
-    nohash = kwargs.pop('nohash', [])
-    dbtype = kwargs.pop('db', True)
+    tohash = kwargs.pop("hash", None)
+    nohash = kwargs.pop("nohash", [])
+    dbtype = kwargs.pop("db", True)
 
     def packfn(x, hash):
         f = [y.name for y in fields(x)]
@@ -147,11 +150,11 @@ class Ref:
 
     @property
     def type(self):
-        return self.to.split('/', 1)[0] if self.to else None
+        return self.to.split("/", 1)[0] if self.to else None
 
     @property
     def id(self):
-        return self.to.split('/', 1)[1] if self.to else None
+        return self.to.split("/", 1)[1] if self.to else None
 
     def __call__(self):
         return Repo.curr.get(self)
@@ -188,13 +191,13 @@ class Error(Exception):
         elif isinstance(self.message, Exception):
             ex = self.message
             self.message = str(ex)
-            self.context = {'trace': tb.format_exception(type(ex), value=ex, tb=ex.__traceback__)}
+            self.context = {"trace": tb.format_exception(type(ex), value=ex, tb=ex.__traceback__)}
             self.code = type(ex).__name__
         else:
             self.code = type(self).__name__ if self.code is None else self.code
 
     def __str__(self):
-        return ''.join(self.context.get('trace', [self.message]))
+        return "".join(self.context.get("trace", [self.message]))
 
 
 @repo_type(db=False)
@@ -251,7 +254,7 @@ class Dag:
         return {v: k for k, v in self.names.items()}.get(ref)
 
 
-@repo_type(hash=['argv'])
+@repo_type(hash=["argv"])
 @dataclass
 class FnDag(Dag):
     argv: Optional[Ref] = None  # -> node(expr)
@@ -346,30 +349,30 @@ class Ctx:
 @dataclass
 class Repo:
     path: str
-    user: str = 'unknown'
+    user: str = "unknown"
     head: Ref = field(default_factory=lambda: Ref(DEFAULT_BRANCH))  # -> head
     create: InitVar[bool] = False
 
     def __post_init__(self, create):
         self._tx = []
-        dbfile = str(os.path.join(self.path, 'data.mdb'))
+        dbfile = str(os.path.join(self.path, "data.mdb"))
         dbfile_exists = os.path.exists(dbfile)
         if create:
-            assert not dbfile_exists, f'repo exists: {dbfile}'
+            assert not dbfile_exists, f"repo exists: {dbfile}"
         else:
-            assert dbfile_exists, f'repo not found: {dbfile}'
+            assert dbfile_exists, f"repo not found: {dbfile}"
         self.env, self.dbs = dbenv(self.path)
         with self.tx(create):
-            if not self.get('/init'):
+            if not self.get("/init"):
                 commit = Commit(
                     [],
                     self(Tree({})),
                     self.user,
                     self.user,
-                    'initial commit',
+                    "initial commit",
                 )
                 self(self.head, Head(self(commit)))
-                self('/init', '00000000000000000000000000000000')  # so we all have a common root
+                self("/init", "00000000000000000000000000000000")  # so we all have a common root
             self.checkout(self.head)
 
     def close(self):
@@ -389,7 +392,7 @@ class Repo:
 
     @contextmanager
     def tx(self, write=False):
-        old_curr = getattr(Repo, 'curr', None)
+        old_curr = getattr(Repo, "curr", None)
         try:
             if not len(self._tx):
                 self._tx.append(self.env.begin(write=write, buffers=True).__enter__())
@@ -422,14 +425,14 @@ class Repo:
         key = key if isinstance(key, Ref) else Ref(key)
         db = key.type if key.to else type(obj).__name__.lower()
         data = packb(obj)
-        key2 = key.to or f'{db}/{self.hash(obj)}'
+        key2 = key.to or f"{db}/{self.hash(obj)}"
         comp = None
         if key.to is None:
             comp = self._tx[0].get(key2.encode(), db=self.db(db))
             if comp not in [None, data]:
                 if return_existing:
                     return Ref(key2)
-                msg = f'attempt to update immutable object: {key2}'
+                msg = f"attempt to update immutable object: {key2}"
                 raise AssertionError(msg)
         if key is None or comp is None:
             self._tx[0].put(key2.encode(), data, db=self.db(db))
@@ -440,7 +443,10 @@ class Repo:
         self._tx[0].delete(key.to.encode(), db=self.db(key.type))
 
     def cursor(self, db):
-        return map(lambda x: Ref(bytes(x[0]).decode()), iter(self._tx[0].cursor(db=self.db(db))))
+        return map(
+            lambda x: Ref(bytes(x[0]).decode()),
+            iter(self._tx[0].cursor(db=self.db(db))),
+        )
 
     def walk(self, *key):
         result = set()
@@ -477,14 +483,15 @@ class Repo:
         return list(reversed(result))
 
     def heads(self):
-        return [k for k in self.cursor('head')]
+        return [k for k in self.cursor("head")]
 
     def indexes(self):
-        return [k for k in self.cursor('index')]
+        return [k for k in self.cursor("index")]
 
     def log(self, db=None, ref=None):
         def sort(xs):
             return reversed(sorted(xs, key=lambda x: x().modified))
+
         if db:
             return {k: self.log(ref=k().commit) for k in self.cursor(db)}
         if ref and ref.to:
@@ -492,7 +499,7 @@ class Repo:
 
     def commits(self, ref=None):
         ref = self.head if ref is None else ref
-        return filter(lambda x: x.type == 'commit', self.walk(ref))
+        return filter(lambda x: x.type == "commit", self.walk(ref))
 
     def objects(self, type=None):
         result = set()
@@ -503,7 +510,7 @@ class Repo:
 
     def reachable_objects(self):
         result = set()
-        for db in ['head', 'index']:
+        for db in ["head", "index"]:
             result = result.union(self.walk(*[k for k in self.cursor(db)]))
         return result
 
@@ -519,7 +526,7 @@ class Repo:
                 resources.append(obj.value)
             self.delete(ref)
             num_deleted += 1
-        logger.info('deleted %r objects including %r resources', num_deleted, len(resources))
+        logger.info("deleted %r objects including %r resources", num_deleted, len(resources))
         return resources
 
     def topo_sort(self, *xs):
@@ -541,7 +548,7 @@ class Repo:
             if set(ab).issubset(aa):
                 return b
             pivot = max(set(aa).difference(ab), key=aa.index)()
-            assert len(pivot.parents), 'no merge base found'
+            assert len(pivot.parents), "no merge base found"
             if len(pivot.parents) == 1:
                 return pivot.parents[0]
             a, b = pivot.parents
@@ -549,30 +556,31 @@ class Repo:
     def diff(self, t1, t2):
         d1 = t1().dags
         d2 = t2().dags
-        result = {'add': {}, 'rem': {}}
+        result = {"add": {}, "rem": {}}
         for k in set(d1.keys()).union(d2.keys()):
             if k not in d2:
-                result['rem'][k] = d1[k]
+                result["rem"][k] = d1[k]
             elif k not in d1:
-                result['add'][k] = d2[k]
+                result["add"][k] = d2[k]
             elif d1[k] != d2[k]:
-                result['rem'][k] = d1[k]
-                result['add'][k] = d2[k]
+                result["rem"][k] = d1[k]
+                result["add"][k] = d2[k]
         return result
 
     def patch(self, tree, *diffs):
-        diff = {'add': {}, 'rem': {}}
+        diff = {"add": {}, "rem": {}}
         tree = tree()
         for d in diffs:
-            diff['add'].update(d['add'])
-            diff['rem'].update(d['rem'])
-        [tree.dags.pop(k, None) for k in diff['rem'].keys()]
-        tree.dags.update(diff['add'])
+            diff["add"].update(d["add"])
+            diff["rem"].update(d["rem"])
+        [tree.dags.pop(k, None) for k in diff["rem"].keys()]
+        tree.dags.update(diff["add"])
         return self(tree)
 
     def merge(self, c1, c2, author=None, message=None, created=None):
         def merge_trees(base, a, b):
             return self.patch(a, self.diff(base, a), self.diff(base, b))
+
         c0 = self.merge_base(c1, c2)
         if c1 == c2:
             return c2
@@ -580,13 +588,16 @@ class Repo:
             return c1
         if c0 == c1:
             return c2
-        return self(Commit(
-            [c1, c2],
-            merge_trees(c0().tree, c1().tree, c2().tree),
-            author or self.user,
-            self.user,
-            message or f'merge {c2.id} with {c1.id}',
-            created or now()))
+        return self(
+            Commit(
+                [c1, c2],
+                merge_trees(c0().tree, c1().tree, c2().tree),
+                author or self.user,
+                self.user,
+                message or f"merge {c2.id} with {c1.id}",
+                created or now(),
+            )
+        )
 
     def rebase(self, c1, c2):
         c0 = self.merge_base(c1, c2)
@@ -596,21 +607,22 @@ class Repo:
                 return c1
             c = commit()
             p = c.parents
-            assert len(p), f'commit has no parents: {commit.to}'
+            assert len(p), f"commit has no parents: {commit.to}"
             if len(p) == 1:
-                p, = p
+                (p,) = p
                 x = replay(p)
                 c.tree = self.patch(x().tree, self.diff(p().tree, c.tree))
                 c.parents, c.committer, c.modified = ([x], self.user, now())
                 return self(c)
-            assert len(p) == 2, f'commit has more than two parents: {commit.to}'
+            assert len(p) == 2, f"commit has more than two parents: {commit.to}"
             a, b = (replay(x) for x in p)
             return self.merge(a, b, commit.author, commit.message, commit.created)
+
         return c2 if c0 == c1 else c1 if c0 == c2 else replay(c2)
 
     def squash(self, c1, c2):
         c0 = self.merge_base(c1, c2)
-        assert c0 == c1, 'cannot squash from non ancestor'
+        assert c0 == c1, "cannot squash from non ancestor"
         c = c1()
         c.tree = self.patch(c.tree, self.diff(c.tree, c2().tree))
         c.parents = [c1]
@@ -626,6 +638,7 @@ class Repo:
             for child in children:
                 reparent(child, commit, ref)
             return ref
+
         ref = self(c)
         for child in self.get_child_commits(c2):
             reparent(child, c2, ref)
@@ -639,27 +652,28 @@ class Repo:
         return children
 
     def create_branch(self, branch, ref):
-        assert branch.type == 'head', f'unexpected branch type: {branch.type}'
-        assert branch() is None, 'branch already exists'
-        assert ref.type in ['head', 'commit'], f'unexpected ref type: {ref.type}'
-        ref = Head(ref) if ref.type == 'commit' else ref()
+        assert branch.type == "head", f"unexpected branch type: {branch.type}"
+        assert branch() is None, "branch already exists"
+        assert ref.type in ["head", "commit"], f"unexpected ref type: {ref.type}"
+        ref = Head(ref) if ref.type == "commit" else ref()
         return self(branch, ref)
 
     def delete_branch(self, branch):
-        assert self.head != branch, 'cannot delete the current branch'
-        assert self.get(branch) is not None, f'branch not found: {branch.to}'
+        assert self.head != branch, "cannot delete the current branch"
+        assert self.get(branch) is not None, f"branch not found: {branch.to}"
         self.delete(branch)
 
     def set_head(self, head, commit):
         return self(head, Head(commit))
 
     def checkout(self, ref):
-        assert ref.type in ['head'], f'checkout unknown ref type: {ref.type}'
-        assert ref(), f'ref not found: {ref.to}'
+        assert ref.type in ["head"], f"checkout unknown ref type: {ref.type}"
+        assert ref(), f"ref not found: {ref.to}"
         self.head = ref
 
     def extract_nodes(self, obj):
         result = []
+
         def extract(obj):
             if isinstance(obj, Ref):
                 extract(obj())
@@ -672,6 +686,7 @@ class Repo:
             elif isinstance(obj, dict):
                 for v in obj.values():
                     extract(v)
+
         return extract(obj) or result
 
     def put_datum(self, value):
@@ -679,7 +694,7 @@ class Repo:
             if isinstance(value, Ref):
                 if isinstance(value(), Node):
                     value = value().value
-                assert isinstance(value(), Datum), f'not a datum: {value.to}'
+                assert isinstance(value(), Datum), f"not a datum: {value.to}"
                 return value
             if isinstance(value, Datum):
                 return self(value)
@@ -691,7 +706,8 @@ class Repo:
                 return self(Datum({put(x) for x in value}))
             if isinstance(value, dict):
                 return self(Datum({k: put(v) for k, v in value.items()}))
-            raise TypeError(f'repo put_datum unknown type: {type(value)}')
+            raise TypeError(f"repo put_datum unknown type: {type(value)}")
+
         return put(value)
 
     def get_dag(self, dag):
@@ -699,18 +715,13 @@ class Repo:
 
     def begin(self, *, message, name=None, dag=None):
         if (name or dag) is None:
-            msg = 'either dag or a name is required'
+            msg = "either dag or a name is required"
             raise ValueError(msg)
         ctx = Ctx.from_head(self.head)
         if dag is None:
             dag = self(Dag([], {}, None, None))
         ctx.dags[name] = dag
-        commit = Commit(
-            [ctx.head.commit],
-            self(ctx.tree),
-            self.user,
-            self.user,
-            message)
+        commit = Commit([ctx.head.commit], self(ctx.tree), self.user, self.user, message)
         index = self(Index(self(commit), dag))
         return index
 
@@ -729,7 +740,7 @@ class Repo:
 
     def get_node_value(self, ref: Ref):
         node = ref()
-        assert isinstance(node, Node), f'invalid type: {type(node)}'
+        assert isinstance(node, Node), f"invalid type: {type(node)}"
         if node.error is not None:
             return node.error
         val = node.value()
@@ -740,7 +751,7 @@ class Repo:
         return to_json([[x, x()] for x in self.walk_ordered(ref)] if recursive else [[ref.to, ref()]])
 
     def load_ref(self, dump):
-        *dump, = (self.put(k, v) for k, v in raise_ex(from_json(dump)))
+        (*dump,) = (self.put(k, v) for k, v in raise_ex(from_json(dump)))
         return dump[-1] if len(dump) else None
 
     def start_fn(self, index, *, argv, retry=False, name=None, doc=None):
@@ -751,7 +762,7 @@ class Repo:
             self(fndag, FnDag([argv_node], {}, None, None, argv_node))
         if not fndag().ready:
             uri = urlparse(fn.uri)
-            if fn.adapter is None and uri.scheme == 'daggerml':
+            if fn.adapter is None and uri.scheme == "daggerml":
                 result = error = None
                 nodes = [argv_node]
                 try:
@@ -763,15 +774,15 @@ class Repo:
                     nodes.append(result)
                 self(fndag, FnDag(nodes, {}, result, error, argv_node))
             else:
-                cmd = shutil.which(fn.adapter or '')
-                assert cmd, f'no such adapter: {fn.adapter}'
+                cmd = shutil.which(fn.adapter or "")
+                assert cmd, f"no such adapter: {fn.adapter}"
                 args = [cmd, fn.uri, fn.adapter]
                 data = to_json([argv_node.id, self.dump_ref(fndag)])
                 proc = subprocess.run(args, input=data, capture_output=True, text=True, check=False)
-                err = '' if not proc.stderr else f'\n{proc.stderr}'
+                err = "" if not proc.stderr else f"\n{proc.stderr}"
                 if proc.stderr:
                     logger.error(proc.stderr.rstrip())
-                assert proc.returncode == 0, f'{cmd}: exit status: {proc.returncode}{err}'
+                assert proc.returncode == 0, f"{cmd}: exit status: {proc.returncode}{err}"
                 self.load_ref(proc.stdout or to_json([]))
         if fndag().ready:
             node = self.put_node(Fn(fndag, None, argv), index=index, name=name, doc=doc)
@@ -780,10 +791,10 @@ class Repo:
 
     def commit(self, res_or_err, index: Ref):
         result, error = (res_or_err, None) if isinstance(res_or_err, Ref) else (None, res_or_err)
-        assert result is not None or error is not None, 'both result and error are none'
+        assert result is not None or error is not None, "both result and error are none"
         dag = index().dag
         ctx = Ctx.from_head(index, dag=dag)
-        assert (ctx.dag.result or ctx.dag.error) is None, 'dag has been committed already'
+        assert (ctx.dag.result or ctx.dag.error) is None, "dag has been committed already"
         ctx.dag.result = result
         ctx.dag.error = error
         ctx.commit.tree = self(ctx.tree)

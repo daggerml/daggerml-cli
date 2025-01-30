@@ -51,14 +51,14 @@ def writefile(contents, path, *paths):
                 os.remove(p)
         else:
             os.makedirs(os.path.dirname(p), mode=0o700, exist_ok=True)
-            with open(p, 'w') as f:
+            with open(p, "w") as f:
                 f.write(contents)
 
 
 def fullname(obj):
     if not isinstance(obj, type):
         return fullname(type(obj))
-    return f'{obj.__module__}.{obj.__qualname__}'
+    return f"{obj.__module__}.{obj.__qualname__}"
 
 
 def now():

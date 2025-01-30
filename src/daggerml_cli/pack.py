@@ -32,7 +32,8 @@ def packb(x, hash=False) -> bytes:
         if code:
             data = EXT_PACK[code][0](obj, hash)
             return ExtType(code, packb(sort_dict_recursively(data)))
-        raise TypeError(f'unknown type: {type(obj)}')
+        raise TypeError(f"unknown type: {type(obj)}")
+
     return asserting(msgpack.packb(x, default=default))
 
 
@@ -42,6 +43,7 @@ def unpackb(x):
         if cls:
             return cls(*EXT_PACK[code][1](unpackb(data)))
         return ExtType(code, data)
+
     return msgpack.unpackb(x, ext_hook=ext_hook) if x is not None else None
 
 

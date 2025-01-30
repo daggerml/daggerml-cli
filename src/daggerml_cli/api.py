@@ -78,12 +78,12 @@ def repo_path(config):
 def list_repo(config):
     if os.path.exists(config.REPO_DIR):
         xs = sorted(os.listdir(config.REPO_DIR))
-        return [{'name': x, 'path': os.path.join(config.REPO_DIR, x)} for x in xs]
+        return [{"name": x, "path": os.path.join(config.REPO_DIR, x)} for x in xs]
     return []
 
 
 def list_other_repo(config):
-    return [k for k in list_repo(config) if k['name'] != config.REPO]
+    return [k for k in list_repo(config) if k["name"] != config.REPO]
 
 
 def create_repo(config, name):
@@ -132,11 +132,11 @@ def load_ref(config, ref):
 
 def status(config):
     return {
-        'repo': config.get('REPO'),
-        'branch': config.get('BRANCH'),
-        'user': config.get('USER'),
-        'config_dir': config.get('CONFIG_DIR'),
-        'project_dir': config.get('PROJECT_DIR') and os.path.abspath(config.get('PROJECT_DIR')),
+        "repo": config.get("REPO"),
+        "branch": config.get("BRANCH"),
+        "user": config.get("USER"),
+        "config_dir": config.get("CONFIG_DIR"),
+        "project_dir": config.get("PROJECT_DIR") and os.path.abspath(config.get("PROJECT_DIR")),
     }
 
 
@@ -146,7 +146,7 @@ def status(config):
 
 
 def config_repo(config, name):
-    assert name in with_query(list_repo, '[*].name')(config), f"no such repo: {name}"
+    assert name in with_query(list_repo, "[*].name")(config), f"no such repo: {name}"
     config.REPO = name
     config_branch(config, Ref(DEFAULT_BRANCH).id)
 
@@ -182,7 +182,7 @@ def list_other_branch(config):
 def create_branch(config, name, commit=None):
     with Repo(config.REPO_PATH, head=config.BRANCHREF) as db:
         with db.tx(True):
-            ref = db.head if commit is None else Ref(f'commit/{commit}')
+            ref = db.head if commit is None else Ref(f"commit/{commit}")
             db.create_branch(Ref(f"head/{name}"), ref)
     config_branch(config, name)
 
@@ -256,7 +256,7 @@ def list_indexes(config):
 def delete_index(config, index: Ref):
     with Repo(config.REPO_PATH, head=config.BRANCHREF) as db:
         with db.tx(True):
-            assert isinstance(index(), Index), f'no such index: {index.id}'
+            assert isinstance(index(), Index), f"no such index: {index.id}"
             db.delete(index)
     return True
 
@@ -267,15 +267,15 @@ def delete_index(config, index: Ref):
 
 
 def invoke_op(f):
-    _, fname = f.__name__.split('_', 1)
-    if not hasattr(invoke_op, 'fns'):
+    _, fname = f.__name__.split("_", 1)
+    if not hasattr(invoke_op, "fns"):
         invoke_op.fns = {}
     invoke_op.fns[fname] = f
     return f
 
 
 def format_ops():
-    return ', '.join(sorted([*list(invoke_op.fns.keys()), *BUILTIN_FNS.keys()]))
+    return ", ".join(sorted([*list(invoke_op.fns.keys()), *BUILTIN_FNS.keys()]))
 
 
 @invoke_op
@@ -294,8 +294,8 @@ def op_put_literal(db, index, data, name=None, doc=None):
         if not len(nodes):
             return db.put_node(result, index=index, name=name, doc=doc)
         else:
-            fn = Literal(db.put_datum(Resource('daggerml:build')))
-            fn = db.put_node(fn, index=index, name='daggerml:build')
+            fn = Literal(db.put_datum(Resource("daggerml:build")))
+            fn = db.put_node(fn, index=index, name="daggerml:build")
             result = db.put_node(result, index=index)
             nodes = [db.put_node(x.data, index=index, doc=x.doc) for x in nodes]
             result = db.start_fn(index, argv=[fn, result, *nodes], name=name, doc=doc)
@@ -320,7 +320,7 @@ def op_get_dag(db, index, name=None):
     with db.tx():
         if isinstance(name, str):
             ref = db.get_dag(name)
-            assert ref, f'no such dag: {name}'
+            assert ref, f"no such dag: {name}"
             return ref
         return name().data.dag
 
@@ -375,15 +375,17 @@ def invoke_api(config, token, data):
     def no_such_op(name):
         def inner(*_args, **_kwargs):
             raise ValueError(f"no such op: {name}")
+
         return inner
-    index = CheckedRef(getattr(token, 'to', 'NONE'), Index, 'invalid token')
+
+    index = CheckedRef(getattr(token, "to", "NONE"), Index, "invalid token")
     try:
         with Repo(config.REPO_PATH, config.USER, config.BRANCHREF) as db:
             op, args, kwargs = data
             if op in BUILTIN_FNS:
                 with db.tx(True):
-                    fn = db.put_datum(Resource(f'daggerml:{op}'))
-                    fn = op_put_literal(db, index, fn, name=f'daggerml:{op}')
+                    fn = db.put_datum(Resource(f"daggerml:{op}"))
+                    fn = op_put_literal(db, index, fn, name=f"daggerml:{op}")
                     argv = [fn, *[op_put_literal(db, index, x) for x in args]]
                 return op_start_fn(db, index, argv, **kwargs)
             return invoke_op.fns.get(op, no_such_op(op))(db, index, *args, **kwargs)
@@ -412,6 +414,7 @@ def commit_log_graph(config):
 
     with Repo(config.REPO_PATH, config.USER, head=config.BRANCHREF) as db:
         with db.tx():
+
             def walk_names(x, head=None):
                 if x and x[0]:
                     k = names[x[0]] if x[0] in names else x[0].id
@@ -426,6 +429,7 @@ def commit_log_graph(config):
                         parents = [walk_nodes(y) for y in x[1] if y]
                         nodes[x[0]] = AsciiNode(names[x[0]], parents=parents)
                     return nodes[x[0]]
+
             names = {}
             nodes = {}
             log = dict(asserting(db.log("head")))
