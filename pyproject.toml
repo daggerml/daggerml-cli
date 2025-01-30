@@ -76,23 +76,21 @@ packages = ["src/daggerml_cli"]
 
 [tool.hatch.envs.default]
 python = "3.10"
-
-[tool.hatch.envs.test]
 dependencies = [
   "twine",
   "daggerml_cli[test]"
 ]
 
-[tool.hatch.envs.test.env-vars]
+[tool.hatch.envs.default.env-vars]
 PYTHONPATH="."
 
-[tool.hatch.envs.test.scripts]
+[tool.hatch.envs.scripts]
 test = 'pytest . {args}'
 coverage-report = 'pytest --cov-report term-missing --cov=daggerml_cli tests/'
 dml-build = "hatch build && twine upload -r {args:testpypi} dist/*"
 
 [tool.hatch.envs.test-all]
-template = "test"
+template = "default"
 
 [[tool.hatch.envs.test-all.matrix]]
 python = ["3.9", "3.10", "3.11", "3.12", "3.13"]
