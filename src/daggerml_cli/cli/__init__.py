@@ -7,8 +7,7 @@ import click
 import jmespath
 from click import ClickException
 
-from daggerml_cli import api
-from daggerml_cli.__about__ import __version__
+from daggerml_cli import __version__, api
 from daggerml_cli.config import Config
 from daggerml_cli.db import DB_TYPES
 from daggerml_cli.repo import Error, Ref, from_json, to_json
