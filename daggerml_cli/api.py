@@ -250,7 +250,7 @@ def write_dag_html(config, ref):
 def list_indexes(config):
     with Repo(config.REPO_PATH, head=config.BRANCHREF) as db:
         with db.tx():
-            return [with_attrs(x, id=x, foo='bar') for x in db.indexes()]
+            return [with_attrs(x, id=x) for x in db.indexes()]
 
 
 def delete_index(config, index: Ref):
