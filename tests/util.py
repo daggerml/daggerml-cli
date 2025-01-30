@@ -38,7 +38,7 @@ class SimpleApi:
             config_dir=None,
             fn_cache_dir='',
             ctx=None,
-            dag_dump=None
+            dump=None
     ):
         tmpdirs = []
         if ctx is None:
@@ -52,7 +52,7 @@ class SimpleApi:
             if 'test' not in [x['name'] for x in api.list_repo(ctx)]:
                 api.create_repo(ctx, 'test')
             api.config_repo(ctx, 'test')
-        tok = api.begin_dag(ctx, name=name, message=message, dag_dump=dag_dump)
+        tok = api.begin_dag(ctx, name=name, message=message, dump=dump)
         return cls(tok, ctx, tmpdirs)
 
     @contextmanager

@@ -146,7 +146,7 @@ def cli_status(ctx):
 ###############################################################################
 
 
-@cli.group(name='ref', no_args_is_help=True, help='Load and dump refs.')
+@cli.group(name='ref', no_args_is_help=True, help='Ref management commands.')
 @clickex
 def ref_group(_):
     pass
