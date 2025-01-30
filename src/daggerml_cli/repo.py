@@ -24,7 +24,7 @@ BUILTIN_FNS = {
     'type': lambda x: str(type(x).__name__),
     'len': lambda x: len(x),
     'keys': lambda x: sorted(x.keys()),
-    'get': lambda x, k, d=NONE: x[slice(*[x().value for x in k])] if isinstance(k, list) else x[k] if d is NONE else x.get(k, d),
+    'get': lambda x, k, d=NONE: x[slice(*[x().value for x in k])] if isinstance(k, list) else x[k] if d is NONE else x.get(k, d),  # noqa: E501
     'contains': lambda x, k: k in unroll_datum(x),
     'list': lambda *xs: list(xs),
     'dict': lambda *kvs: {k: v for k, v in [kvs[i:i + 2] for i in range(0, len(kvs), 2)]},
