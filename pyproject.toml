@@ -49,6 +49,7 @@ test = [
 dml = "daggerml_cli.cli:cli"
 dml-python-fork-adapter = "daggerml_cli.python_fork_adapter:main"
 dml-lambda-adapter = "daggerml_cli.contrib.lambda_adapter:main"
+dml-local-adapter = "daggerml_cli.contrib.local_adapter:main"
 
 [project.urls]
 Homepage = "https://daggerml.com"
@@ -72,16 +73,16 @@ markers = [
 source = "vcs"
 
 [tool.hatch.version.raw-options]
-version_scheme = "only-version"   # Ensures `distance` is an integer
+version_scheme = "only-version"   # use tag as version
 local_scheme = "no-local-version"  # pypi does not support local-schemes
 tag_regex = "^v(?P<version>[0-9.]+)$"
-version_file = "src/daggerml_cli/__about__.py"
+version_file = "src/daggerml_cli/__about__.py"  # write version info to this file
 relative_to = "{root:uri}"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/daggerml_cli"]
 artifacts = [
-  "src/daggerml_cli/__about__.py"
+  "src/daggerml_cli/__about__.py"  # add to hatch build because it's git ignored
 ]
 
 [tool.hatch.envs.default]
