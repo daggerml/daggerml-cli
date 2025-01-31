@@ -713,6 +713,13 @@ class Repo:
     def get_dag(self, dag):
         return Ctx.from_head(self.head).dags.get(dag)
 
+    def delete_dag(self, dag, message):
+        ctx = Ctx.from_head(self.head)
+        ctx.dags.pop(dag)
+        commit = Commit([ctx.head.commit], self(ctx.tree), self.user, self.user, message)
+        commit = self.merge(self.head().commit, self(commit))
+        self.set_head(self.head, commit)
+
     def begin(self, *, message, name=None, dag=None):
         if (name or dag) is None:
             msg = "either dag or a name is required"

@@ -329,22 +329,26 @@ def dag_list(ctx):
     click.echo(jsdumps(api.list_dags(ctx.obj), ctx.obj))
 
 
+@click.argument("message", type=str)
 @click.argument("name", type=str, shell_complete=complete(api.with_query(api.list_dags, "[*].name")))
-@dag_group.command(name="describe", help="Get the properties of a dag as JSON.")
+@dag_group.command(name="delete", help="Delete a DAG.")
 @clickex
-def dag_describe(ctx, name):
+def dag_delete(ctx, name, message):
     ref = ([x.id for x in api.list_dags(ctx.obj) if x.name == name] or [None])[0]
     assert ref, f"no such dag: {name}"
-    click.echo(jsdumps(api.describe_dag(ctx.obj, ref)))
+    api.delete_dag(ctx.obj, name, message)
+    click.echo(f"Deleted dag: {name}")
 
 
 @click.argument("name", type=str, shell_complete=complete(api.with_query(api.list_dags, "[*].name")))
-@dag_group.command(name="html", help="Get the dag html page printed to stdout.")
+@click.option("--output", help="Output format.", type=click.Choice(["json", "html"]), default="json")
+@dag_group.command(name="graph", help="Print the DAG graph to stdout.")
 @clickex
-def dag_html(ctx, name):
+def dag_graph(ctx, name, output):
     ref = ([x.id for x in api.list_dags(ctx.obj) if x.name == name] or [None])[0]
     assert ref, f"no such dag: {name}"
-    click.echo(api.write_dag_html(ctx.obj, ref))
+    graph = api.describe_dag(ctx.obj, ref)
+    click.echo(jsdumps(graph) if output == 'json' else api.write_dag_html(ctx.obj, graph))
 
 
 ###############################################################################

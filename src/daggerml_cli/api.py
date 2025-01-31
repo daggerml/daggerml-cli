@@ -222,6 +222,12 @@ def list_dags(config):
             return sorted(result, key=lambda x: x.name)
 
 
+def delete_dag(config, name, message):
+    with Repo(config.REPO_PATH, config.USER, head=config.BRANCHREF) as db:
+        with db.tx(True):
+            return db.delete_dag(name, message)
+
+
 def begin_dag(config, *, name=None, message, dump=None):
     with Repo(config.REPO_PATH, config.USER, head=config.BRANCHREF) as db:
         with db.tx(True):
@@ -236,10 +242,10 @@ def describe_dag(config, ref):
             return topology(ref)
 
 
-def write_dag_html(config, ref):
+def write_dag_html(config, graph):
     with open(Path(__file__).parent / "dag-viz.html") as f:
         html = f.read()
-    return html.replace('"REPLACEMENT_TEXT"', json.dumps(jsdata(describe_dag(config, ref)), indent=2))
+    return html.replace('"REPLACEMENT_TEXT"', json.dumps(jsdata(graph), indent=2))
 
 
 ###############################################################################
