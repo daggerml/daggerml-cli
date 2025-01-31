@@ -227,7 +227,8 @@ def repo_gc(ctx):
     of external resources is printed to stdout as JSON so they can be cleaned
     up."""
     deleted, resources = api.gc_repo(ctx.obj)
-    click.echo(tabulate(deleted.items(), headers=["type", "deleted"], tablefmt="plain"), err=True)
+    if len(deleted):
+        click.echo(tabulate(deleted.items(), headers=["type", "deleted"], tablefmt="plain"), err=True)
     click.echo(jsdumps(resources))
 
 
