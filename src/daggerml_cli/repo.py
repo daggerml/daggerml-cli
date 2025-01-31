@@ -209,6 +209,14 @@ class Resource:
     adapter: Optional[str] = None
 
 
+@repo_type
+@dataclass(frozen=True)
+class Deleted(Resource):
+    @classmethod
+    def resource(cls, obj: Resource):
+        return cls(*[getattr(obj, x.name) for x in fields(obj)])
+
+
 @repo_type(hash=[])
 @dataclass
 class Head:
@@ -510,7 +518,7 @@ class Repo:
 
     def reachable_objects(self):
         result = set()
-        for db in ["head", "index"]:
+        for db in ["head", "index", "deleted"]:
             result = result.union(self.walk(*[k for k in self.cursor(db)]))
         return result
 
@@ -518,16 +526,15 @@ class Repo:
         return self.objects().difference(self.reachable_objects())
 
     def gc(self):
-        resources = []
         deleted = []
         for ref in self.unreachable_objects():
             obj = ref()
-            if isinstance(obj, Datum) and isinstance(obj.value, Resource):
-                resources.append(obj.value)
+            if isinstance(obj, Datum) and isinstance(obj.value, Resource) and not obj.value.uri.startswith("daggerml:"):
+                self(Deleted.resource(obj.value))
             self.delete(ref)
             deleted.append(ref.type)
         remaining = [ref.type for ref in self.objects()]
-        return Counter(deleted), Counter(remaining), resources
+        return Counter(deleted), Counter(remaining)
 
     def topo_sort(self, *xs):
         xs = list(xs)

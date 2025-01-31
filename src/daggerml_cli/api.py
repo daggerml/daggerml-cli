@@ -108,6 +108,19 @@ def gc_repo(config):
             return db.gc()
 
 
+def list_deleted(config):
+    with Repo(config.REPO_PATH) as db:
+        with db.tx():
+            return [{"id": x, **x().__dict__} for x in db.objects("deleted")]
+
+
+def remove_deleted(config, ref):
+    with Repo(config.REPO_PATH) as db:
+        with db.tx(True):
+            assert ref.type == "deleted"
+            db.delete(ref)
+
+
 ###############################################################################
 # REF #########################################################################
 ###############################################################################

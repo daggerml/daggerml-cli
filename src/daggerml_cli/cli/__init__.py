@@ -223,19 +223,35 @@ def repo_list(ctx):
     click.echo(jsdumps(api.list_repo(ctx.obj), ctx.obj))
 
 
+@click.option(
+    "--remove",
+    help="Remove the deleted item with the given ID.",
+    type=str,
+    shell_complete=complete(api.with_query(api.list_deleted, "[*].id")),
+)
+@repo_group.command(name="deleted")
+@clickex
+def repo_deleted(ctx, remove=None):
+    "List or remove deleted resources."
+    if remove:
+        api.remove_deleted(ctx.obj, Ref(f"deleted/{remove}"))
+        click.echo(f"Removed deleted: {remove}")
+    else:
+        click.echo(jsdumps(api.list_deleted(ctx.obj), ctx.obj))
+
+
 @repo_group.command(name="gc")
 @clickex
 def repo_gc(ctx):
     """Delete unreachable objects.
-    A summary table of objects deleted by type is printed to stderr and a list
-    of external resources is printed to stdout as JSON so they can be cleaned
-    up."""
-    deleted, remaining, resources = api.gc_repo(ctx.obj)
+    A summary table of objects deleted by type is printed. Resource objects
+    which were deleted can be accessed via `dml repo deleted` so that their
+    associated external resources can be cleaned up."""
+    deleted, remaining = api.gc_repo(ctx.obj)
     summary = [[k, *v] for k, v in merge_counters(deleted, remaining).items()]
     summary = sorted(summary, key=lambda x: x[0])
     headers = ["object", "deleted", "remaining"]
-    click.echo(tabulate(summary, headers=headers, tablefmt="plain"), err=True)
-    click.echo(jsdumps(resources))
+    click.echo(tabulate(summary, headers=headers, tablefmt="plain"))
 
 
 ###############################################################################
