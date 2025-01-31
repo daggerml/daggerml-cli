@@ -77,3 +77,17 @@ def sort_dict_recursively(x):
     if isinstance(x, set):
         return {sort_dict_recursively(v) for v in x}
     return x
+
+
+def as_list(x):
+    return x if isinstance(x, (list, tuple)) else [x]
+
+
+def merge_counters(x, *xs):
+    if not len(xs):
+        return x
+    y, rest = xs[0], xs[1:]
+    result = {}
+    for k in set(x.keys()).union(set(y.keys())):
+        result[k] = flatten([as_list(x.get(k, 0)), as_list(y.get(k, 0))])
+    return merge_counters(result, *rest) if len(rest) else result

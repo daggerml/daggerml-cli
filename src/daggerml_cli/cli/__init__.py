@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 from functools import wraps
 from pathlib import Path
@@ -12,6 +13,9 @@ from daggerml_cli import __version__, api
 from daggerml_cli.config import Config
 from daggerml_cli.db import DB_TYPES
 from daggerml_cli.repo import Error, Ref, from_json, to_json
+from daggerml_cli.util import merge_counters
+
+logger = logging.getLogger(__name__)
 
 SYSTEM_CONFIG_DIR = str(Path(os.getenv("XDG_CONFIG_HOME", str(Path.home() / ".config"))))
 CONFIG_DIR = str((Path(SYSTEM_CONFIG_DIR) / "dml").absolute())
@@ -226,9 +230,11 @@ def repo_gc(ctx):
     A summary table of objects deleted by type is printed to stderr and a list
     of external resources is printed to stdout as JSON so they can be cleaned
     up."""
-    deleted, resources = api.gc_repo(ctx.obj)
-    if len(deleted):
-        click.echo(tabulate(deleted.items(), headers=["type", "deleted"], tablefmt="plain"), err=True)
+    deleted, remaining, resources = api.gc_repo(ctx.obj)
+    summary = [[k, *v] for k, v in merge_counters(deleted, remaining).items()]
+    summary = sorted(summary, key=lambda x: x[0])
+    headers = ["object", "deleted", "remaining"]
+    click.echo(tabulate(summary, headers=headers, tablefmt="plain"), err=True)
     click.echo(jsdumps(resources))
 
 

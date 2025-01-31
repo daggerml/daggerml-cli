@@ -56,14 +56,12 @@ class TestConfig(TestCase):
 
         with TemporaryDirectory() as config_dir:
             with TemporaryDirectory() as project_dir:
-
                 # Persistence requires at least a CONFIG_DIR and a PROJECT_DIR,
                 # and writes are performed in a context manager. The context
                 # manager ensures that nothing is persisted when an exception is
                 # raised, as this could result in a partial configuration being
                 # written.
                 with Config(config_dir, project_dir) as config:
-
                     # Accessing a field which hasn't been set is still an error.
                     with self.assertRaises(ConfigError):
                         assert config.REPO is None
@@ -80,8 +78,8 @@ class TestConfig(TestCase):
                     assert config.BRANCH == "master"
                     assert config.USER == "rupert"
                     assert config.BRANCHREF == Ref(to="head/master")
-                    assert config.REPO_DIR == f'{config_dir}/repo'
-                    assert config.REPO_PATH == f'{config_dir}/repo/test0'
+                    assert config.REPO_DIR == f"{config_dir}/repo"
+                    assert config.REPO_PATH == f"{config_dir}/repo/test0"
 
                 # Load a persistent Config object by providing CONFIG_DIR and
                 # PROJECT_DIR to the dataclass constructor. We don't need the
@@ -91,5 +89,5 @@ class TestConfig(TestCase):
                 assert config.BRANCH == "master"
                 assert config.USER == "rupert"
                 assert config.BRANCHREF == Ref(to="head/master")
-                assert config.REPO_DIR == f'{config_dir}/repo'
-                assert config.REPO_PATH == f'{config_dir}/repo/test0'
+                assert config.REPO_DIR == f"{config_dir}/repo"
+                assert config.REPO_PATH == f"{config_dir}/repo/test0"

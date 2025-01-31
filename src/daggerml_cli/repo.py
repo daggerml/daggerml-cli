@@ -504,8 +504,7 @@ class Repo:
 
     def objects(self, type=None):
         result = set()
-        types = list(self.dbs.keys()) if type is None else [type]
-        for db in types:
+        for db in [type] if type else list(self.dbs.keys()):
             [result.add(x) for x in self.cursor(db)]
         return result
 
@@ -527,7 +526,8 @@ class Repo:
                 resources.append(obj.value)
             self.delete(ref)
             deleted.append(ref.type)
-        return {k: str(v) for k, v in Counter(deleted).items()}, resources
+        remaining = [ref.type for ref in self.objects()]
+        return Counter(deleted), Counter(remaining), resources
 
     def topo_sort(self, *xs):
         xs = list(xs)
