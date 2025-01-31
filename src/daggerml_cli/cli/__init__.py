@@ -66,7 +66,7 @@ def complete(f, prelude=None):
         try:
             if prelude:
                 prelude(ctx, param, incomplete)
-            return [k for k in (api.jsdata(f(ctx.obj or BASE_CONFIG)) or []) if k.startswith(incomplete)]
+            return sorted([k for k in (api.jsdata(f(ctx.obj or BASE_CONFIG)) or []) if k.startswith(incomplete)])
         except BaseException:
             return []
 
@@ -159,7 +159,7 @@ def ref_group(_):
 
 
 @click.argument("id", type=str)
-@click.argument("type", type=click.Choice(DB_TYPES))
+@click.argument("type", type=click.Choice(sorted(DB_TYPES)))
 @ref_group.command(name="describe", help="Get the properties of a ref as JSON.")
 @clickex
 def ref_describe(ctx, type, id):
