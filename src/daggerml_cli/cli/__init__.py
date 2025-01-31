@@ -341,14 +341,17 @@ def dag_delete(ctx, name, message):
 
 
 @click.argument("name", type=str, shell_complete=complete(api.with_query(api.list_dags, "[*].name")))
-@click.option("--output", help="Output format.", type=click.Choice(["json", "html"]), default="html")
-@dag_group.command(name="graph", help="Print the DAG graph to stdout.")
+@click.option("--json", help="Output JSON format.", is_flag=True)
+@dag_group.command(name="graph")
 @clickex
-def dag_graph(ctx, name, output):
+def dag_graph(ctx, name, json):
+    """Print the DAG graph.
+    Default output format is HTML. The --json option changes the output format
+    to JSON."""
     ref = ([x.id for x in api.list_dags(ctx.obj) if x.name == name] or [None])[0]
     assert ref, f"no such dag: {name}"
     graph = api.describe_dag(ctx.obj, ref)
-    click.echo(jsdumps(graph) if output == 'json' else api.write_dag_html(ctx.obj, graph))
+    click.echo(jsdumps(graph) if json else api.write_dag_html(ctx.obj, graph))
 
 
 ###############################################################################
