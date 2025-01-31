@@ -533,7 +533,7 @@ class Repo:
                 self(Deleted.resource(obj.value))
             self.delete(ref)
             deleted.append(ref.type)
-        remaining = [ref.type for ref in self.objects()]
+        remaining = [ref.type for ref in self.objects() if ref.type != "deleted"]
         return Counter(deleted), Counter(remaining)
 
     def topo_sort(self, *xs):
