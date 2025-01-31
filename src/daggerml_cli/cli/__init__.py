@@ -6,6 +6,7 @@ from pathlib import Path
 import click
 import jmespath
 from click import ClickException
+from tabulate import tabulate
 
 from daggerml_cli import __version__, api
 from daggerml_cli.config import Config
@@ -218,11 +219,16 @@ def repo_list(ctx):
     click.echo(jsdumps(api.list_repo(ctx.obj), ctx.obj))
 
 
-@repo_group.command(name="gc", help="Delete unreachable objects in the repo.")
+@repo_group.command(name="gc")
 @clickex
 def repo_gc(ctx):
-    for rsrc in api.gc_repo(ctx.obj):
-        click.echo(rsrc.uri)
+    """Delete unreachable objects.
+    A summary table of objects deleted by type is printed to stderr and a list
+    of external resources is printed to stdout as JSON so they can be cleaned
+    up."""
+    deleted, resources = api.gc_repo(ctx.obj)
+    click.echo(tabulate(deleted.items(), headers=["type", "deleted"], tablefmt="plain"), err=True)
+    click.echo(jsdumps(resources))
 
 
 ###############################################################################
@@ -317,23 +323,26 @@ def branch_rebase(ctx, branch):
 ###############################################################################
 
 
-@cli.group(name="dag", no_args_is_help=True, help="DAG management commands.")
+@cli.group(name="dag", no_args_is_help=True)
 @clickex
 def dag_group(_):
+    "DAG management commands."
     pass
 
 
-@dag_group.command(name="list", help="List DAGs.")
+@dag_group.command(name="list")
 @clickex
 def dag_list(ctx):
+    "List DAGs."
     click.echo(jsdumps(api.list_dags(ctx.obj), ctx.obj))
 
 
 @click.argument("message", type=str)
 @click.argument("name", type=str, shell_complete=complete(api.with_query(api.list_dags, "[*].name")))
-@dag_group.command(name="delete", help="Delete a DAG.")
+@dag_group.command(name="delete")
 @clickex
 def dag_delete(ctx, name, message):
+    "Delete a DAG."
     ref = ([x.id for x in api.list_dags(ctx.obj) if x.name == name] or [None])[0]
     assert ref, f"no such dag: {name}"
     api.delete_dag(ctx.obj, name, message)

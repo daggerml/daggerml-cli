@@ -4,6 +4,7 @@ import os
 import shutil
 import subprocess
 import traceback as tb
+from collections import Counter
 from contextlib import contextmanager
 from dataclasses import InitVar, dataclass, field, fields, is_dataclass
 from hashlib import md5
@@ -519,15 +520,14 @@ class Repo:
 
     def gc(self):
         resources = []
-        num_deleted = 0
+        deleted = []
         for ref in self.unreachable_objects():
             obj = ref()
             if isinstance(obj, Datum) and isinstance(obj.value, Resource):
                 resources.append(obj.value)
             self.delete(ref)
-            num_deleted += 1
-        logger.info("deleted %r objects including %r resources", num_deleted, len(resources))
-        return resources
+            deleted.append(ref.type)
+        return {k: str(v) for k, v in Counter(deleted).items()}, resources
 
     def topo_sort(self, *xs):
         xs = list(xs)
