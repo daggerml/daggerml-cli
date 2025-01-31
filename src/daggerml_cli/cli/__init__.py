@@ -341,7 +341,7 @@ def dag_delete(ctx, name, message):
 
 
 @click.argument("name", type=str, shell_complete=complete(api.with_query(api.list_dags, "[*].name")))
-@click.option("--output", help="Output format.", type=click.Choice(["json", "html"]), default="json")
+@click.option("--output", help="Output format.", type=click.Choice(["json", "html"]), default="html")
 @dag_group.command(name="graph", help="Print the DAG graph to stdout.")
 @clickex
 def dag_graph(ctx, name, output):
