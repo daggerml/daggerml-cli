@@ -13,7 +13,7 @@ from daggerml_cli import __version__, api
 from daggerml_cli.config import Config
 from daggerml_cli.db import DB_TYPES
 from daggerml_cli.repo import Error, Ref, from_json, to_json
-from daggerml_cli.util import merge_counters
+from daggerml_cli.util import merge_counters, writefile
 
 logger = logging.getLogger(__name__)
 
@@ -405,9 +405,8 @@ def dag_graph(ctx, name, output):
     elif output == "html":
         click.echo(api.write_dag_html(ctx.obj, graph))
     else:
-        file = os.path.join(ctx.obj.CONFIG_DIR, "dag.html")
-        with open(file, "w") as f:
-            f.write(api.write_dag_html(ctx.obj, graph))
+        file = os.path.join(ctx.obj.CONFIG_DIR, "cache", "daggerml_cli", "dag.html")
+        writefile(api.write_dag_html(ctx.obj, graph), file)
         click.echo(f"Opening browser: file://{file}")
         click.launch(f"file://{file}")
 
