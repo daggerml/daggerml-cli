@@ -141,9 +141,10 @@ def cli(ctx, config_dir, project_dir, repo, branch, user, query, debug):
 ###############################################################################
 
 
-@cli.command(name="status", help="Current repo, branch, etc.")
+@cli.command(name="status")
 @clickex
 def cli_status(ctx):
+    """Current repo, branch, etc."""
     click.echo(jsdumps(api.status(ctx.obj), ctx.obj))
 
 
@@ -152,32 +153,35 @@ def cli_status(ctx):
 ###############################################################################
 
 
-@cli.group(name="ref", no_args_is_help=True, help="Ref management commands.")
+@cli.group(name="ref", no_args_is_help=True)
 @clickex
 def ref_group(_):
-    pass
+    """Ref management commands."""
 
 
 @click.argument("id", type=str)
 @click.argument("type", type=click.Choice(sorted(DB_TYPES)))
-@ref_group.command(name="describe", help="Get the properties of a ref as JSON.")
+@ref_group.command(name="describe")
 @clickex
 def ref_describe(ctx, type, id):
+    """Get the properties of a ref as JSON."""
     click.echo(jsdumps(from_json(api.dump_ref(ctx.obj, Ref(f"{type}/{id}"), False))[0][1]))
 
 
 @click.argument("ref", type=str)
-@ref_group.command(name="dump", help="Dump a ref and all its dependencies to JSON.")
+@ref_group.command(name="dump")
 @clickex
 def ref_dump(ctx, ref):
+    """Dump a ref and all its dependencies to JSON."""
     dump = api.dump_ref(ctx.obj, from_json(ref))
     click.echo(to_json(dump))
 
 
-@ref_group.command(name="load", help="Load a previously dumped ref into the repo.")
+@ref_group.command(name="load")
 @click.argument("json", type=str)
 @clickex
 def ref_load(ctx, json):
+    """Load a previously dumped ref into the repo."""
     ref = api.load_ref(ctx.obj, from_json(json))
     click.echo(to_json(ref))
 
@@ -187,39 +191,43 @@ def ref_load(ctx, json):
 ###############################################################################
 
 
-@cli.group(name="repo", no_args_is_help=True, help="Repository management commands.")
+@cli.group(name="repo", no_args_is_help=True)
 @clickex
 def repo_group(ctx):
-    pass
+    """Repository management commands."""
 
 
 @click.argument("name")
-@repo_group.command(name="create", help="Create a new repository.")
+@repo_group.command(name="create")
 @clickex
 def repo_create(ctx, name):
+    """Create a new repository."""
     api.create_repo(ctx.obj, name)
     click.echo(f"Created repository: {name}")
 
 
 @click.argument("name", shell_complete=complete(api.with_query(api.list_repo, "[*].name")))
-@repo_group.command(name="delete", help="Delete a repository.")
+@repo_group.command(name="delete")
 @clickex
 def repo_delete(ctx, name):
+    """Delete a repository."""
     api.delete_repo(ctx.obj, name)
     click.echo(f"Deleted repository: {name}")
 
 
 @click.argument("name")
-@repo_group.command(name="copy", help="Copy this repository to NAME.")
+@repo_group.command(name="copy")
 @clickex
 def repo_copy(ctx, name):
+    """Copy this repository to NAME."""
     api.copy_repo(ctx.obj, name)
     click.echo(f"Copied repository: {ctx.obj.REPO} -> {name}")
 
 
-@repo_group.command(name="list", help="List repositories.")
+@repo_group.command(name="list")
 @clickex
 def repo_list(ctx):
+    """List repositories."""
     click.echo(jsdumps(api.list_repo(ctx.obj), ctx.obj))
 
 
@@ -232,7 +240,7 @@ def repo_list(ctx):
 @repo_group.command(name="deleted")
 @clickex
 def repo_deleted(ctx, remove=None):
-    "List or remove deleted resources."
+    """List or remove deleted resources."""
     if remove:
         api.remove_deleted(ctx.obj, Ref(f"deleted/{remove}"))
         click.echo(f"Removed deleted: {remove}")
@@ -259,32 +267,35 @@ def repo_gc(ctx):
 ###############################################################################
 
 
-@cli.group(name="config", no_args_is_help=True, help="Configuration settings.")
+@cli.group(name="config", no_args_is_help=True)
 @clickex
 def config_group(_):
-    pass
+    """Configuration settings."""
 
 
 @click.argument("repo", shell_complete=complete(api.with_query(api.list_repo, "[*].name")))
-@config_group.command(name="repo", help="Select the repository to use.")
+@config_group.command(name="repo")
 @clickex
 def config_repo(ctx, repo):
+    """Select the repository to use."""
     api.config_repo(ctx.obj, repo)
     click.echo(f"Selected repository: {repo}")
 
 
 @click.argument("name", shell_complete=complete(api.list_other_branch))
-@config_group.command(name="branch", help="Select the branch to use.")
+@config_group.command(name="branch")
 @clickex
 def config_branch(ctx, name):
+    """Select the branch to use."""
     api.config_branch(ctx.obj, name)
     click.echo(f"Selected branch: {name}")
 
 
 @click.argument("user", shell_complete=complete(api.list_other_branch))
-@config_group.command(name="user", help="Set user name/email/etc.")
+@config_group.command(name="user")
 @clickex
 def config_user(ctx, user):
+    """Set user name/email/etc."""
     api.config_user(ctx.obj, user)
     click.echo(f"Set user: {user}")
 
@@ -294,10 +305,10 @@ def config_user(ctx, user):
 ###############################################################################
 
 
-@cli.group(name="branch", no_args_is_help=True, help="Branch management commands.")
+@cli.group(name="branch", no_args_is_help=True)
 @clickex
 def branch_group(ctx):
-    pass
+    """Branch management commands."""
 
 
 @click.argument(
@@ -306,38 +317,43 @@ def branch_group(ctx):
     shell_complete=complete(api.with_query(api.list_commit, "[*].id")),
 )
 @click.argument("name")
-@branch_group.command(name="create", help="Create a new branch.")
+@branch_group.command(name="create")
 @clickex
 def branch_create(ctx, name, commit):
+    """Create a new branch."""
     api.create_branch(ctx.obj, name, commit)
     click.echo(f"Created branch: {name}")
 
 
 @click.argument("name", shell_complete=complete(api.list_other_branch))
-@branch_group.command(name="delete", help="Delete a branch.")
+@branch_group.command(name="delete")
 @clickex
 def branch_delete(ctx, name):
+    """Delete a branch."""
     api.delete_branch(ctx.obj, name)
     click.echo(f"Deleted branch: {name}")
 
 
-@branch_group.command(name="list", help="List branches.")
+@branch_group.command(name="list")
 @clickex
 def branch_list(ctx):
+    """List branches."""
     click.echo(jsdumps(api.list_branch(ctx.obj), ctx.obj))
 
 
 @click.argument("branch", shell_complete=complete(api.list_other_branch))
-@branch_group.command(name="merge", help="Merge another branch with the current one.")
+@branch_group.command(name="merge")
 @clickex
 def branch_merge(ctx, branch):
+    """Merge another branch with the current one."""
     click.echo(api.merge_branch(ctx.obj, branch))
 
 
 @click.argument("branch", shell_complete=complete(api.list_other_branch))
-@branch_group.command(name="rebase", help="Rebase the current branch onto another one.")
+@branch_group.command(name="rebase")
 @clickex
 def branch_rebase(ctx, branch):
+    """Rebase the current branch onto another one."""
     click.echo(api.rebase_branch(ctx.obj, branch))
 
 
@@ -349,14 +365,13 @@ def branch_rebase(ctx, branch):
 @cli.group(name="dag", no_args_is_help=True)
 @clickex
 def dag_group(_):
-    "DAG management commands."
-    pass
+    """DAG management commands."""
 
 
 @dag_group.command(name="list")
 @clickex
 def dag_list(ctx):
-    "List DAGs."
+    """List DAGs."""
     click.echo(jsdumps(api.list_dags(ctx.obj), ctx.obj))
 
 
@@ -365,7 +380,7 @@ def dag_list(ctx):
 @dag_group.command(name="delete")
 @clickex
 def dag_delete(ctx, name, message):
-    "Delete a DAG."
+    """Delete a DAG."""
     ref = ([x.id for x in api.list_dags(ctx.obj) if x.name == name] or [None])[0]
     assert ref, f"no such dag: {name}"
     api.delete_dag(ctx.obj, name, message)
@@ -373,17 +388,28 @@ def dag_delete(ctx, name, message):
 
 
 @click.argument("name", type=str, shell_complete=complete(api.with_query(api.list_dags, "[*].name")))
-@click.option("--json", help="Output JSON format.", is_flag=True)
+@click.option("--output", help="Output format.", type=click.Choice(["html", "json"]))
 @dag_group.command(name="graph")
 @clickex
-def dag_graph(ctx, name, json):
-    """Print the DAG graph.
-    Default output format is HTML. The --json option changes the output format
-    to JSON."""
+def dag_graph(ctx, name, output):
+    """Visualize the DAG graph.
+    With no options the graph is written to a HTML file and a browser is launched
+    to view it. If the --output option is present a text representation of the
+    graph is written to stdout (as JSON or HTML, depending on the value specified)
+    and no browser is launched."""
     ref = ([x.id for x in api.list_dags(ctx.obj) if x.name == name] or [None])[0]
     assert ref, f"no such dag: {name}"
     graph = api.describe_dag(ctx.obj, ref)
-    click.echo(jsdumps(graph) if json else api.write_dag_html(ctx.obj, graph))
+    if output == "json":
+        click.echo(jsdumps(graph))
+    elif output == "html":
+        click.echo(api.write_dag_html(ctx.obj, graph))
+    else:
+        file = os.path.join(ctx.obj.CONFIG_DIR, "dag.html")
+        with open(file, "w") as f:
+            f.write(api.write_dag_html(ctx.obj, graph))
+        click.echo(f"Opening browser: file://{file}")
+        click.launch(f"file://{file}")
 
 
 ###############################################################################
@@ -437,22 +463,24 @@ def api_invoke(ctx, token, json):
 ###############################################################################
 
 
-@cli.group(name="index", no_args_is_help=True, help="Index management commands.")
+@cli.group(name="index", no_args_is_help=True)
 @clickex
 def index_group(_):
-    pass
+    """Index management commands."""
 
 
-@index_group.command(name="list", help="List indexes.")
+@index_group.command(name="list")
 @clickex
 def index_list(ctx):
+    """List indexes."""
     click.echo(jsdumps(api.list_indexes(ctx.obj), ctx.obj))
 
 
 @click.argument("id", shell_complete=complete(api.with_query(api.list_indexes, "[*].id")))
-@index_group.command(name="delete", help="Delete index.")
+@index_group.command(name="delete")
 @clickex
 def index_delete(ctx, id):
+    """Delete index."""
     if api.delete_index(ctx.obj, Ref(f"index/{id}")):
         click.echo(f"Deleted index: {id}")
 
@@ -462,29 +490,32 @@ def index_delete(ctx, id):
 ###############################################################################
 
 
-@cli.group(name="commit", no_args_is_help=True, help="Commit management commands.")
+@cli.group(name="commit", no_args_is_help=True)
 @clickex
 def commit_group(_):
-    pass
+    """Commit management commands."""
 
 
-@commit_group.command(name="list", help="List commits.")
+@commit_group.command(name="list")
 @clickex
 def commit_list(ctx):
+    """List commits."""
     click.echo(jsdumps(api.list_commit(ctx.obj), ctx.obj))
 
 
 @click.option("--graph", is_flag=True, help="Print a graph of all commits.")
-@commit_group.command(name="log", help="Query the commit log.")
+@commit_group.command(name="log")
 @clickex
 def commit_log(ctx, graph):
+    """Query the commit log."""
     return api.commit_log_graph(ctx.obj)
 
 
 @click.argument("commit", shell_complete=complete(api.with_query(api.list_commit, "[*].id")))
-@commit_group.command(name="revert", help="Revert a commit.")
+@commit_group.command(name="revert")
 @clickex
 def commit_revert(ctx, commit):
+    """Revert a commit."""
     return api.revert_commit(ctx.obj, commit)
 
 
@@ -496,7 +527,7 @@ def commit_revert(ctx, commit):
 @cli.group(name="util", no_args_is_help=True)
 @clickex
 def util_group(_):
-    "Various utility commands."
+    """Various utility commands."""
 
 
 @click.argument("file", type=click.Path())
