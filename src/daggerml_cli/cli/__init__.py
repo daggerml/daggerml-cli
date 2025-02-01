@@ -412,12 +412,14 @@ def api_create(ctx, name, message, dump=None):
 
 @click.argument("json")
 @click.argument("token")
-@api_group.command(
-    name="invoke",
-    help=f"Invoke API with token returned by create and JSON command body.\n\nJSON command ops: {api.format_ops()}",
-)
+@api_group.command(name="invoke")
 @clickex
 def api_invoke(ctx, token, json):
+    """Invoke DAG builder API methods.
+    API methods are invoked with the TOKEN returned by the 'dag create' command
+    and JSON consisting of a serialized payload of the form:
+
+        [method, [args...] {kwargs...}]"""
     try:
         click.echo(to_json(api.invoke_api(ctx.obj, from_json(token), from_json(json))))
     except Exception as e:
@@ -478,3 +480,39 @@ def commit_log(ctx, graph):
 @clickex
 def commit_revert(ctx, commit):
     return api.revert_commit(ctx.obj, commit)
+
+
+###############################################################################
+# UTIL ########################################################################
+###############################################################################
+
+
+@cli.group(name="util", no_args_is_help=True)
+@clickex
+def util_group(_):
+    "Various utility commands."
+
+
+@click.argument("file", type=click.Path())
+@click.argument("dir", type=click.Path(exists=True, file_okay=False, dir_okay=True))
+@click.option(
+    "--exclude",
+    help="A glob style wildcard pattern of files to exclude.",
+    type=str,
+    multiple=True,
+)
+@util_group.command(name="tar")
+@clickex
+def util_tar(ctx, dir, file, exclude):
+    """Create a reproducible archive.
+    Given a directory DIR and an output FILE, a tarball is created such that the hash of the tarball
+    depends only on the contents of the files and directories in DIR, ie. the tarball
+    has the same hash regardless of where or when it was created, who created it, or
+    which operating system it was created on.
+
+    The --exclude option can be specified multiple times; it will be passed as command line
+    options to GNU tar.
+
+    Note: You must have GNU tar installed as 'tar' or 'gtar' on your PATH.
+    """
+    api.reproducible_tar(dir, file, exclude)

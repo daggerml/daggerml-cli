@@ -1,5 +1,11 @@
+import logging
 import os
+import re
+import shutil
+import subprocess
 from datetime import datetime, timezone
+
+log = logging.getLogger(__name__)
 
 
 def assoc(xs, k, v):
@@ -14,6 +20,10 @@ def conj(xs, x):
 
 def flatten(nested: list[list]) -> list:
     return [x for xs in nested for x in xs]
+
+
+def some(xs, default=None):
+    return next((x for x in xs if x), default)
 
 
 def asserting(x, message=None):
@@ -91,3 +101,16 @@ def merge_counters(x, *xs):
     for k in set(x.keys()).union(set(y.keys())):
         result[k] = flatten([as_list(x.get(k, 0)), as_list(y.get(k, 0))])
     return merge_counters(result, *rest) if len(rest) else result
+
+
+def detect_executable(name, regex):
+    try:
+        path = shutil.which(name)
+        out = subprocess.run(
+            [path, "--version"],
+            text=True,
+            capture_output=True,
+        ).stdout.split("\n", 1)[0]
+        return path if re.search(regex, out) else None
+    except Exception:
+        pass

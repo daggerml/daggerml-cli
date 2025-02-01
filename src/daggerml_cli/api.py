@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import subprocess
 from contextlib import contextmanager
 from dataclasses import dataclass, is_dataclass
 from pathlib import Path
@@ -27,13 +28,13 @@ from daggerml_cli.repo import (
     unroll_datum,
 )
 from daggerml_cli.topology import topology
-from daggerml_cli.util import asserting, makedirs
+from daggerml_cli.util import asserting, detect_executable, makedirs, some
 
 ###############################################################################
 # HELPERS #####################################################################
 ###############################################################################
 
-logger = logging.getLogger(__name__)
+log = logging.getLogger(__name__)
 
 
 def jsdata(x):
@@ -460,3 +461,38 @@ def commit_log_graph(config):
 
 def revert_commit(config, commit):
     raise NotImplementedError("not implemented")
+
+
+###############################################################################
+# UTIL ########################################################################
+###############################################################################
+
+
+def reproducible_tar(dir, file, excludes):
+    # https://h2.jaguarpaw.co.uk/posts/reproducible-tar/
+    # https://www.gnu.org/software/tar/manual/html_section/Reproducibility.html
+    # https://reproducible-builds.org/docs/archives/
+    tar = some([detect_executable(x, "\\bGNU\\b") for x in ["tar", "gtar"]])
+    assert tar, "GNU tar not found on PATH: tried 'tar' and 'gtar'"
+    proc = subprocess.run(
+        [
+            tar,
+            "--format=posix",
+            "--pax-option=exthdr.name=%d/PaxHeaders/%f,delete=atime,delete=ctime,delete=mtime",
+            "--mtime=1970-01-01 00:00:00Z",
+            "--sort=name",
+            "--numeric-owner",
+            "--owner=0",
+            "--group=0",
+            "--mode=go-rwx,u-rw",
+            *[f"--exclude={x}" for x in (excludes or [])],
+            "-cf",
+            file,
+            dir,
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    err = "" if not proc.stderr else f"\n{proc.stderr}"
+    assert proc.returncode == 0, f"{tar}: exit status: {proc.returncode}{err}"
