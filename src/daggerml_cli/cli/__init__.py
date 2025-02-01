@@ -505,14 +505,14 @@ def util_group(_):
 @clickex
 def util_tar(ctx, dir, file, exclude):
     """Create a reproducible archive.
-    Given a directory DIR and an output FILE, a tarball is created such that the hash of the tarball
-    depends only on the contents of the files and directories in DIR, ie. the tarball
-    has the same hash regardless of where or when it was created, who created it, or
-    which operating system it was created on.
+    Given a directory DIR and an output FILE, a tarball is created such that the
+    hash of the tarball depends only on the contents of the files and directories
+    in DIR, ie. the tarball has the same hash regardless of where or when it was
+    created, who created it, or which operating system it was created on.
 
-    The --exclude option can be specified multiple times; it will be passed as command line
-    options to GNU tar.
+    The --exclude option can be specified multiple times; it will be passed as
+    command line options to GNU tar.
 
     Note: You must have GNU tar installed as 'tar' or 'gtar' on your PATH.
     """
-    api.reproducible_tar(dir, file, exclude)
+    api.reproducible_tar(dir, file, *exclude)

@@ -468,7 +468,7 @@ def revert_commit(config, commit):
 ###############################################################################
 
 
-def reproducible_tar(dir, file, excludes):
+def reproducible_tar(dir, file, *exclude):
     # https://h2.jaguarpaw.co.uk/posts/reproducible-tar/
     # https://www.gnu.org/software/tar/manual/html_section/Reproducibility.html
     # https://reproducible-builds.org/docs/archives/
@@ -485,7 +485,7 @@ def reproducible_tar(dir, file, excludes):
             "--owner=0",
             "--group=0",
             "--mode=go-rwx,u-rw",
-            *[f"--exclude={x}" for x in (excludes or [])],
+            *[f"--exclude={x}" for x in exclude],
             "-cf",
             file,
             dir,
