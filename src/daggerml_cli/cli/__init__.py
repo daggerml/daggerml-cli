@@ -174,7 +174,7 @@ def ref_describe(ctx, type, id):
 def ref_dump(ctx, ref):
     """Dump a ref and all its dependencies to JSON."""
     dump = api.dump_ref(ctx.obj, from_json(ref))
-    click.echo(to_json(dump))
+    click.echo(dump)
 
 
 @ref_group.command(name="load")
@@ -182,7 +182,7 @@ def ref_dump(ctx, ref):
 @clickex
 def ref_load(ctx, json):
     """Load a previously dumped ref into the repo."""
-    ref = api.load_ref(ctx.obj, from_json(json))
+    ref = api.load_ref(ctx.obj, json)
     click.echo(to_json(ref))
 
 
@@ -273,7 +273,7 @@ def config_group(_):
     """Configuration settings."""
 
 
-@click.argument("repo", shell_complete=complete(api.with_query(api.list_repo, "[*].name")))
+@click.argument("repo", shell_complete=complete(api.with_query(api.list_other_repo, "[*].name")))
 @config_group.command(name="repo")
 @clickex
 def config_repo(ctx, repo):
