@@ -144,7 +144,7 @@ def cli(ctx, config_dir, project_dir, repo, branch, user, query, debug):
 @cli.command(name="status")
 @clickex
 def cli_status(ctx):
-    """Current repo, branch, etc."""
+    """Show the current repo, branch, etc."""
     click.echo(jsdumps(api.status(ctx.obj), ctx.obj))
 
 
