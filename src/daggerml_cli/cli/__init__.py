@@ -391,18 +391,24 @@ def dag_graph(ctx, name, json):
 ###############################################################################
 
 
-@cli.group(name="api", no_args_is_help=True, help="DAG builder API commands.")
+@cli.group(name="api", no_args_is_help=True)
 @clickex
 def api_group(_):
-    pass
+    """DAG builder API commands.
+    These commands are normally called only by language client libraries (eg.
+    the 'daggerml' python library)."""
 
 
 @click.argument("message")
 @click.argument("name")
 @click.option("--dump", help="Import DAG from a dump.", type=str)
-@api_group.command(name="create", help="Create a new DAG.")
+@api_group.command(name="create")
 @clickex
 def api_create(ctx, name, message, dump=None):
+    """Create a new DAG.
+    A new DAG named NAME is created with a descriptive commit MESSAGE. A token
+    is printed to stdout which can be used to invoke DAG builder API methods
+    on this DAG. If the --dump option is provided a function DAG is created."""
     try:
         idx = api.begin_dag(ctx.obj, name=name, message=message, dump=dump)
         click.echo(to_json(idx))
