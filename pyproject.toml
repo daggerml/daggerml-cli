@@ -29,6 +29,7 @@ classifiers = [
 dependencies = [
   "boto3",
   "click",
+  "filelock",
   "jmespath",
   "lmdb",
   "msgpack",
@@ -47,6 +48,8 @@ test = [
 
 [project.scripts]
 dml = "daggerml_cli.cli:cli"
+dml-remote-s3-handler = "daggerml_cli.remote_s3_handler:main"
+dml-remote-file-handler = "daggerml_cli.remote_file_handler:main"
 dml-python-fork-adapter = "daggerml_cli.python_fork_adapter:main"
 dml-lambda-adapter = "daggerml_cli.contrib.lambda_adapter:main"
 dml-local-adapter = "daggerml_cli.contrib.local_adapter:main"

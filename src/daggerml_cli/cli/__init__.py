@@ -15,7 +15,7 @@ from daggerml_cli.db import DB_TYPES
 from daggerml_cli.repo import Error, Ref, from_json, to_json
 from daggerml_cli.util import merge_counters, writefile
 
-logger = logging.getLogger(__name__)
+log = logging.getLogger(__name__)
 
 SYSTEM_CONFIG_DIR = str(Path(os.getenv("XDG_CONFIG_HOME", str(Path.home() / ".config"))))
 CONFIG_DIR = str((Path(SYSTEM_CONFIG_DIR) / "dml").absolute())
@@ -127,6 +127,7 @@ def json_spec(ctx, param, value):
         "auto_envvar_prefix": "DML",
         "help_option_names": ["-h", "--help"],
         "show_default": True,
+        "max_content_width": int(os.getenv("MANWIDTH") or 0) or 120,
     },
 )
 @clickex
@@ -202,7 +203,8 @@ def branch_group(ctx):
 @branch_group.command(name="create")
 @clickex
 def branch_create(ctx, name, commit):
-    """Create a new branch."""
+    """Create a new branch.
+    The new branch will be selected as the current branch."""
     api.create_branch(ctx.obj, name, commit)
     click.echo(f"Created branch: {name}")
 
@@ -211,7 +213,8 @@ def branch_create(ctx, name, commit):
 @branch_group.command(name="delete")
 @clickex
 def branch_delete(ctx, name):
-    """Delete a branch."""
+    """Delete a branch.
+    You cannot delete the current branch."""
     api.delete_branch(ctx.obj, name)
     click.echo(f"Deleted branch: {name}")
 
@@ -441,6 +444,83 @@ def remote_group(ctx):
     """Repository tracking commands."""
 
 
+@click.argument("uri")
+@click.argument("name")
+@remote_group.command(name="create")
+@clickex
+def remote_create(ctx, name, uri):
+    """Create a new remote.
+    Adds a remote named NAME for the repository at URI. There must be a protocol
+    handler program named
+
+        \b
+        # eg. dml-remote-s3-handler
+        dml-remote-[SCHEME]-handler
+
+    on your PATH to handle communication with the remote, where [SCHEME] is the
+    URI's scheme. The protocol handler must support two operations: 'get' and
+    'put', passed to the handler as a command line argument, along with the URI:
+
+        \b
+        # download db from remote
+        dml-remote-[SCHEME]-handler get URI
+
+        \b
+        # upload db to remote
+        dml-remote-[SCHEME]-handler put URI
+
+    where 'get' writes its result to stdout and 'put' accepts its input on
+    stdin. If the protocol handler exits with non-zero status the operation
+    fails. Anything written to stderr is passed through to the user.
+    """
+    api.create_remote(ctx.obj, name, uri)
+    click.echo(f"Created remote: {name}")
+
+
+@remote_group.command(name="list")
+@clickex
+def remote_list(ctx):
+    """List remotes."""
+    click.echo(jsdumps(api.list_remote(ctx.obj), ctx.obj))
+
+
+@click.argument("name", shell_complete=complete(api.with_query(api.list_remote, "[*].name")))
+@remote_group.command(name="delete")
+@clickex
+def remote_delete(ctx, name):
+    """Delete a remote."""
+    assert name in api.with_query(api.list_remote, "[*].name")(ctx.obj), f"no such remote: {name}"
+    api.delete_remote(ctx.obj, name)
+    click.echo(f"Deleted remote: {name}")
+
+
+@click.argument("name", shell_complete=complete(api.with_query(api.list_remote, "[*].name")))
+@remote_group.command(name="fetch")
+@clickex
+def remote_fetch(ctx, name):
+    """Download objects and refs from a remote."""
+    assert name in api.with_query(api.list_remote, "[*].name")(ctx.obj), f"no such remote: {name}"
+    click.echo(f"Fetched remote: {name}")
+
+
+@click.argument("name", shell_complete=complete(api.with_query(api.list_remote, "[*].name")))
+@remote_group.command(name="pull")
+@clickex
+def remote_pull(ctx, name):
+    """Fetch and merge refs from a remote."""
+    assert name in api.with_query(api.list_remote, "[*].name")(ctx.obj), f"no such remote: {name}"
+    click.echo(f"Pulled remote: {name}")
+
+
+@click.argument("name", shell_complete=complete(api.with_query(api.list_remote, "[*].name")))
+@remote_group.command(name="push")
+@clickex
+def remote_push(ctx, name):
+    """Upload objects to a remote and update its refs."""
+    assert name in api.with_query(api.list_remote, "[*].name")(ctx.obj), f"no such remote: {name}"
+    click.echo(f"Pushed remote: {name}")
+
+
 ###############################################################################
 # REPO ########################################################################
 ###############################################################################
@@ -474,7 +554,9 @@ def repo_delete(ctx, name):
 @repo_group.command(name="copy")
 @clickex
 def repo_copy(ctx, name):
-    """Copy this repository to NAME."""
+    """Make a copy of the current repository.
+    The copy will be named NAME.
+    """
     api.copy_repo(ctx.obj, name)
     click.echo(f"Copied repository: {ctx.obj.REPO} -> {name}")
 
@@ -495,8 +577,15 @@ def repo_list(ctx):
 @repo_group.command(name="deleted")
 @clickex
 def repo_deleted(ctx, remove=None):
-    """List or remove deleted resources."""
+    """List or remove deleted resources.
+    These are external resources which were deleted by `dml repo gc` and may
+    have associated resources in the real world which may need to be cleaned
+    up.
+
+    The --remove option removes the specified resource from the set of deleted
+    resources. Otherwise, the set of deleted resources is printed to stdout."""
     if remove:
+        assert remove in api.with_query(api.list_deleted, "[*].id")(ctx.obj), f"no such deleted: {remove}"
         api.remove_deleted(ctx.obj, Ref(f"deleted/{remove}"))
         click.echo(f"Removed deleted: {remove}")
     else:

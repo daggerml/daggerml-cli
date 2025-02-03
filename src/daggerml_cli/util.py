@@ -114,3 +114,18 @@ def detect_executable(name, regex):
         return path if re.search(regex, out) else None
     except Exception:
         pass
+
+
+def run(args, input=None, text=True):
+    proc = subprocess.run(
+        args,
+        input=input,
+        capture_output=True,
+        text=text,
+        check=False,
+    )
+    err = "" if not proc.stderr else f"\n{proc.stderr.rstrip()}"
+    if proc.stderr:
+        log.error(proc.stderr.rstrip())
+    assert proc.returncode == 0, f"{args[0]}: exit status: {proc.returncode}{err}"
+    return proc.stdout

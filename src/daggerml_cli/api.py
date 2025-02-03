@@ -1,11 +1,12 @@
 import json
 import logging
 import os
+import shutil
 import subprocess
 from contextlib import contextmanager
 from dataclasses import dataclass, is_dataclass
 from pathlib import Path
-from shutil import rmtree
+from urllib.parse import urlparse
 
 import jmespath
 from asciidag.graph import Graph as AsciiGraph
@@ -28,7 +29,14 @@ from daggerml_cli.repo import (
     unroll_datum,
 )
 from daggerml_cli.topology import topology
-from daggerml_cli.util import asserting, detect_executable, makedirs, some
+from daggerml_cli.util import (
+    asserting,
+    detect_executable,
+    makedirs,
+    readfile,
+    some,
+    writefile,
+)
 
 ###############################################################################
 # HELPERS #####################################################################
@@ -68,6 +76,52 @@ def tx(config, write=False):
 
 
 ###############################################################################
+# REMOTE ######################################################################
+###############################################################################
+
+
+def remote_handler_name(uri):
+    return f"dml-remote-{urlparse(uri).scheme}-handler"
+
+
+def remote_base(config):
+    return os.path.join(config.CONFIG_DIR, "remote")
+
+
+def remote_path(config, name):
+    return os.path.join(remote_base(config), name)
+
+
+def create_remote(config, name, uri):
+    handler = shutil.which(remote_handler_name(uri))
+    path = remote_path(config, name)
+    # assert handler, f"protocol handler not found on PATH: {handler}"
+    assert not os.path.exists(path), f"remote already exists: {name}"
+    makedirs(path)
+    writefile(uri, path, "uri")
+    # writefile(run([handler, "get"], text=False), path)
+
+
+def delete_remote(config, name):
+    shutil.rmtree(remote_path(config, name))
+
+
+def list_remote(config):
+    dir = remote_base(config)
+    if os.path.isdir(dir):
+        xs = sorted(os.listdir(dir))
+        return [
+            {
+                "name": x,
+                "uri": readfile(remote_path(config, x), "uri"),
+                "path": os.path.join(dir, x),
+            }
+            for x in xs
+        ]
+    return []
+
+
+###############################################################################
 # REPO ########################################################################
 ###############################################################################
 
@@ -95,7 +149,7 @@ def create_repo(config, name):
 
 def delete_repo(config, name):
     path = os.path.join(config.REPO_DIR, name)
-    rmtree(path)
+    shutil.rmtree(path)
 
 
 def copy_repo(config, name):

@@ -2,7 +2,6 @@ import json
 import logging
 import os
 import shutil
-import subprocess
 import traceback as tb
 from collections import Counter
 from contextlib import contextmanager
@@ -14,7 +13,7 @@ from uuid import uuid4
 
 from daggerml_cli.db import db_type, dbenv
 from daggerml_cli.pack import packb, register, unpackb
-from daggerml_cli.util import asserting, assoc, conj, makedirs, now
+from daggerml_cli.util import asserting, assoc, conj, makedirs, now, run
 
 DEFAULT_BRANCH = "head/main"
 DATA_TYPE = {}
@@ -37,7 +36,7 @@ BUILTIN_FNS = {
     "build": lambda x, *_: x,
 }
 
-logger = logging.getLogger(__name__)
+log = logging.getLogger(__name__)
 register(set, lambda x, _: sorted(list(x), key=packb), lambda x: [tuple(x)])
 
 
@@ -792,12 +791,7 @@ class Repo:
                 assert cmd, f"no such adapter: {fn.adapter}"
                 args = [cmd, fn.uri, argv_node.id]
                 data = to_json([argv_node.id, self.dump_ref(fndag)])
-                proc = subprocess.run(args, input=data, capture_output=True, text=True, check=False)
-                err = "" if not proc.stderr else f"\n{proc.stderr}"
-                if proc.stderr:
-                    logger.error(proc.stderr.rstrip())
-                assert proc.returncode == 0, f"{cmd}: exit status: {proc.returncode}{err}"
-                self.load_ref(proc.stdout or to_json([]))
+                self.load_ref(run(args, input=data) or to_json([]))
         if fndag().ready:
             node = self.put_node(Fn(fndag, None, argv), index=index, name=name, doc=doc)
             raise_ex(node().error)
