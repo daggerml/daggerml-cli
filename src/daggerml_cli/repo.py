@@ -231,7 +231,7 @@ class Index(Head):
 @repo_type
 @dataclass
 class Commit:
-    parents: list[Ref]  # -> commit
+    parents: set[Ref]  # -> commit
     tree: Ref  # -> tree
     author: str
     committer: str
@@ -373,7 +373,7 @@ class Repo:
         with self.tx(create):
             if not self.get("/init"):
                 commit = Commit(
-                    [],
+                    set(),
                     self(Tree({})),
                     self.user,
                     self.user,
@@ -542,7 +542,7 @@ class Repo:
             x = xs.pop(0)
             if x is not None and x() and x not in result:
                 result.append(x)
-                xs = x().parents + xs
+                xs = list(x().parents) + xs
         return result
 
     def merge_base(self, a, b):
@@ -596,7 +596,7 @@ class Repo:
             return c2
         return self(
             Commit(
-                [c1, c2],
+                {c1, c2},
                 merge_trees(c0().tree, c1().tree, c2().tree),
                 author or self.user,
                 self.user,
@@ -722,7 +722,7 @@ class Repo:
     def delete_dag(self, dag, message):
         ctx = Ctx.from_head(self.head)
         ctx.dags.pop(dag)
-        commit = Commit([ctx.head.commit], self(ctx.tree), self.user, self.user, message)
+        commit = Commit({ctx.head.commit}, self(ctx.tree), self.user, self.user, message)
         commit = self.merge(self.head().commit, self(commit))
         self.set_head(self.head, commit)
 
@@ -734,7 +734,7 @@ class Repo:
         if dag is None:
             dag = self(Dag([], {}, None, None))
         ctx.dags[name] = dag
-        commit = Commit([ctx.head.commit], self(ctx.tree), self.user, self.user, message)
+        commit = Commit({ctx.head.commit}, self(ctx.tree), self.user, self.user, message)
         index = self(Index(self(commit), dag))
         return index
 

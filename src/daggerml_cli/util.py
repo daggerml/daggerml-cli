@@ -124,8 +124,9 @@ def run(args, input=None, text=True):
         text=text,
         check=False,
     )
-    err = "" if not proc.stderr else f"\n{proc.stderr.rstrip()}"
-    if proc.stderr:
-        log.error(proc.stderr.rstrip())
+    stderr = proc.stderr if text else proc.stderr.decode()
+    err = "" if not stderr else f"\n{stderr.rstrip()}"
+    if stderr and proc.returncode == 0:
+        log.error(stderr.rstrip())
     assert proc.returncode == 0, f"{args[0]}: exit status: {proc.returncode}{err}"
     return proc.stdout

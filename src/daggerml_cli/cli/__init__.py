@@ -205,6 +205,7 @@ def branch_group(ctx):
 def branch_create(ctx, name, commit):
     """Create a new branch.
     The new branch will be selected as the current branch."""
+    assert "/" not in name, "branch names may not contain slashes"
     api.create_branch(ctx.obj, name, commit)
     click.echo(f"Created branch: {name}")
 
@@ -438,6 +439,9 @@ def ref_load(ctx, json):
 ###############################################################################
 
 
+remote_names = api.with_query(api.list_remote, "[*].name")
+
+
 @cli.group(name="remote", no_args_is_help=True)
 @clickex
 def remote_group(ctx):
@@ -484,40 +488,53 @@ def remote_list(ctx):
     click.echo(jsdumps(api.list_remote(ctx.obj), ctx.obj))
 
 
-@click.argument("name", shell_complete=complete(api.with_query(api.list_remote, "[*].name")))
+@click.argument("name", shell_complete=complete(remote_names))
 @remote_group.command(name="delete")
 @clickex
 def remote_delete(ctx, name):
     """Delete a remote."""
-    assert name in api.with_query(api.list_remote, "[*].name")(ctx.obj), f"no such remote: {name}"
+    assert name in remote_names(ctx.obj), f"no such remote: {name}"
     api.delete_remote(ctx.obj, name)
     click.echo(f"Deleted remote: {name}")
 
 
-@click.argument("name", shell_complete=complete(api.with_query(api.list_remote, "[*].name")))
+@click.argument("repo")
+@click.argument("name", shell_complete=complete(remote_names))
+@remote_group.command(name="clone")
+@clickex
+def remote_clone(ctx, name, repo):
+    """Create a new repository from a remote."""
+    assert name in remote_names(ctx.obj), f"no such remote: {name}"
+    api.clone_remote(ctx.obj, name, repo)
+    click.echo(f"Cloned remote: {name} -> {repo}")
+
+
+@click.argument("name", shell_complete=complete(remote_names))
 @remote_group.command(name="fetch")
 @clickex
 def remote_fetch(ctx, name):
     """Download objects and refs from a remote."""
-    assert name in api.with_query(api.list_remote, "[*].name")(ctx.obj), f"no such remote: {name}"
+    assert name in remote_names(ctx.obj), f"no such remote: {name}"
+    api.fetch_remote(ctx.obj, name)
     click.echo(f"Fetched remote: {name}")
 
 
-@click.argument("name", shell_complete=complete(api.with_query(api.list_remote, "[*].name")))
+@click.argument("name", shell_complete=complete(remote_names))
 @remote_group.command(name="pull")
 @clickex
 def remote_pull(ctx, name):
     """Fetch and merge refs from a remote."""
-    assert name in api.with_query(api.list_remote, "[*].name")(ctx.obj), f"no such remote: {name}"
+    assert name in remote_names(ctx.obj), f"no such remote: {name}"
+    api.pull_remote(ctx.obj, name)
     click.echo(f"Pulled remote: {name}")
 
 
-@click.argument("name", shell_complete=complete(api.with_query(api.list_remote, "[*].name")))
+@click.argument("name", shell_complete=complete(remote_names))
 @remote_group.command(name="push")
 @clickex
 def remote_push(ctx, name):
     """Upload objects to a remote and update its refs."""
-    assert name in api.with_query(api.list_remote, "[*].name")(ctx.obj), f"no such remote: {name}"
+    assert name in remote_names(ctx.obj), f"no such remote: {name}"
     click.echo(f"Pushed remote: {name}")
 
 

@@ -4,8 +4,9 @@ import os
 import shutil
 import subprocess
 from contextlib import contextmanager
-from dataclasses import dataclass, is_dataclass
+from dataclasses import dataclass, is_dataclass, replace
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from urllib.parse import urlparse
 
 import jmespath
@@ -26,6 +27,8 @@ from daggerml_cli.repo import (
     Ref,
     Repo,
     Resource,
+    from_json,
+    to_json,
     unroll_datum,
 )
 from daggerml_cli.topology import topology
@@ -34,6 +37,7 @@ from daggerml_cli.util import (
     detect_executable,
     makedirs,
     readfile,
+    run,
     some,
     writefile,
 )
@@ -84,6 +88,10 @@ def remote_handler_name(uri):
     return f"dml-remote-{urlparse(uri).scheme}-handler"
 
 
+def remote_handler_path(uri):
+    return shutil.which(remote_handler_name(uri))
+
+
 def remote_base(config):
     return os.path.join(config.CONFIG_DIR, "remote")
 
@@ -92,14 +100,33 @@ def remote_path(config, name):
     return os.path.join(remote_base(config), name)
 
 
+def ref2remote(ref, name):
+    return replace(ref, to=f"{ref.type}/{name}/{ref.id}")
+
+
+def ref2local(ref, name):
+    return replace(ref, to=f"{ref.type}/{ref.id.split('/', 1)[1]}")
+
+
+def download_remote(config, name, config_dir, repo):
+    assert os.path.isdir(remote_path(config, name)), f"no such remote: {name}"
+    uri = readfile(remote_path(config, name), "uri")
+    handler = remote_handler_path(uri)
+    repo_path = makedirs(os.path.join(config_dir, "repo", repo))
+    repo_file = os.path.join(repo_path, "data.mdb")
+    assert not os.path.exists(repo_file), f"repo already exists: {repo}"
+    tag = run([handler, "tag", uri])
+    with open(repo_file, "wb") as f:
+        f.write(run([handler, "get", uri, tag], text=False))
+    return repo_path
+
+
 def create_remote(config, name, uri):
-    handler = shutil.which(remote_handler_name(uri))
+    handler = remote_handler_path(uri)
     path = remote_path(config, name)
-    # assert handler, f"protocol handler not found on PATH: {handler}"
+    assert handler, f"protocol handler not found on PATH: {remote_handler_name(uri)}"
     assert not os.path.exists(path), f"remote already exists: {name}"
-    makedirs(path)
-    writefile(uri, path, "uri")
-    # writefile(run([handler, "get"], text=False), path)
+    writefile(uri, makedirs(path), "uri")
 
 
 def delete_remote(config, name):
@@ -119,6 +146,31 @@ def list_remote(config):
             for x in xs
         ]
     return []
+
+
+def fetch_remote(config, name):
+    with TemporaryDirectory() as config_dir:
+        repo_path = download_remote(config, name, config_dir, "fetch")
+        dumps = []
+        with Repo(repo_path) as db:
+            with db.tx():
+                for ref in db.objects("head"):
+                    dumps.append(from_json(db.dump_ref(ref)))
+        for dump in dumps:
+            dump[-1][0] = ref2remote(dump[-1][0], name)
+        with Repo(config.REPO_PATH) as db:
+            with db.tx(True):
+                for dump in dumps:
+                    db.load_ref(to_json(dump))
+
+
+def pull_remote(config, name):
+    fetch_remote(config, name)
+    merge_branch(config, f"{name}/{config.BRANCH}")
+
+
+def clone_remote(config, name, repo):
+    download_remote(config, name, config.CONFIG_DIR, repo)
 
 
 ###############################################################################
