@@ -790,7 +790,7 @@ class Repo:
             else:
                 cmd = shutil.which(fn.adapter or "")
                 assert cmd, f"no such adapter: {fn.adapter}"
-                args = [cmd, fn.uri, fn.adapter]
+                args = [cmd, fn.uri, fn.adapter, argv_node.id]
                 data = to_json([argv_node.id, self.dump_ref(fndag)])
                 proc = subprocess.run(args, input=data, capture_output=True, text=True, check=False)
                 err = "" if not proc.stderr else f"\n{proc.stderr}"
