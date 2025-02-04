@@ -84,6 +84,9 @@ def tx(config, write=False):
 ###############################################################################
 
 
+DEFAULT_TAG = "00000000000000000000000000000000"
+
+
 def remote_handler_name(uri):
     return f"dml-remote-{urlparse(uri).scheme}-handler"
 
@@ -108,6 +111,15 @@ def ref2local(ref, name):
     return replace(ref, to=f"{ref.type}/{ref.id.split('/', 1)[1]}")
 
 
+def load_fetch(remote_dir, local_dir, name, head=None):
+    with Repo(remote_dir) as rem, Repo(local_dir) as loc:
+        with rem.tx(), loc.tx(True):
+            heads = [head] if head else rem.objects("")
+            for dump in [from_json(rem.dump_ref(x)) for x in heads]:
+                dump[-1][0] = ref2remote(dump[-1][0], name)
+                loc.load_ref(to_json(dump))
+
+
 def download_remote(config, name, config_dir, repo):
     assert os.path.isdir(remote_path(config, name)), f"no such remote: {name}"
     uri = readfile(remote_path(config, name), "uri")
@@ -118,7 +130,7 @@ def download_remote(config, name, config_dir, repo):
     tag = run([handler, "tag", uri])
     with open(repo_file, "wb") as f:
         f.write(run([handler, "get", uri, tag], text=False))
-    return repo_path
+    return repo_path, tag
 
 
 def create_remote(config, name, uri):
@@ -137,31 +149,19 @@ def list_remote(config):
     dir = remote_base(config)
     if os.path.isdir(dir):
         xs = sorted(os.listdir(dir))
-        return [
-            {
-                "name": x,
-                "uri": readfile(remote_path(config, x), "uri"),
-                "path": os.path.join(dir, x),
-            }
-            for x in xs
-        ]
+        uri = lambda x: readfile(remote_path(config, x), "uri")  # noqa: E731
+        return [{"name": x, "uri": uri(x), "path": os.path.join(dir, x)} for x in xs]
     return []
+
+
+def clone_remote(config, name, repo):
+    download_remote(config, name, config.CONFIG_DIR, repo)
 
 
 def fetch_remote(config, name):
     with TemporaryDirectory() as config_dir:
-        repo_path = download_remote(config, name, config_dir, "fetch")
-        dumps = []
-        with Repo(repo_path) as db:
-            with db.tx():
-                for ref in db.objects("head"):
-                    dumps.append(from_json(db.dump_ref(ref)))
-        for dump in dumps:
-            dump[-1][0] = ref2remote(dump[-1][0], name)
-        with Repo(config.REPO_PATH) as db:
-            with db.tx(True):
-                for dump in dumps:
-                    db.load_ref(to_json(dump))
+        (repo_path,) = download_remote(config, name, config_dir)
+        load_fetch(repo_path, config.REPO_PATH, name, config.REPO)
 
 
 def pull_remote(config, name):
@@ -169,8 +169,11 @@ def pull_remote(config, name):
     merge_branch(config, f"{name}/{config.BRANCH}")
 
 
-def clone_remote(config, name, repo):
-    download_remote(config, name, config.CONFIG_DIR, repo)
+def push_remote(config, name):
+    with TemporaryDirectory() as config_dir:
+        (repo_path, tag) = download_remote(config, name, config_dir)
+        load_fetch(config.CONFIG_DIR, repo_path, name, config.REPO)
+        merge_branch(replace(config, _CONFIG_DIR=config_dir))
 
 
 ###############################################################################

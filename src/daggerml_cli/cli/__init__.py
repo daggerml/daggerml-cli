@@ -453,7 +453,7 @@ def remote_group(ctx):
 @remote_group.command(name="create")
 @clickex
 def remote_create(ctx, name, uri):
-    """Create a new remote.
+    """Add a new remote.
     Adds a remote named NAME for the repository at URI. There must be a protocol
     handler program named
 
