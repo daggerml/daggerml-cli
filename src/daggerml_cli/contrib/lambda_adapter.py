@@ -22,7 +22,7 @@ def main():
     payload = json.loads(response["Payload"].read())
     if payload["message"] is not None:
         print(payload["message"], file=sys.stderr)
-    if payload["status"] // 100 != 2:
+    if payload["status"] // 100 in [4, 5]:
         sys.exit(payload["status"])
     if payload["dump"] is not None:
         print(payload["dump"])
