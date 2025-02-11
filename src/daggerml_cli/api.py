@@ -468,31 +468,41 @@ def revert_commit(config, commit):
 ###############################################################################
 
 
-def reproducible_tar(dir, file, *exclude):
+@contextmanager
+def chdir(path):
+    old_path = os.getcwd()
+    try:
+        os.chdir(path)
+        yield
+    finally:
+        os.chdir(old_path)
+
+
+def reproducible_tar(dir_, file, *exclude):
     # https://h2.jaguarpaw.co.uk/posts/reproducible-tar/
     # https://www.gnu.org/software/tar/manual/html_section/Reproducibility.html
     # https://reproducible-builds.org/docs/archives/
     tar = some([detect_executable(x, "\\bGNU\\b") for x in ["tar", "gtar"]])
     assert tar, "GNU tar not found on PATH: tried 'tar' and 'gtar'"
-    proc = subprocess.run(
-        [
-            tar,
-            "--format=posix",
-            "--pax-option=exthdr.name=%d/PaxHeaders/%f,delete=atime,delete=ctime,delete=mtime",
-            "--mtime=1970-01-01 00:00:00Z",
-            "--sort=name",
-            "--numeric-owner",
-            "--owner=0",
-            "--group=0",
-            "--mode=go-rwx,u-rw",
-            *[f"--exclude={x}" for x in exclude],
-            "-cf",
-            file,
-            dir,
-        ],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    with chdir(dir_):
+        proc = subprocess.run(
+            [
+                tar,
+                "--format=posix",
+                "--pax-option=exthdr.name=%d/PaxHeaders/%f,delete=atime,delete=ctime,delete=mtime",
+                "--mtime=1970-01-01 00:00:00Z",
+                "--sort=name",
+                "--numeric-owner",
+                "--owner=0",
+                "--group=0",
+                *[f"--exclude={x}" for x in exclude],
+                "-cvf",
+                file,
+                ".",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
     err = "" if not proc.stderr else f"\n{proc.stderr}"
     assert proc.returncode == 0, f"{tar}: exit status: {proc.returncode}{err}"

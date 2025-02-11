@@ -20,9 +20,9 @@ def main():
         Payload=json.dumps(payload).encode(),
     )
     payload = json.loads(response["Payload"].read())
-    if payload["message"] is not None:
+    if payload.get("message") is not None:
         print(payload["message"], file=sys.stderr)
     if payload["status"] // 100 in [4, 5]:
         sys.exit(payload["status"])
-    if payload["dump"] is not None:
+    if payload.get("dump") is not None:
         print(payload["dump"])
