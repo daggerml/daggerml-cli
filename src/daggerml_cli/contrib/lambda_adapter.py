@@ -22,6 +22,9 @@ def main():
     payload = json.loads(response["Payload"].read())
     if payload.get("message") is not None:
         print(payload["message"], file=sys.stderr)
+    if "status" not in payload:  # something went wrong with the lambda
+        print(payload, file=sys.stderr)
+        sys.exit(1)
     if payload["status"] // 100 in [4, 5]:
         sys.exit(payload["status"])
     if payload.get("dump") is not None:
