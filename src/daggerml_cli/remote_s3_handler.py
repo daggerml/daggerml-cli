@@ -8,7 +8,6 @@ import click
 from botocore.exceptions import ClientError
 
 log = logging.getLogger(__name__)
-DEFAULT_TAG = "00000000000000000000000000000000"
 
 
 def get_path(uri):
@@ -35,7 +34,7 @@ def tag(uri):
     """Get the hash of S3 object.
     The URI is the S3 location."""
     bucket, key = get_path(uri)
-    etag = DEFAULT_TAG
+    etag = ""
     try:
         etag = json.loads(boto3.resource("s3").Bucket(bucket).Object(key).e_tag)
     except ClientError as e:
@@ -56,7 +55,7 @@ def get(uri, tag):
         resp = boto3.client("s3").get_object(
             Bucket=bucket,
             Key=key,
-            **(dict(IfNoneMatch="*") if tag == DEFAULT_TAG else dict(IfMatch=tag)),
+            **(dict(IfNoneMatch="*") if tag == "" else dict(IfMatch=tag)),
         )
         sys.stdout.buffer.write(resp["Body"].read())
     except ClientError as e:
@@ -74,10 +73,11 @@ def put(uri, tag):
     the `tag` command. Contents to write are read from stdin."""
     bucket, key = get_path(uri)
     try:
-        boto3.resource("s3").Bucket(bucket).put_object(
+        boto3.client("s3").put_object(
+            Bucket=bucket,
             Key=key,
-            Body=sys.stdin.buffer,
-            **(dict(IfNoneMatch="*") if tag == DEFAULT_TAG else dict(IfMatch=tag)),
+            Body=sys.stdin.buffer.read(),
+            **(dict(IfNoneMatch="*") if tag == "" else dict(IfMatch=tag)),
         )
     except ClientError as e:
         if code(e) == "PreconditionFailed":

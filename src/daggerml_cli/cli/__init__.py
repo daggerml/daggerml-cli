@@ -535,6 +535,7 @@ def remote_pull(ctx, name):
 def remote_push(ctx, name):
     """Upload objects to a remote and update its refs."""
     assert name in remote_names(ctx.obj), f"no such remote: {name}"
+    api.push_remote(ctx.obj, name)
     click.echo(f"Pushed remote: {name}")
 
 

@@ -383,6 +383,15 @@ class Repo:
                 self("/init", "00000000000000000000000000000000")  # so we all have a common root
             self.checkout(self.head)
 
+    @classmethod
+    def new(cls, config, **kwargs):
+        return cls(
+            config.REPO_PATH,
+            **({"user": config.USER} if config.get("USER") else {}),
+            **({"head": config.BRANCHREF} if config.get("BRANCHREF") else {}),
+            **kwargs,
+        )
+
     def close(self):
         self.env.close()
 

@@ -8,7 +8,6 @@ import click
 from filelock import FileLock
 
 log = logging.getLogger(__name__)
-DEFAULT_TAG = "00000000000000000000000000000000"
 
 
 def get_path(uri):
@@ -20,7 +19,7 @@ def get_path(uri):
 
 
 def check_tag(path, tag=None):
-    etag = DEFAULT_TAG
+    etag = ""
     try:
         with open(path, "rb") as f:
             etag = md5(f.read()).hexdigest()
@@ -45,6 +44,7 @@ def tag(uri):
     """Get the hash of file.
     The URI is the file location."""
     path = get_path(uri)
+    log.error(f"{path=}")
     with FileLock(f"{path}.lock"):
         sys.stdout.write(check_tag(path))
 

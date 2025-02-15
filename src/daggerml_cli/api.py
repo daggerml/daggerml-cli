@@ -74,7 +74,7 @@ def with_attrs(x, **kwargs):
 
 @contextmanager
 def tx(config, write=False):
-    with Repo(config.REPO_PATH, head=config.BRANCHREF, user=config.USER) as db:
+    with Repo.new(config) as db:
         with db.tx(write):
             yield db
 
@@ -82,9 +82,6 @@ def tx(config, write=False):
 ###############################################################################
 # REMOTE ######################################################################
 ###############################################################################
-
-
-DEFAULT_TAG = "00000000000000000000000000000000"
 
 
 def remote_handler_name(uri):
@@ -103,6 +100,10 @@ def remote_path(config, name):
     return os.path.join(remote_base(config), name)
 
 
+def remote_uri(config, name):
+    return readfile(remote_path(config, name), "uri")
+
+
 def ref2remote(ref, name):
     return replace(ref, to=f"{ref.type}/{name}/{ref.id}")
 
@@ -111,26 +112,28 @@ def ref2local(ref, name):
     return replace(ref, to=f"{ref.type}/{ref.id.split('/', 1)[1]}")
 
 
-def load_fetch(remote_dir, local_dir, name, head=None):
-    with Repo(remote_dir) as rem, Repo(local_dir) as loc:
-        with rem.tx(), loc.tx(True):
-            heads = [head] if head else rem.objects("")
-            for dump in [from_json(rem.dump_ref(x)) for x in heads]:
-                dump[-1][0] = ref2remote(dump[-1][0], name)
-                loc.load_ref(to_json(dump))
-
-
-def download_remote(config, name, config_dir, repo):
+def download_remote(config, name, config_dir, repo=None):
     assert os.path.isdir(remote_path(config, name)), f"no such remote: {name}"
-    uri = readfile(remote_path(config, name), "uri")
+    repo = repo or config.REPO
+    uri = remote_uri(config, name)
     handler = remote_handler_path(uri)
     repo_path = makedirs(os.path.join(config_dir, "repo", repo))
     repo_file = os.path.join(repo_path, "data.mdb")
     assert not os.path.exists(repo_file), f"repo already exists: {repo}"
     tag = run([handler, "tag", uri])
-    with open(repo_file, "wb") as f:
-        f.write(run([handler, "get", uri, tag], text=False))
-    return repo_path, tag
+    if tag != "":
+        with open(repo_file, "wb") as f:
+            f.write(run([handler, "get", uri, tag], text=False))
+    return repo_path, repo_file, tag
+
+
+def load_fetch(remote_dir, local_dir, name, head=None):
+    with Repo(remote_dir) as rem, Repo(local_dir) as loc:
+        with rem.tx(), loc.tx(True):
+            heads = [head] if head else rem.objects("head")
+            for dump in [from_json(rem.dump_ref(x)) for x in heads]:
+                dump[-1][0] = ref2remote(dump[-1][0], name)
+                loc.load_ref(to_json(dump))
 
 
 def create_remote(config, name, uri):
@@ -160,8 +163,9 @@ def clone_remote(config, name, repo):
 
 def fetch_remote(config, name):
     with TemporaryDirectory() as config_dir:
-        (repo_path,) = download_remote(config, name, config_dir)
-        load_fetch(repo_path, config.REPO_PATH, name, config.REPO)
+        (repo_path, repo_file, tag) = download_remote(config, name, config_dir)
+        assert tag != "", f"remote has no data: {name}"
+        load_fetch(repo_path, config.REPO_PATH, name)
 
 
 def pull_remote(config, name):
@@ -170,10 +174,23 @@ def pull_remote(config, name):
 
 
 def push_remote(config, name):
+    uri = remote_uri(config, name)
+    handler = remote_handler_path(uri)
     with TemporaryDirectory() as config_dir:
-        (repo_path, tag) = download_remote(config, name, config_dir)
-        load_fetch(config.CONFIG_DIR, repo_path, name, config.REPO)
-        merge_branch(replace(config, _CONFIG_DIR=config_dir))
+        (repo_path, repo_file, tag) = download_remote(config, name, config_dir)
+        tmpcfg = replace(config, _CONFIG_DIR=config_dir)
+        if tag == "":
+            with Repo.new(config) as db:
+                db.copy(repo_path)
+        else:
+            create_remote(tmpcfg, name, f"file://{config.REPO_PATH}")
+            pull_remote(tmpcfg, name)
+        with Repo.new(tmpcfg) as db:
+            with db.tx(True):
+                [db.delete(k) for k in db.objects("head") if k != tmpcfg.BRANCHREF]
+                db.gc()
+        with open(repo_file, "rb") as f:
+            run([handler, "put", uri, tag], input=f.read(), text=False)
 
 
 ###############################################################################
@@ -208,24 +225,24 @@ def delete_repo(config, name):
 
 
 def copy_repo(config, name):
-    with Repo(config.REPO_PATH) as db:
+    with Repo.new(config) as db:
         db.copy(os.path.join(config.REPO_DIR, name))
 
 
 def gc_repo(config):
-    with Repo(config.REPO_PATH) as db:
+    with Repo.new(config) as db:
         with db.tx(True):
             return db.gc()
 
 
 def list_deleted(config):
-    with Repo(config.REPO_PATH) as db:
+    with Repo.new(config) as db:
         with db.tx():
             return [{"id": x, **x().__dict__} for x in db.objects("deleted")]
 
 
 def remove_deleted(config, ref):
-    with Repo(config.REPO_PATH) as db:
+    with Repo.new(config) as db:
         with db.tx(True):
             assert ref.type == "deleted"
             db.delete(ref)
@@ -237,13 +254,13 @@ def remove_deleted(config, ref):
 
 
 def dump_ref(config, ref, recursive=True):
-    with Repo(config.REPO_PATH, head=config.BRANCHREF) as db:
+    with Repo.new(config) as db:
         with db.tx():
             return db.dump_ref(ref, recursive)
 
 
 def load_ref(config, ref):
-    with Repo(config.REPO_PATH, head=config.BRANCHREF) as db:
+    with Repo.new(config) as db:
         with db.tx(True):
             return db.load_ref(ref)
 
@@ -293,7 +310,7 @@ def current_branch(config):
 
 
 def list_branch(config):
-    with Repo(config.REPO_PATH) as db:
+    with Repo.new(config) as db:
         with db.tx():
             return sorted([x for x in db.heads()], key=lambda y: y.id)
 
@@ -303,7 +320,7 @@ def list_other_branch(config):
 
 
 def create_branch(config, name, commit=None):
-    with Repo(config.REPO_PATH, head=config.BRANCHREF) as db:
+    with Repo.new(config) as db:
         with db.tx(True):
             ref = db.head if commit is None else Ref(f"commit/{commit}")
             db.create_branch(Ref(f"head/{name}"), ref)
@@ -311,13 +328,13 @@ def create_branch(config, name, commit=None):
 
 
 def delete_branch(config, name):
-    with Repo(config.REPO_PATH, head=config.BRANCHREF) as db:
+    with Repo.new(config) as db:
         with db.tx(True):
             db.delete_branch(Ref(f"head/{name}"))
 
 
 def merge_branch(config, name):
-    with Repo(config.REPO_PATH, head=config.BRANCHREF) as db:
+    with Repo.new(config) as db:
         with db.tx(True):
             ref = db.merge(db.head().commit, Ref(f"head/{name}")().commit)
             db.checkout(db.set_head(db.head, ref))
@@ -325,7 +342,7 @@ def merge_branch(config, name):
 
 
 def rebase_branch(config, name):
-    with Repo(config.REPO_PATH, head=config.BRANCHREF) as db:
+    with Repo.new(config) as db:
         with db.tx(True):
             ref = db.rebase(Ref(f"head/{name}")().commit, db.head().commit)
             db.checkout(db.set_head(db.head, ref))
@@ -338,7 +355,7 @@ def rebase_branch(config, name):
 
 
 def list_dags(config):
-    with Repo(config.REPO_PATH, head=config.BRANCHREF) as db:
+    with Repo.new(config) as db:
         with db.tx():
             dags = Ctx.from_head(db.head).dags
             result = [with_attrs(v, id=v, name=k) for k, v in dags.items()]
@@ -346,20 +363,20 @@ def list_dags(config):
 
 
 def delete_dag(config, name, message):
-    with Repo(config.REPO_PATH, config.USER, head=config.BRANCHREF) as db:
+    with Repo.new(config) as db:
         with db.tx(True):
             return db.delete_dag(name, message)
 
 
 def begin_dag(config, *, name=None, message, dump=None):
-    with Repo(config.REPO_PATH, config.USER, head=config.BRANCHREF) as db:
+    with Repo.new(config) as db:
         with db.tx(True):
             dag = None if dump is None else db.load_ref(dump)
             return db.begin(name=name, message=message, dag=dag)
 
 
 def describe_dag(config, ref):
-    with Repo(config.REPO_PATH, head=config.BRANCHREF) as db:
+    with Repo.new(config) as db:
         with db.tx():
             assert isinstance(ref(), Dag)
             return topology(ref)
@@ -377,13 +394,13 @@ def write_dag_html(config, graph):
 
 
 def list_indexes(config):
-    with Repo(config.REPO_PATH, head=config.BRANCHREF) as db:
+    with Repo.new(config) as db:
         with db.tx():
             return [with_attrs(x, id=x) for x in db.indexes()]
 
 
 def delete_index(config, index: Ref):
-    with Repo(config.REPO_PATH, head=config.BRANCHREF) as db:
+    with Repo.new(config) as db:
         with db.tx(True):
             assert isinstance(index(), Index), f"no such index: {index.id}"
             db.delete(index)
@@ -509,7 +526,7 @@ def invoke_api(config, token, data):
 
     index = CheckedRef(getattr(token, "to", "NONE"), Index, "invalid token")
     try:
-        with Repo(config.REPO_PATH, config.USER, config.BRANCHREF) as db:
+        with Repo.new(config) as db:
             op, args, kwargs = data
             if op in BUILTIN_FNS:
                 with db.tx(True):
@@ -528,7 +545,7 @@ def invoke_api(config, token, data):
 
 
 def list_commit(config):
-    with Repo(config.REPO_PATH, head=config.BRANCHREF) as db:
+    with Repo.new(config) as db:
         with db.tx():
             result = [with_attrs(x, id=x) for x in db.commits()]
             return sorted(result, key=lambda x: x.modified, reverse=True)
@@ -541,7 +558,7 @@ def commit_log_graph(config):
         parents: list[Ref]
         children: list[Ref]
 
-    with Repo(config.REPO_PATH, config.USER, head=config.BRANCHREF) as db:
+    with Repo.new(config) as db:
         with db.tx():
 
             def walk_names(x, head=None):
