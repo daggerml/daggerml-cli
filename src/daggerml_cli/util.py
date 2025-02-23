@@ -120,7 +120,7 @@ def tree_map(predicate, fn, item):
     if predicate(item):
         item = fn(item)
     if isinstance(item, list):
-        return [tree_map(fn, x) for x in item]
+        return [tree_map(predicate, fn, x) for x in item]
     if isinstance(item, dict):
-        return {k: tree_map(fn, v) for k, v in item.items()}
+        return {k: tree_map(predicate, fn, v) for k, v in item.items()}
     return item
