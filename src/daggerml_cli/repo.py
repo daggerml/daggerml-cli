@@ -796,12 +796,13 @@ class Repo:
                 cmd = shutil.which(fn.adapter or "")
                 assert cmd, f"no such adapter: {fn.adapter}"
                 kwgs = tree_map(lambda x: isinstance(x, Resource), lambda x: x.uri, fn.data)
-                kwgs = {"cache_key": argv_node.id, "kwargs": kwgs, "retry": retry}
-                data = json.dumps(
-                    [
-                        json.dumps(kwgs),
-                        to_json([argv_node.id, self.dump_ref(fndag)]),
-                    ]
+                data = json.dumps(  # this is all passed to the executor
+                    {
+                        "cache_key": argv_node.id,
+                        "kwargs": kwgs,
+                        "retry": retry,
+                        "dump": to_json([argv_node.id, self.dump_ref(fndag)]),
+                    }
                 )
                 args = [cmd, fn.uri]
                 proc = subprocess.run(args, input=data, capture_output=True, text=True, check=False)

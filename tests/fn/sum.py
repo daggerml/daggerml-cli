@@ -9,7 +9,7 @@ try:
     from daggerml_cli.util import readfile, writefile
     from tests.util import SimpleApi
 
-    cache_key, dump = repo.from_json(json.loads(sys.stdin.read())[1])
+    cache_key, dump = repo.from_json(json.loads(sys.stdin.read())["dump"])
     filter_args = os.getenv("DML_FN_FILTER_ARGS", "")
     cache_dir = os.getenv("DML_FN_CACHE_DIR", "")
     cache_file = os.path.join(cache_dir, cache_key) if cache_dir else None
