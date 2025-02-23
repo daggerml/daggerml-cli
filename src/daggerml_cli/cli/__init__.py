@@ -150,7 +150,7 @@ def api_group(_):
     the 'daggerml' python library)."""
 
 
-@click.argument("message")
+@click.argument("message", default="", required=False)
 @click.argument("name")
 @click.option("--dump", help="Import DAG from a dump.", type=click.File("r"))
 @api_group.command(name="create")
@@ -168,7 +168,7 @@ def api_create(ctx, name, message, dump):
         click.echo(to_json(Error(e)))
 
 
-@click.argument("data", type=click.File("r"))
+@click.argument("data", type=click.File("r"), default="-", required=False)
 @click.argument("token")
 @api_group.command(name="invoke")
 @clickex

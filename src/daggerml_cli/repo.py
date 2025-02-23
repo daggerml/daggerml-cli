@@ -795,9 +795,15 @@ class Repo:
             else:
                 cmd = shutil.which(fn.adapter or "")
                 assert cmd, f"no such adapter: {fn.adapter}"
-                kwgs = json.dumps(tree_map(lambda x: isinstance(x, Resource), lambda x: x.uri, fn.data))
-                args = [cmd, fn.uri, kwgs, argv_node.id]
-                data = to_json([argv_node.id, self.dump_ref(fndag)])
+                kwgs = tree_map(lambda x: isinstance(x, Resource), lambda x: x.uri, fn.data)
+                kwgs = {"cache_key": argv_node.id, "kwargs": kwgs, "retry": retry}
+                data = json.dumps(
+                    [
+                        json.dumps(kwgs),
+                        to_json([argv_node.id, self.dump_ref(fndag)]),
+                    ]
+                )
+                args = [cmd, fn.uri]
                 proc = subprocess.run(args, input=data, capture_output=True, text=True, check=False)
                 err = "" if not proc.stderr else f"\n{proc.stderr}"
                 if proc.stderr:
