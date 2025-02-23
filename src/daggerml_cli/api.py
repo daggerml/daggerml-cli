@@ -93,6 +93,12 @@ def create_repo(config, name):
         pass
 
 
+def resize_repo(config, name, newsize):
+    config._REPO = name
+    with open(os.path.join(config.REPO_PATH, "config"), "w") as f:
+        json.dump({"map_size": newsize}, f)
+
+
 def delete_repo(config, name):
     path = os.path.join(config.REPO_DIR, name)
     rmtree(path)

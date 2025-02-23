@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import sys
 from functools import wraps
 from pathlib import Path
 
@@ -151,33 +152,34 @@ def api_group(_):
 
 @click.argument("message")
 @click.argument("name")
-@click.option("--dump", help="Import DAG from a dump.", type=str)
+@click.option("--dump", help="Import DAG from a dump.", type=click.File("r"))
 @api_group.command(name="create")
 @clickex
-def api_create(ctx, name, message, dump=None):
+def api_create(ctx, name, message, dump):
     """Create a new DAG.
     A new DAG named NAME is created with a descriptive commit MESSAGE. A token
     is printed to stdout which can be used to invoke DAG builder API methods
     on this DAG. If the --dump option is provided a function DAG is created."""
     try:
+        dump = dump if dump is None else dump.read()
         idx = api.begin_dag(ctx.obj, name=name, message=message, dump=dump)
         click.echo(to_json(idx))
     except Exception as e:
         click.echo(to_json(Error(e)))
 
 
-@click.argument("json")
+@click.argument("data", type=click.File("r"))
 @click.argument("token")
 @api_group.command(name="invoke")
 @clickex
-def api_invoke(ctx, token, json):
+def api_invoke(ctx, token, data):
     """Invoke DAG builder API methods.
     API methods are invoked with the TOKEN returned by the 'dag create' command
     and JSON consisting of a serialized payload of the form:
 
         [method, [args...] {kwargs...}]"""
     try:
-        click.echo(to_json(api.invoke_api(ctx.obj, from_json(token), from_json(json))))
+        click.echo(to_json(api.invoke_api(ctx.obj, from_json(token), from_json(data.read().strip()))))
     except Exception as e:
         click.echo(to_json(Error(e)))
 
@@ -459,6 +461,16 @@ def repo_create(ctx, name):
     """Create a new repository."""
     api.create_repo(ctx.obj, name)
     click.echo(f"Created repository: {name}")
+
+
+@repo_group.command(name="resize")
+@click.argument("name")
+@click.argument("size", type=int)
+@clickex
+def repo_resize(ctx, name, size):
+    """Resize a repository."""
+    api.resize_repo(ctx.obj, name, size)
+    click.echo(f"Resized repository: {name} to {size / 1024 / 1024} MB")
 
 
 @click.argument("name", shell_complete=complete(api.with_query(api.list_repo, "[*].name")))

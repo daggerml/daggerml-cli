@@ -114,3 +114,13 @@ def detect_executable(name, regex):
         return path if re.search(regex, out) else None
     except Exception:
         pass
+
+
+def tree_map(predicate, fn, item):
+    if predicate(item):
+        item = fn(item)
+    if isinstance(item, list):
+        return [tree_map(fn, x) for x in item]
+    if isinstance(item, dict):
+        return {k: tree_map(fn, v) for k, v in item.items()}
+    return item

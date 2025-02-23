@@ -21,7 +21,7 @@ class Dag:
     def __call__(self, op, *args, **kwargs):
         if op == "commit":
             (idx,) = self._dml.json("index", "list")
-        return self._dml("api", "invoke", self._token, to_json([op, args, kwargs]))
+        return self._dml("api", "invoke", self._token, "-", input=to_json([op, args, kwargs]))
 
     def json(self, op, *args, **kwargs):
         with mock.patch.dict(os.environ, {"DML_OUTPUT", "json"}):
@@ -35,7 +35,7 @@ class Cli:
     _config_dir: str
     _project_dir: str
 
-    def __call__(self, *args):
+    def __call__(self, *args, input=None):
         args = [
             "--project-dir",
             self._project_dir,
@@ -43,7 +43,7 @@ class Cli:
             self._config_dir,
             *args,
         ]
-        return CliRunner().invoke(cli, args, catch_exceptions=False).output.rstrip()
+        return CliRunner().invoke(cli, args, catch_exceptions=False, input=input).output.rstrip()
 
     def json(self, *args):
         return json.loads(self(*args))
@@ -69,8 +69,8 @@ class Cli:
     def config_user(self, name):
         assert self("config", "user", name) == f"Set user: {name}"
 
-    def dag_create(self, name, message):
-        return Dag(self, self("api", "create", name, message))
+    def dag_create(self, name, message, dump=None):
+        return Dag(self, self("api", "create", name, message, input=dump))
 
     def repo(self, expected):
         assert json.loads(self("status"))["repo"] == expected
@@ -196,7 +196,6 @@ class TestCliRepo(TestCase):
             dml.repo_delete("repo0")
             dml.repo_list()
 
-    @pytest.mark.skip("FIXME: CliRunner mixes stderr with stdout for some reason.")
     def test_repo_gc(self):
         with cliTmpDirs() as dml:
             dml.config_user("Testy McTesterstein")
@@ -208,7 +207,15 @@ class TestCliRepo(TestCase):
             d0("commit", result=from_json(d0("put_literal", data=v0)))
             dml.config_branch("main")
             dml.branch_delete("b0")
-            dml.repo_gc(v0.uri)
+            resp = dml("repo", "gc")
+            lines = [[y for y in x.split() if y] for x in resp.split("\n") if x]
+            assert lines.pop(0) == ["object", "deleted", "remaining"]
+            assert all(not x[0].isnumeric() for x in lines)
+            assert all(x[1].isnumeric() for x in lines)
+            assert all(x[2].isnumeric() for x in lines)
+            resp = dml("repo", "gc")
+            lines = [[y for y in x.split() if y] for x in resp.split("\n") if x]
+            assert all(x[1].strip() == "0" for x in lines[1:])
 
     def test_repo_list(self):
         with cliTmpDirs() as dml:

@@ -14,7 +14,7 @@ from uuid import uuid4
 
 from daggerml_cli.db import db_type, dbenv
 from daggerml_cli.pack import packb, register, unpackb
-from daggerml_cli.util import asserting, assoc, conj, makedirs, now
+from daggerml_cli.util import asserting, assoc, conj, makedirs, now, tree_map
 
 DEFAULT_BRANCH = "head/main"
 DATA_TYPE = {}
@@ -368,9 +368,14 @@ class Repo:
         dbfile_exists = os.path.exists(dbfile)
         if create:
             assert not dbfile_exists, f"repo exists: {dbfile}"
+            map_size = 10485760
+            with open(os.path.join(self.path, "config"), "w") as f:
+                json.dump({"map_size": map_size}, f)
         else:
             assert dbfile_exists, f"repo not found: {dbfile}"
-        self.env, self.dbs = dbenv(self.path)
+            with open(os.path.join(self.path, "config")) as f:
+                map_size = json.load(f)["map_size"]
+        self.env, self.dbs = dbenv(self.path, map_size=map_size)
         with self.tx(create):
             if not self.get("/init"):
                 commit = Commit(
@@ -790,7 +795,8 @@ class Repo:
             else:
                 cmd = shutil.which(fn.adapter or "")
                 assert cmd, f"no such adapter: {fn.adapter}"
-                args = [cmd, fn.uri, argv_node.id]
+                kwgs = json.dumps(tree_map(lambda x: isinstance(x, Resource), lambda x: x.uri, fn.data))
+                args = [cmd, fn.uri, kwgs, argv_node.id]
                 data = to_json([argv_node.id, self.dump_ref(fndag)])
                 proc = subprocess.run(args, input=data, capture_output=True, text=True, check=False)
                 err = "" if not proc.stderr else f"\n{proc.stderr}"
