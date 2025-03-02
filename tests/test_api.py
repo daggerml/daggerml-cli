@@ -110,16 +110,17 @@ class TestApiBase(TestCase):
     def test_fn_error(self):
         argv = [SUM, 1, 2, "BOGUS"]
 
-        with env(DML_FN_FILTER_ARGS="True"):
+        with env(DML_FN_FILTER_ARGS="True", DML_NO_CLEAN="1"):
             with SimpleApi.begin() as d0:
                 assert d0.unroll(d0.start_fn(*argv))[1] == 3
 
         with TemporaryDirectory() as config_dir:
-            with self.assertRaises(Error):
-                with SimpleApi.begin(config_dir=config_dir) as d0:
-                    d0.start_fn(*argv)
+            with env(DML_NO_CLEAN="1"):
+                with self.assertRaises(Error):
+                    with SimpleApi.begin(config_dir=config_dir) as d0:
+                        d0.start_fn(*argv)
 
-            with env(DML_FN_FILTER_ARGS="True"):
+            with env(DML_FN_FILTER_ARGS="True", DML_NO_CLEAN="1"):
                 with self.assertRaises(Error):
                     with SimpleApi.begin(config_dir=config_dir) as d0:
                         d0.start_fn(*argv)

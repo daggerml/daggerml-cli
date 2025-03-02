@@ -475,6 +475,8 @@ class Repo:
                 xs += [a for a in x if a not in result]
             elif isinstance(x, dict):
                 xs += [a for a in x.values() if a not in result]
+            elif isinstance(x, Error):
+                pass  # cannot recurse into an error class
             elif is_dataclass(x):
                 xs += [getattr(x, y.name) for y in fields(x)]
         return result
@@ -770,7 +772,7 @@ class Repo:
         return to_json([[x, x()] for x in self.walk_ordered(ref)] if recursive else [[ref.to, ref()]])
 
     def load_ref(self, dump):
-        (*dump,) = (self.put(k, v) for k, v in raise_ex(from_json(dump)))
+        dump = [self.put(k, v) for k, v in raise_ex(from_json(dump))]
         return dump[-1] if len(dump) else None
 
     def start_fn(self, index, *, argv, retry=False, name=None, doc=None):
@@ -788,7 +790,7 @@ class Repo:
                     result = BUILTIN_FNS[uri.path](*data)
                 except Exception as e:
                     error = Error(e)
-                if error is None:
+                else:
                     result = self(Node(Literal(self.put_datum(result))))
                     nodes.append(result)
                 self(fndag, FnDag(nodes, {}, result, error, argv_node))

@@ -78,4 +78,7 @@ class SimpleApi:
         return self
 
     def __exit__(self, *x):
+        if os.getenv("DML_NO_CLEAN") is None:
+            with self.tx(True) as db:
+                db.gc()
         self.cleanup()
