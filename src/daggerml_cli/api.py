@@ -4,7 +4,6 @@ import os
 import subprocess
 from contextlib import contextmanager
 from dataclasses import dataclass, is_dataclass
-from pathlib import Path
 from shutil import rmtree
 
 import jmespath
@@ -234,12 +233,18 @@ def rebase_branch(config, name):
 ###############################################################################
 
 
-def list_dags(config):
+def list_dags(config, *, all=False):
     with Repo(config.REPO_PATH, head=config.BRANCHREF) as db:
         with db.tx():
-            dags = Ctx.from_head(db.head).dags
-            result = [with_attrs(v, id=v, name=k) for k, v in dags.items()]
-            return sorted(result, key=lambda x: x.name)
+            if all:
+                result = []
+                for obj in db.walk(db.head):
+                    if isinstance(obj(), Dag):
+                        result.append(with_attrs(obj, id=obj, name=None))
+            else:
+                dags = Ctx.from_head(db.head).dags
+                result = [with_attrs(v, id=v, name=k) for k, v in dags.items()]
+            return sorted(result, key=lambda x: x.name or "")
 
 
 def delete_dag(config, name, message):
@@ -255,17 +260,25 @@ def begin_dag(config, *, name=None, message, dump=None):
             return db.begin(name=name, message=message, dag=dag)
 
 
+def get_dag(config, name_or_id, db=None):
+    if db is None:
+        with Repo(config.REPO_PATH, head=config.BRANCHREF) as db:
+            with db.tx():
+                return get_dag(None, name_or_id, db=db)
+    ref = Ref(f"dag/{name_or_id}")
+    if ref() is not None:
+        return ref
+    ref = Ref(f"fndag/{name_or_id}")
+    if ref() is not None:
+        return ref
+    return Ctx.from_head(db.head).dags.get(name_or_id)
+
+
 def describe_dag(config, ref):
     with Repo(config.REPO_PATH, head=config.BRANCHREF) as db:
         with db.tx():
             assert isinstance(ref(), Dag)
             return topology(ref)
-
-
-def write_dag_html(config, graph):
-    with open(Path(__file__).parent / "dag-viz.html") as f:
-        html = f.read()
-    return html.replace('"REPLACEMENT_TEXT"', json.dumps(jsdata(graph), indent=2))
 
 
 ###############################################################################
@@ -342,12 +355,14 @@ def op_commit(db, index, result):
 
 
 @invoke_op
-def op_get_dag(db, index, name=None):
+def op_get_dag(db, index, name, recurse=False):
     with db.tx():
         if isinstance(name, str):
-            ref = db.get_dag(name)
+            ref = get_dag(None, name, db=db)
             assert ref, f"no such dag: {name}"
             return ref
+        if recurse:
+            name = name().data.node
         return name().data.dag
 
 
@@ -362,6 +377,11 @@ def op_get_names(db, index, dag: Ref = None):
 def op_get_node(db, index, name, dag: Ref = None):
     with db.tx():
         dag = dag or index().dag
+        nodes = [x for x in dag().nodes if x.id == name]
+        if len(nodes) > 0:
+            return nodes[0]
+        if name not in dag().names:
+            raise KeyError(f"Key {name} not in {sorted(dag().names)}")
         return dag().names[name]
 
 

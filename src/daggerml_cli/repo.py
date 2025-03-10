@@ -803,7 +803,7 @@ class Repo:
                         "cache_key": argv_node.id,
                         "kwargs": kwgs,
                         "retry": retry,
-                        "dump": to_json([argv_node.id, self.dump_ref(fndag)]),
+                        "dump": self.dump_ref(fndag),
                     }
                 )
                 args = [cmd, fn.uri]
