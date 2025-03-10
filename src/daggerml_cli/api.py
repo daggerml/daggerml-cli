@@ -342,12 +342,14 @@ def op_commit(db, index, result):
 
 
 @invoke_op
-def op_get_dag(db, index, name=None):
+def op_get_dag(db, index, name=None, recurse=False):
     with db.tx():
         if isinstance(name, str):
             ref = db.get_dag(name)
             assert ref, f"no such dag: {name}"
             return ref
+        if recurse:
+            name = name().data.node
         return name().data.dag
 
 
@@ -362,6 +364,8 @@ def op_get_names(db, index, dag: Ref = None):
 def op_get_node(db, index, name, dag: Ref = None):
     with db.tx():
         dag = dag or index().dag
+        if name not in dag().names:
+            raise KeyError(f"Key {name} not in {sorted(dag().names)}")
         return dag().names[name]
 
 

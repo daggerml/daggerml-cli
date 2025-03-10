@@ -21,8 +21,9 @@ try:
         with SimpleApi.begin("test", "test", config_dir=cache_dir, dump=dump) as d0:
             _, *args = d0.unroll(d0.get_argv())
             args = filter(lambda x: isinstance(x, int), args) if filter_args else args
+            uuid = d0.put_literal(uuid4().hex, name="uuid")
             try:
-                n0 = d0.put_literal([uuid4().hex, sum(args)])
+                n0 = d0.put_literal([uuid, sum(args)], name="sum")
             except Exception as e:
                 n0 = Error(e)
             result = d0.commit(n0)

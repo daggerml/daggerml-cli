@@ -4,7 +4,7 @@ from unittest import TestCase, mock
 
 from daggerml_cli import api
 from daggerml_cli.config import Config
-from daggerml_cli.repo import Error, Ref, Resource
+from daggerml_cli.repo import Error, FnDag, Node, Ref, Resource
 from daggerml_cli.util import assoc, conj
 from tests.util import SimpleApi
 
@@ -65,6 +65,37 @@ class TestApiBase(TestCase):
                     d0.get_node("BOGUS")
                 assert result().doc == "I called a func!"
             assert d0.unroll(result)[1] == 3
+
+    def test_fn_load_names(self):
+        with TemporaryDirectory() as config_dir:
+            with SimpleApi.begin("d0", config_dir=config_dir) as d0:
+                foo = d0.start_fn(SUM, 1, 2, name="foo")
+                d0.put_literal("x", name="bar")
+                with d0.tx():
+                    assert d0.get_node("foo") == foo
+                    assert isinstance(foo(), Node)
+                    ln = d0.get_dag(foo)
+                    assert isinstance(ln(), FnDag)
+                    uuid = d0.get_node(dag=ln, name="uuid")
+                    nv = d0.unroll(uuid)
+                    assert isinstance(nv, str)
+                d0.commit(foo)
+                assert d0.unroll(foo)[1] == 3
+
+            with SimpleApi.begin("d1", config_dir=config_dir) as d1:
+                d0_node = d1.put_load("d0")
+                d0_dag = d1.get_dag(d0_node)
+                foo_node = d1.get_node("foo", d0_dag)
+                assert d1.unroll(d1.get_node("bar", d0_dag)) == "x"
+                assert d1.unroll(foo_node)[1] == 3
+                nd1 = d1.put_load(d0_dag, foo_node)
+                assert d1.unroll(nd1)[1] == 3
+                with d1.tx():
+                    assert nd1().data.dag == d0_dag
+                nd_foo_dag = d1.get_dag(nd1, recurse=True)
+                nd_foo_node = d1.get_node(dag=nd_foo_dag, name="uuid")
+                nd_foo_uuid = d1.put_load(nd_foo_dag, nd_foo_node)
+                assert d1.unroll(nd_foo_uuid) == d1.unroll(d0_node)[0]
 
     def test_fn2(self):
         with SimpleApi.begin() as d0:
