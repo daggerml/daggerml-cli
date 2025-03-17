@@ -261,12 +261,20 @@ class TestApiBase(TestCase):
                 nodes = [
                     d1.put_literal(SUM),
                     d1.put_load("d0"),
-                    d1.put_literal(23),
+                    d1.put_literal(13),
                 ]
                 result = d1.start_fn(*nodes)
-                assert d1.unroll(result)[1] == 46
+                assert d1.unroll(result)[1] == 36
                 d1.commit(result)
             (ref,) = (x.id.id for x in api.list_dags(d1.ctx) if x.name == "d1")
             desc = api.describe_dag(d1.ctx, Ref(f"dag/{ref}"))
-            assert len(desc["edges"]) == len(nodes) + 1  # +1 because dag->node edge
+            self.assertCountEqual(
+                [x["node_type"] for x in desc["nodes"]],
+                ["literal", "literal", "import", "fn"],
+            )
+            self.assertCountEqual(
+                [x["data_type"] for x in desc["nodes"]],
+                ["resource", "int", "int", "list"],
+            )
+            assert len(desc["edges"]) == len(nodes) + 2  # +1 because dag->node edge
             assert {e["source"] for e in desc["edges"] if e["type"] == "node"} == {x for x in nodes}

@@ -325,10 +325,11 @@ def dag_group(_):
 
 
 @dag_group.command(name="list")
+@click.option("--all", is_flag=True, help="List all dags or only named dags?")
 @clickex
-def dag_list(ctx):
+def dag_list(ctx, all):
     """List DAGs."""
-    click.echo(jsdumps(api.list_dags(ctx.obj), ctx.obj))
+    click.echo(jsdumps(api.list_dags(ctx.obj, all=all), ctx.obj))
 
 
 @click.argument("message", type=str)
@@ -353,8 +354,10 @@ def dag_graph(ctx, name, output):
     to view it. If the --output option is present a text representation of the
     graph is written to stdout (as JSON or HTML, depending on the value specified)
     and no browser is launched."""
-    ref = ([x.id for x in api.list_dags(ctx.obj) if x.name == name] or [None])[0]
-    assert ref, f"no such dag: {name}"
+    ref = api.get_dag(ctx.obj, name)
+    if ref is None:
+        click.echo("no such dag", err=True)
+        raise ValueError(f"no such dag fool: {name}")
     graph = api.describe_dag(ctx.obj, ref)
     if output == "json":
         click.echo(jsdumps(graph))
