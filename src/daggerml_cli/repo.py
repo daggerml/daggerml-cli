@@ -267,6 +267,7 @@ class Dag:
 @dataclass
 class FnDag(Dag):
     argv: Optional[Ref] = None  # -> node(expr)
+    logs: Optional[Ref] = None  # -> Datum
 
 
 @repo_type(db=False)
@@ -812,7 +813,12 @@ class Repo:
                 if proc.stderr:
                     logger.error(proc.stderr.rstrip())
                 assert proc.returncode == 0, f"{cmd}: exit status: {proc.returncode}{err}"
-                self.load_ref(proc.stdout or to_json([]))
+                js = json.loads(proc.stdout or "{}")
+                if "logs" in js:
+                    fndag_ = fndag()
+                    fndag_.logs = self.put_datum(js["logs"])
+                    self(fndag, fndag_)
+                self.load_ref(js.get("dump") or to_json([]))
         if fndag().ready:
             node = self.put_node(Fn(fndag, None, argv), index=index, name=name, doc=doc)
             raise_ex(node().error)

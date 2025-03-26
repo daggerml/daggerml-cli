@@ -37,6 +37,7 @@ def topology(ref):
         {
             "id": ref,
             "argv": dag.argv.id if hasattr(dag, "argv") else None,
+            "logs": getattr(dag, "logs", None),
             "nodes": [make_node(dag.nameof(x), x) for x in dag.nodes],
             "edges": flatten([make_edges(x) for x in dag.nodes]),
             "result": dag.result.id if dag.result is not None else None,

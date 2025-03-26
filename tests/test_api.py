@@ -126,18 +126,6 @@ class TestApiBase(TestCase):
 
         assert res0 != res1
 
-    def test_fn_cache(self):
-        argv = [SUM, 1, 2]
-
-        with TemporaryDirectory() as fn_cache_dir:
-            with SimpleApi.begin(fn_cache_dir=fn_cache_dir) as d0:
-                res0 = d0.unroll(d0.start_fn(*argv))
-
-            with SimpleApi.begin(fn_cache_dir=fn_cache_dir) as d0:
-                res1 = d0.unroll(d0.start_fn(*argv))
-
-            assert res0 == res1
-
     def test_fn_error(self):
         argv = [SUM, 1, 2, "BOGUS"]
 

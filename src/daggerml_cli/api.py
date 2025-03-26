@@ -289,7 +289,17 @@ def describe_dag(config, ref):
 def list_indexes(config):
     with Repo(config.REPO_PATH, head=config.BRANCHREF) as db:
         with db.tx():
-            return [with_attrs(x, id=x) for x in db.indexes()]
+            return [
+                with_attrs(
+                    x,
+                    id=x,
+                    created=x().commit().created,
+                    modified=x().commit().modified,
+                    message=x().commit().message,
+                    author=x().commit().author,
+                )
+                for x in db.indexes()
+            ]
 
 
 def delete_index(config, index: Ref):
