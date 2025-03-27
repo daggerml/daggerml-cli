@@ -814,11 +814,12 @@ class Repo:
                     logger.error(proc.stderr.rstrip())
                 assert proc.returncode == 0, f"{cmd}: exit status: {proc.returncode}{err}"
                 js = json.loads(proc.stdout or "{}")
+                self.load_ref(js.get("dump") or to_json([]))
                 if "logs" in js:
                     fndag_ = fndag()
-                    fndag_.logs = self.put_datum(js["logs"])
+                    logs = tree_map(lambda x: isinstance(x, str), lambda x: Resource(x), js["logs"])
+                    fndag_.logs = self.put_datum(logs)
                     self(fndag, fndag_)
-                self.load_ref(js.get("dump") or to_json([]))
         if fndag().ready:
             node = self.put_node(Fn(fndag, None, argv), index=index, name=name, doc=doc)
             raise_ex(node().error)

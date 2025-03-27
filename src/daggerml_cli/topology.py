@@ -1,5 +1,5 @@
-from daggerml_cli.repo import Fn, Import
-from daggerml_cli.util import assoc, flatten
+from daggerml_cli.repo import Fn, Import, Resource
+from daggerml_cli.util import assoc, flatten, tree_map
 
 
 def make_node(name, ref):
@@ -31,13 +31,23 @@ def filter_edges(topology):
     return assoc(topology, "edges", list(filter(valid, topology["edges"])))
 
 
+def get_logs(dag):
+    logs = getattr(dag, "logs", None)
+    if logs is None:
+        return
+    from daggerml_cli.repo import unroll_datum
+
+    logs = tree_map(lambda x: isinstance(x, Resource), lambda x: x.uri, unroll_datum(logs))
+    return logs
+
+
 def topology(ref):
     dag = ref()
     return filter_edges(
         {
             "id": ref,
             "argv": dag.argv.id if hasattr(dag, "argv") else None,
-            "logs": getattr(dag, "logs", None),
+            "logs": get_logs(dag),
             "nodes": [make_node(dag.nameof(x), x) for x in dag.nodes],
             "edges": flatten([make_edges(x) for x in dag.nodes]),
             "result": dag.result.id if dag.result is not None else None,
