@@ -1,3 +1,4 @@
+import json
 import os
 from tempfile import TemporaryDirectory
 from unittest import TestCase, mock
@@ -125,6 +126,27 @@ class TestApiBase(TestCase):
             res1 = d0.unroll(d0.start_fn(*argv))
 
         assert res0 != res1
+
+    def test_serde(self):
+        data = {"x": Resource("u", adapter="bar")}
+
+        def ser(x):
+            if isinstance(x, Resource):
+                return {
+                    "__type__": "resource",
+                    "uri": x.uri,
+                    "data": x.data,
+                    "adapter": x.adapter,
+                }
+
+        def de(x):
+            if isinstance(x, dict) and x.get("__type__") == "resource":
+                return Resource(x["uri"], x["data"], x["adapter"])
+            return x
+
+        js = json.dumps(data, default=ser)
+        d2 = json.loads(js, object_hook=de)
+        assert data == d2
 
     def test_fn_logs(self):
         argv = [SUM, 1, 2]

@@ -98,6 +98,22 @@ def unroll_datum(value):
     return get(value)
 
 
+def serialize_resource(x):
+    if isinstance(x, Resource):
+        return {
+            "__type__": "resource",
+            "uri": x.uri,
+            "data": x.data,
+            "adapter": x.adapter,
+        }
+
+
+def deserialize_resource(x):
+    if isinstance(x, dict) and x.get("__type__") == "resource":
+        return Resource(x["uri"], x["data"], x["adapter"])
+    return x
+
+
 def raise_ex(x):
     if isinstance(x, Exception):
         raise x
@@ -798,14 +814,14 @@ class Repo:
             else:
                 cmd = shutil.which(fn.adapter or "")
                 assert cmd, f"no such adapter: {fn.adapter}"
-                kwgs = tree_map(lambda x: isinstance(x, Resource), lambda x: x.uri, fn.data)
                 data = json.dumps(  # this is all passed to the executor
                     {
                         "cache_key": argv_node.id,
-                        "kwargs": kwgs,
+                        "kwargs": fn.data,
                         "retry": retry,
                         "dump": self.dump_ref(fndag),
-                    }
+                    },
+                    default=serialize_resource,
                 )
                 args = [cmd, fn.uri]
                 proc = subprocess.run(args, input=data, capture_output=True, text=True, check=False)
