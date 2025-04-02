@@ -5,7 +5,15 @@ from unittest import TestCase, mock
 
 from daggerml_cli import api
 from daggerml_cli.config import Config
-from daggerml_cli.repo import Error, FnDag, Node, Ref, Resource
+from daggerml_cli.repo import (
+    Error,
+    FnDag,
+    Node,
+    Ref,
+    Resource,
+    deserialize_resource,
+    serialize_resource,
+)
 from daggerml_cli.util import assoc, conj
 from tests.util import SimpleApi
 
@@ -129,23 +137,8 @@ class TestApiBase(TestCase):
 
     def test_serde(self):
         data = {"x": Resource("u", adapter="bar")}
-
-        def ser(x):
-            if isinstance(x, Resource):
-                return {
-                    "__type__": "resource",
-                    "uri": x.uri,
-                    "data": x.data,
-                    "adapter": x.adapter,
-                }
-
-        def de(x):
-            if isinstance(x, dict) and x.get("__type__") == "resource":
-                return Resource(x["uri"], x["data"], x["adapter"])
-            return x
-
-        js = json.dumps(data, default=ser)
-        d2 = json.loads(js, object_hook=de)
+        js = json.dumps(data, default=serialize_resource)
+        d2 = json.loads(js, object_hook=deserialize_resource)
         assert data == d2
 
     def test_fn_logs(self):
