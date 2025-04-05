@@ -205,8 +205,9 @@ class TestApiBase(TestCase):
             def check_list_get(n, v):
                 for i in range(len(v)):
                     assert d0.unroll(d0.get(n, d0.put_literal(i))) == v[i]
-                with self.assertRaises(Error):
-                    d0.unroll(d0.get(n, d0.put_literal(len(v))))
+                len_v = d0.put_literal(len(v))
+                with self.assertRaisesRegex(Error, "list index out of range") as e:
+                    d0.get(n, len_v)
 
             def check_slice(n, v, *k):
                 assert d0.unroll(d0.get(n, d0.put_literal(list(k)))) == v[slice(*k)]
