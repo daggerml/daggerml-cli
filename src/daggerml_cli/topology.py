@@ -4,12 +4,14 @@ from daggerml_cli.util import assoc, flatten, tree_map
 
 def make_node(name, ref):
     node = ref()
+    val = node.value
+    data_type = type(node.error if val is None else val().value)
     return {
         "id": ref,
         "name": name,
         "doc": node.doc,
         "node_type": type(node.data).__name__.lower(),
-        "data_type": type(node.data.value().value).__name__.lower(),
+        "data_type": data_type.__name__.lower(),
     }
 
 

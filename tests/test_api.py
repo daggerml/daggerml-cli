@@ -50,6 +50,7 @@ class TestApiBase(TestCase):
                     assert d0.get_node("n0") == n0
                     assert n0().doc == "This is my data."
                 d0.commit(n0)
+                d0.test_close(self)
             with SimpleApi.begin("d1", config_dir=config_dir) as d1:
                 n0 = d1.put_load("d0", name="n0", doc="From dag d0.")
                 with d0.tx():
@@ -58,12 +59,14 @@ class TestApiBase(TestCase):
                 n1 = d1.put_literal([n0, n0, 2])
                 assert d1.unroll(n1) == [data, data, 2]
                 d1.commit(n1)
+                d1.test_close(self)
 
     def test_name(self):
         with SimpleApi.begin() as d0:
             n0 = d0.put_literal(42)
             d0.set_node("n0", n0)
             assert d0.get_node("n0") == n0
+            d0.test_close(self)
 
     def test_fn(self):
         with SimpleApi.begin() as d0:
@@ -74,6 +77,7 @@ class TestApiBase(TestCase):
                     d0.get_node("BOGUS")
                 assert result().doc == "I called a func!"
             assert d0.unroll(result)[1] == 3
+            d0.test_close(self)
 
     def test_fn_load_names(self):
         with TemporaryDirectory() as config_dir:
@@ -90,6 +94,7 @@ class TestApiBase(TestCase):
                     assert isinstance(nv, str)
                 d0.commit(foo)
                 assert d0.unroll(foo)[1] == 3
+                d0.test_close(self)
 
             with SimpleApi.begin("d1", config_dir=config_dir) as d1:
                 d0_node = d1.put_load("d0")
@@ -105,16 +110,19 @@ class TestApiBase(TestCase):
                 nd_foo_node = d1.get_node(dag=nd_foo_dag, name="uuid")
                 nd_foo_uuid = d1.put_load(nd_foo_dag, nd_foo_node)
                 assert d1.unroll(nd_foo_uuid) == d1.unroll(d0_node)[0]
+                d0.test_close(self)
 
     def test_fn2(self):
         with SimpleApi.begin() as d0:
-            result = d0.start_fn(SUM, 1, 2, name="result", doc="I called a func!")
+            result = d0.start_fn(SUM, 1, 2, name="my-fn", doc="I called a func!")
             with d0.tx():
-                assert d0.get_node("result") == result
+                assert d0.get_node("my-fn") == result
                 with self.assertRaises(Error):
                     d0.get_node("BOGUS")
                 assert result().doc == "I called a func!"
             assert d0.unroll(result)[1] == 3
+            d0.commit(result)
+            d0.test_close(self)
 
     def test_repo_cache(self):
         argv = [SUM, 1, 2]
@@ -123,15 +131,18 @@ class TestApiBase(TestCase):
             res1 = d0.unroll(d0.start_fn(*argv))
             assert res0 == res1
             assert res0[1] == 3
+            d0.test_close(self)
 
     def test_fn_nocache(self):
         argv = [SUM, 1, 2]
 
         with SimpleApi.begin() as d0:
             res0 = d0.unroll(d0.start_fn(*argv))
+            d0.test_close(self)
 
         with SimpleApi.begin() as d0:
             res1 = d0.unroll(d0.start_fn(*argv))
+            d0.test_close(self)
 
         assert res0 != res1
 
@@ -149,6 +160,7 @@ class TestApiBase(TestCase):
             with d0.tx():
                 res = d0.get_dag(res)
             desc = api.describe_dag(d0.ctx, res)
+            d0.test_close(self)
         assert desc["logs"] == {"foo": "bar"}
 
     def test_fn_error(self):
@@ -265,11 +277,15 @@ class TestApiBase(TestCase):
                 1,
                 {"x": 42},
             ]
+            literal = d0.put_literal(42)
+            d0.commit(literal)
+            d0.test_close(self)
 
     def test_describe_dag(self):
         with TemporaryDirectory() as config_dir:
             with SimpleApi.begin("d0", config_dir=config_dir) as d0:
                 d0.commit(d0.put_literal(23))
+                d0.test_close(self)
             with SimpleApi.begin("d1", config_dir=config_dir) as d1:
                 nodes = [
                     d1.put_literal(SUM),
@@ -279,7 +295,8 @@ class TestApiBase(TestCase):
                 result = d1.start_fn(*nodes)
                 assert d1.unroll(result)[1] == 36
                 d1.commit(result)
-            (ref,) = (x.id.id for x in api.list_dags(d1.ctx) if x.name == "d1")
+                d1.test_close(self)
+            (ref,) = (x.id for x in api.list_dags(d1.ctx) if x.name == "d1")
             desc = api.describe_dag(d1.ctx, Ref(f"dag/{ref}"))
             self.assertCountEqual(
                 [x["node_type"] for x in desc["nodes"]],
@@ -291,3 +308,29 @@ class TestApiBase(TestCase):
             )
             assert len(desc["edges"]) == len(nodes) + 2  # +1 because dag->node edge
             assert {e["source"] for e in desc["edges"] if e["type"] == "node"} == {x for x in nodes}
+
+    def test_describe_dag_w_errs(self):
+        with SimpleApi.begin("d0") as d0:
+            nodes = [
+                d0.put_literal(SUM),
+                d0.put_literal(1),
+                d0.put_literal("BOGUS"),
+            ]
+            with self.assertRaises(Error):
+                d0.start_fn(*nodes, name="bogus-fn")
+            d0.commit(d0.put_literal(None))
+            descs = d0.test_close(self)
+        print(list(descs[0].keys()))
+        (desc,) = [x for x in descs if x["argv"] is None]
+        self.assertCountEqual(
+            [x["name"] for x in desc["nodes"] if x["name"] is not None],
+            ["bogus-fn"],
+        )
+        self.assertCountEqual(
+            [x["node_type"] for x in desc["nodes"]],
+            ["literal", "literal", "literal", "literal", "fn"],
+        )
+        self.assertCountEqual(
+            [x["data_type"] for x in desc["nodes"]],
+            ["resource", "int", "str", "error", "nonetype"],
+        )

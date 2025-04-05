@@ -225,3 +225,17 @@ class TestCliRepo(TestCase):
             dml.repo_list("repo0")
             dml.repo_create("repo1")
             dml.repo_list("repo0", "repo1")
+
+
+class TestCliDag(TestCase):
+    def test_describe_dag(self):
+        with cliTmpDirs() as dml:
+            dml.config_user("Testy McTesterstein")
+            dml.repo_create("repo0")
+            dml.config_repo("repo0")
+            d0 = dml.dag_create("d0", "dag d0")
+            v0 = Resource("a:b/asdf:e")
+            d0("commit", result=from_json(d0("put_literal", data=v0, name="qwer")))
+            desc = dml.json("dag", "describe", "d0")
+            assert len(desc["nodes"]) == 1
+            assert desc["nodes"][0]["name"] == "qwer"

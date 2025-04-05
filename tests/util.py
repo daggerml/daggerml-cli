@@ -23,6 +23,7 @@ class SimpleApi:
     token: Ref
     ctx: Config
     tmpdirs: list = field(default_factory=list)
+    no_desc: bool = field(default_factory=lambda: "DML_NO_DESC" not in os.environ)
 
     def __getattr__(self, name):
         def invoke(*args, **kwargs):
@@ -77,8 +78,22 @@ class SimpleApi:
     def __enter__(self):
         return self
 
+    def test_close(self, test_case):
+        from unittest import TestCase
+
+        assert isinstance(test_case, TestCase)
+        descs = []
+        for dag in api.list_dags(self.ctx, all=True):
+            test_case.assertIsInstance(dag, Ref)
+            desc = api.describe_dag(self.ctx, dag)
+            descs.append(desc)
+            test_case.assertCountEqual(desc.keys(), ["id", "edges", "nodes", "argv", "logs", "result", "error"])
+            if dag.name is not None:
+                assert api.delete_dag(self.ctx, dag.name, "deleting...")
+        return descs
+
     def __exit__(self, *x):
-        if os.getenv("DML_NO_CLEAN") is None:
+        if "DML_NO_CLEAN" not in os.environ:
             with self.tx(True) as db:
                 db.gc()
         self.cleanup()

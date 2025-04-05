@@ -311,6 +311,8 @@ class Import:
     @property
     def value(self):
         ref = self.node or self.dag().result
+        if ref is None:
+            return
         return ref().value
 
     @property

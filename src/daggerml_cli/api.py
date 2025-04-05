@@ -3,7 +3,8 @@ import logging
 import os
 import subprocess
 from contextlib import contextmanager
-from dataclasses import dataclass, is_dataclass
+from copy import copy
+from dataclasses import dataclass, fields, is_dataclass
 from shutil import rmtree
 
 import jmespath
@@ -53,10 +54,13 @@ def with_query(f, query):
 
 
 def with_attrs(x, **kwargs):
-    y = x()
+    x = copy(x)
     for k, v in kwargs.items():
-        setattr(y, k, v)
-    return y
+        object.__setattr__(x, k, v)
+    y = x()
+    for field in fields(y):
+        object.__setattr__(x, field.name, getattr(y, field.name))
+    return x
 
 
 @contextmanager
@@ -240,10 +244,10 @@ def list_dags(config, *, all=False):
                 result = []
                 for obj in db.walk(db.head):
                     if isinstance(obj(), Dag):
-                        result.append(with_attrs(obj, id=obj, name=None))
+                        result.append(with_attrs(obj, name=None))
             else:
                 dags = Ctx.from_head(db.head).dags
-                result = [with_attrs(v, id=v, name=k) for k, v in dags.items()]
+                result = [with_attrs(v, name=k) for k, v in dags.items()]
             return sorted(result, key=lambda x: x.name or "")
 
 
@@ -292,7 +296,6 @@ def list_indexes(config):
             return [
                 with_attrs(
                     x,
-                    id=x,
                     created=x().commit().created,
                     modified=x().commit().modified,
                     message=x().commit().message,
@@ -387,7 +390,7 @@ def op_get_names(db, index, dag: Ref = None):
 def op_get_node(db, index, name, dag: Ref = None):
     with db.tx():
         dag = dag or index().dag
-        nodes = [x for x in dag().nodes if x.id == name]
+        nodes = [x for x in dag().nodes if x.to == name]
         if len(nodes) > 0:
             return nodes[0]
         if name not in dag().names:
@@ -434,7 +437,8 @@ def invoke_api(config, token, data):
 
         return inner
 
-    index = CheckedRef(getattr(token, "to", "NONE"), Index, "invalid token")
+    tok_to = getattr(token, "to", "NONE")
+    index = CheckedRef(tok_to, Index, f"invalid token: {tok_to}")
     try:
         with Repo(config.REPO_PATH, config.USER, config.BRANCHREF) as db:
             op, args, kwargs = data
@@ -457,7 +461,7 @@ def invoke_api(config, token, data):
 def list_commit(config):
     with Repo(config.REPO_PATH, head=config.BRANCHREF) as db:
         with db.tx():
-            result = [with_attrs(x, id=x) for x in db.commits()]
+            result = [with_attrs(x) for x in db.commits()]
             return sorted(result, key=lambda x: x.modified, reverse=True)
 
 
@@ -473,7 +477,7 @@ def commit_log_graph(config):
 
             def walk_names(x, head=None):
                 if x and x[0]:
-                    k = names[x[0]] if x[0] in names else x[0].id
+                    k = names[x[0]] if x[0] in names else x[0].to
                     tag1 = " HEAD" if head and head.to == db.head.to else ""
                     tag2 = f" {head.id}" if head else ""
                     names[x[0]] = f"{k}{tag1}{tag2}"
