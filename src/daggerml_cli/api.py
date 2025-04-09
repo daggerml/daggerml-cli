@@ -38,12 +38,15 @@ log = logging.getLogger(__name__)
 
 
 def jsdata(x):
+    if isinstance(x, Ref):
+        _data = getattr(x, "_data", None)
+        if _data is None:
+            return x.id
+        x = {"id": x.id, **{k: getattr(x, k) for k in _data}}
     if isinstance(x, (tuple, list, set)):
         return [jsdata(y) for y in x]
     if isinstance(x, dict):
         return {k: jsdata(v) for k, v in x.items()}
-    if isinstance(x, Ref):
-        return x.id
     if is_dataclass(x):
         return jsdata(x.__dict__)
     return x
@@ -55,11 +58,11 @@ def with_query(f, query):
 
 def with_attrs(x, **kwargs):
     x = copy(x)
+    y = x()
+    kwargs.update({field.name: getattr(y, field.name) for field in fields(y)})
     for k, v in kwargs.items():
         object.__setattr__(x, k, v)
-    y = x()
-    for field in fields(y):
-        object.__setattr__(x, field.name, getattr(y, field.name))
+    object.__setattr__(x, "_data", sorted(kwargs.keys()))
     return x
 
 
