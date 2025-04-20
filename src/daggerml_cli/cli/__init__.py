@@ -40,8 +40,8 @@ BASE_CONFIG = Config(
 )
 
 
-def jsdumps(x, config=None, **kw):
-    result = api.jsdata(x)
+def jsdumps(x, config=None, full_id=True, **kw):
+    result = api.jsdata(x, full_id=full_id)
     if config is not None and config.QUERY is not None:
         result = jmespath.search(config.QUERY, result)
     return json.dumps(result, indent=2, **kw)
@@ -222,7 +222,7 @@ def branch_delete(ctx, name):
 @clickex
 def branch_list(ctx):
     """List branches."""
-    click.echo(jsdumps(api.list_branch(ctx.obj), ctx.obj))
+    click.echo(jsdumps(api.list_branch(ctx.obj), ctx.obj, full_id=False))
 
 
 @click.argument("branch", shell_complete=complete(api.list_other_branch))
@@ -401,7 +401,7 @@ def ref_group(_):
 @clickex
 def ref_describe(ctx, type, id):
     """Get the properties of a ref as JSON."""
-    click.echo(jsdumps(from_json(api.dump_ref(ctx.obj, Ref(f"{type}/{id}"), False))[0][1]))
+    click.echo(jsdumps(from_json(api.dump_ref(ctx.obj, Ref(f"{type}/{id}"), recursive=False))[0][1]))
 
 
 @click.argument("ref", type=str)

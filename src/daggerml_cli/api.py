@@ -37,18 +37,19 @@ from daggerml_cli.util import asserting, detect_executable, makedirs, some
 log = logging.getLogger(__name__)
 
 
-def jsdata(x):
+def jsdata(x, full_id=True):
     if isinstance(x, Ref):
         _data = getattr(x, "_data", None)
+        id = x.to if full_id else x.id
         if _data is None:
-            return x.id
-        x = {"id": x.id, **{k: getattr(x, k) for k in _data}}
+            return id
+        x = {"id": id, **{k: getattr(x, k) for k in _data}}
     if isinstance(x, (tuple, list, set)):
-        return [jsdata(y) for y in x]
+        return [jsdata(y, full_id=full_id) for y in x]
     if isinstance(x, dict):
-        return {k: jsdata(v) for k, v in x.items()}
+        return {k: jsdata(v, full_id=full_id) for k, v in x.items()}
     if is_dataclass(x):
-        return jsdata(x.__dict__)
+        return jsdata(x.__dict__, full_id=full_id)
     return x
 
 
@@ -178,7 +179,7 @@ def config_repo(config, name):
 
 
 def config_branch(config, name):
-    assert name in jsdata(list_branch(config)), f"no such branch: {name}"
+    assert f"head/{name}" in jsdata(list_branch(config)), f"no such branch: {name}"
     config.BRANCH = name
 
 
@@ -243,15 +244,17 @@ def rebase_branch(config, name):
 def list_dags(config, *, all=False):
     with Repo(config.REPO_PATH, head=config.BRANCHREF) as db:
         with db.tx():
+            dags = Ctx.from_head(db.head).dags
+            result = [with_attrs(v, name=k) for k, v in dags.items()]
             if all:
-                result = []
+                dag_ids = [d.to for d in dags.values()]
                 for obj in db.walk(db.head):
-                    if isinstance(obj(), Dag):
+                    if not isinstance(obj, Ref):
+                        raise RuntimeError("ahhhhhh %r" % obj)
+                    if isinstance(obj(), Dag) and obj.to not in dag_ids:
                         result.append(with_attrs(obj, name=None))
-            else:
-                dags = Ctx.from_head(db.head).dags
-                result = [with_attrs(v, name=k) for k, v in dags.items()]
-            return sorted(result, key=lambda x: x.name or "")
+            # return sorted(result, key=lambda x: x.name or "")
+            return result
 
 
 def delete_dag(config, name, message):
@@ -272,12 +275,10 @@ def get_dag(config, name_or_id, db=None):
         with Repo(config.REPO_PATH, head=config.BRANCHREF) as db:
             with db.tx():
                 return get_dag(None, name_or_id, db=db)
-    ref = Ref(f"dag/{name_or_id}")
-    if ref() is not None:
-        return ref
-    ref = Ref(f"fndag/{name_or_id}")
-    if ref() is not None:
-        return ref
+    if len([x for x in list(name_or_id) if x == "/"]) == 1:
+        ref = Ref(name_or_id)
+        if ref() is not None:
+            return ref
     return Ctx.from_head(db.head).dags.get(name_or_id)
 
 
@@ -341,6 +342,7 @@ def op_start_fn(db, index, argv, retry=False, name=None, doc=None):
 
 @invoke_op
 def op_put_literal(db, index, data, name=None, doc=None):
+    # TODO: refactor so that Resource.data -> Ref(datum)
     with db.tx(True):
         if isinstance(data, Ref) and isinstance(data(), Node):
             return op_set_node(db, index, name, data) if name else data

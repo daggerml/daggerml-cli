@@ -1,16 +1,19 @@
 import json
 import os
+import sys
 from contextlib import contextmanager
 from dataclasses import dataclass
 from tempfile import TemporaryDirectory
 from typing import Any
-from unittest import TestCase, mock
+from unittest import TestCase
 
 import pytest
 from click.testing import CliRunner
 
 from daggerml_cli.cli import cli, from_json, jsdumps, to_json
 from daggerml_cli.repo import Resource
+
+SUM = Resource("./tests/fn/sum.py", adapter="dml-python-fork-adapter")
 
 
 @dataclass
@@ -19,13 +22,10 @@ class Dag:
     _token: str
 
     def __call__(self, op, *args, **kwargs):
-        if op == "commit":
-            (idx,) = self._dml.json("index", "list")
         return self._dml("api", "invoke", self._token, input=to_json([op, args, kwargs]))
 
     def json(self, op, *args, **kwargs):
-        with mock.patch.dict(os.environ, {"DML_OUTPUT", "json"}):
-            return self(op, *args, **kwargs)
+        return self(op, *args, **kwargs)
 
 
 @dataclass
@@ -43,7 +43,9 @@ class Cli:
             self._config_dir,
             *args,
         ]
-        return CliRunner().invoke(cli, args, catch_exceptions=False, input=input).output.rstrip()
+        resp = CliRunner(mix_stderr=False).invoke(cli, args, catch_exceptions=False, input=input)
+        print(resp.stderr, file=sys.stderr)
+        return resp.output.rstrip()
 
     def json(self, *args):
         return json.loads(self(*args))
@@ -97,7 +99,9 @@ class Cli:
 def cliTmpDirs():
     with TemporaryDirectory(prefix="dml-test-") as config_dir:
         with TemporaryDirectory(prefix="dml-test-") as project_dir:
-            yield Cli(config_dir, project_dir)
+            with TemporaryDirectory(prefix="dml-test-") as fn_cache_dir:
+                os.environ["DML_FN_CACHE_DIR"] = fn_cache_dir
+                yield Cli(config_dir, project_dir)
 
 
 class TestCliBranch(TestCase):
@@ -156,6 +160,56 @@ class TestCliCommit(TestCase):
             dml.config_repo("repo0")
             commits = json.loads(dml("commit", "list"))
             assert len(commits) == 1
+
+
+class TestCliDag(TestCase):
+    def test_dag_describe(self):
+        with cliTmpDirs() as dml:
+            dml.config_user("Testy McTesterstein")
+            dml.repo_create("repo0")
+            dml.config_repo("repo0")
+            d0 = dml.dag_create("d0", "dag d0")
+            v0 = Resource("a:b/asdf:e")
+            d0("commit", result=from_json(d0("put_literal", data=v0, name="qwer")))
+            desc = dml.json("dag", "describe", "d0")
+            assert len(desc["nodes"]) == 1
+            assert desc["nodes"][0]["name"] == "qwer"
+            desc2 = dml.json("dag", "describe", desc["id"])
+            assert desc == desc2
+
+    def test_dag_list(self):
+        with cliTmpDirs() as dml:
+            dml.config_user("Testy McTesterstein")
+            dml.repo_create("repo0")
+            dml.config_repo("repo0")
+            assert dml.json("dag", "list") == []
+            d0 = dml.dag_create("d0", "dag d0")
+            assert dml.json("dag", "list") == []
+            v0 = d0("put_literal", data=SUM, name="sum-fn")
+            ns = [d0("put_literal", data=i, name=f"a{i}") for i in range(3)]
+            # r0 = d0("put_literal", data=list(map(from_json, [v0, *ns])))
+            r0 = d0("start_fn", argv=list(map(from_json, [v0, *ns])))
+            d0("commit", result=from_json(r0))
+            daglist = dml.json("dag", "list")
+            assert len(daglist) == 1
+            assert list(daglist[0]) == [
+                "id",
+                "error",
+                "name",
+                "names",
+                "nodes",
+                "result",
+            ]
+            assert list(daglist[0]["names"]) == [
+                *[f"a{i}" for i in range(3)],
+                # "daggerml:build",
+                "sum-fn",
+            ]
+            desc = dml.json("dag", "describe", daglist[0]["id"])
+            assert desc["id"] == daglist[0]["id"]
+            # asdf
+            daglist = dml.json("dag", "list", "--all")
+            assert len(daglist) > 1
 
 
 class TestCliProject(TestCase):
@@ -227,15 +281,29 @@ class TestCliRepo(TestCase):
             dml.repo_list("repo0", "repo1")
 
 
-class TestCliDag(TestCase):
-    def test_describe_dag(self):
+class TestCliStatus(TestCase):
+    def test_status_unset(self):
+        with cliTmpDirs() as dml:
+            status = json.loads(dml("status"))
+            assert status == {
+                "repo": None,
+                "branch": None,
+                "user": None,
+                "config_dir": dml._config_dir,
+                "project_dir": dml._project_dir,
+            }
+
+    def test_status_set(self):
         with cliTmpDirs() as dml:
             dml.config_user("Testy McTesterstein")
             dml.repo_create("repo0")
             dml.config_repo("repo0")
-            d0 = dml.dag_create("d0", "dag d0")
-            v0 = Resource("a:b/asdf:e")
-            d0("commit", result=from_json(d0("put_literal", data=v0, name="qwer")))
-            desc = dml.json("dag", "describe", "d0")
-            assert len(desc["nodes"]) == 1
-            assert desc["nodes"][0]["name"] == "qwer"
+            dml.branch_create("b0")
+            status = json.loads(dml("status"))
+            assert status == {
+                "repo": "repo0",
+                "branch": "b0",
+                "user": "Testy McTesterstein",
+                "config_dir": dml._config_dir,
+                "project_dir": dml._project_dir,
+            }

@@ -35,7 +35,7 @@ class TestApiCreate(TestCase):
             api.create_repo(ctx, "test")
             assert api.with_query(api.list_repo, "[*].name")(ctx) == ["test"]
             api.config_repo(ctx, "test")
-            assert api.jsdata(api.list_branch(ctx)) == ["main"]
+            assert api.jsdata(api.list_branch(ctx)) == ["head/main"]
             api.create_branch(ctx, "b0")
             assert api.current_branch(ctx) == "b0"
 
@@ -188,6 +188,11 @@ class TestApiBase(TestCase):
                 with SimpleApi.begin(config_dir=config_dir) as d0:
                     assert d0.start_fn(*argv) == res0
 
+    def test_resource(self):
+        with SimpleApi.begin() as d0:
+            resource = Resource("uri:here", data={"a": 1, "b": [2, 3], "c": Resource("qwer")})
+            d0.put_literal(resource)
+
     def test_specials(self):
         with SimpleApi.begin() as d0:
 
@@ -238,8 +243,6 @@ class TestApiBase(TestCase):
             for k, v in x0.items():
                 n = d0.get(n0, d0.put_literal(k), name="n", doc="a node")
                 with d0.tx():
-                    # FIXME: test node name
-                    # assert n().name == 'n'
                     assert n().doc == "a node"
                 assert d0.unroll(n) == v
                 assert d0.unroll(d0.type(n)) == k
@@ -321,7 +324,6 @@ class TestApiBase(TestCase):
                 d0.start_fn(*nodes, name="bogus-fn")
             d0.commit(d0.put_literal(None))
             descs = d0.test_close(self)
-        print(list(descs[0].keys()))
         (desc,) = [x for x in descs if x["argv"] is None]
         self.assertCountEqual(
             [x["name"] for x in desc["nodes"] if x["name"] is not None],

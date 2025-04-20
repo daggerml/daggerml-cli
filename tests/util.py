@@ -78,17 +78,17 @@ class SimpleApi:
     def __enter__(self):
         return self
 
-    def test_close(self, test_case):
+    def test_close(self, test_case, delete=False):
         from unittest import TestCase
 
         assert isinstance(test_case, TestCase)
         descs = []
-        for dag in api.list_dags(self.ctx, all=True):
+        for dag in api.list_dags(self.ctx):
             test_case.assertIsInstance(dag, Ref)
             desc = api.describe_dag(self.ctx, dag)
             descs.append(desc)
             test_case.assertCountEqual(desc.keys(), ["id", "edges", "nodes", "argv", "logs", "result", "error"])
-            if dag.name is not None:
+            if delete and dag.name is not None:
                 assert api.delete_dag(self.ctx, dag.name, "deleting...")
         return descs
 

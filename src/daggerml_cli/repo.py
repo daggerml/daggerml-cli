@@ -494,8 +494,8 @@ class Repo:
                 xs += [a for a in x if a not in result]
             elif isinstance(x, dict):
                 xs += [a for a in x.values() if a not in result]
-            elif isinstance(x, Error):
-                pass  # cannot recurse into an error class
+            elif isinstance(x, (Error, Resource)):
+                pass  # cannot recurse into these classes
             elif is_dataclass(x):
                 xs += [getattr(x, y.name) for y in fields(x)]
         return result
@@ -513,6 +513,8 @@ class Repo:
                 xs += [a for a in x if a not in result]
             elif isinstance(x, dict):
                 xs += [a for a in x.values() if a not in result]
+            elif isinstance(x, (Error, Resource)):
+                pass  # cannot recurse into these classes
             elif is_dataclass(x):
                 xs += [getattr(x, y.name) for y in fields(x)]
         return list(reversed(result))
@@ -747,11 +749,16 @@ class Repo:
         return Ctx.from_head(self.head).dags.get(dag)
 
     def delete_dag(self, dag, message):
+        # INFO: Intuitively, the user expects this to delete the dag and clear out whatever cache it created
+        # TODO: create a new commit tree from the commit before this one and re-build from there.
+        # TODO: rename to `revert_dag`
         ctx = Ctx.from_head(self.head)
-        ctx.dags.pop(dag)
+        if not ctx.dags.pop(dag, None):
+            return
         commit = Commit([ctx.head.commit], self(ctx.tree), self.user, self.user, message)
         commit = self.merge(self.head().commit, self(commit))
         self.set_head(self.head, commit)
+        return True
 
     def begin(self, *, message, name=None, dag=None):
         if (name or dag) is None:

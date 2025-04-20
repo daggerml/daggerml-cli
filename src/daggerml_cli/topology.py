@@ -21,7 +21,7 @@ def make_edges(ref):
     if isinstance(node.data, Import):
         out.append({"source": ref, "target": node.data.dag, "type": "dag"})
     if isinstance(node.data, Fn):
-        out.extend([{"source": x, "target": ref, "type": "node", "arg": i} for i, x in enumerate(node.data.argv)])
+        out.extend([{"source": x, "target": ref, "type": "node"} for x in node.data.argv])
     return out
 
 
@@ -48,11 +48,11 @@ def topology(ref):
     return filter_edges(
         {
             "id": ref,
-            "argv": dag.argv.id if hasattr(dag, "argv") else None,
+            "argv": dag.argv.to if hasattr(dag, "argv") else None,
             "logs": get_logs(dag),
             "nodes": [make_node(dag.nameof(x), x) for x in dag.nodes],
             "edges": flatten([make_edges(x) for x in dag.nodes]),
-            "result": dag.result.id if dag.result is not None else None,
+            "result": dag.result.to if dag.result is not None else None,
             "error": None if dag.error is None else str(dag.error),
         }
     )
