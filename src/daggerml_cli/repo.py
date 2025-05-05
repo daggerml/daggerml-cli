@@ -838,7 +838,12 @@ class Repo:
                 if proc.stderr:
                     logger.error(proc.stderr.rstrip())
                 assert proc.returncode == 0, f"{cmd}: exit status: {proc.returncode}{err}"
-                js = json.loads(proc.stdout or "{}")
+                stdout = proc.stdout
+                try:
+                    js = json.loads(stdout or "{}")
+                except json.JSONDecodeError:
+                    logger.exception("failed to decode json: %r", stdout)
+                    raise
                 self.load_ref(js.get("dump") or to_json([]))
                 if "logs" in js:
                     fndag_ = fndag()
