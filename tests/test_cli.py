@@ -7,6 +7,7 @@ from tempfile import TemporaryDirectory
 from typing import Any
 from unittest import TestCase
 
+import click
 import pytest
 from click.testing import CliRunner
 
@@ -43,7 +44,10 @@ class Cli:
             self._config_dir,
             *args,
         ]
-        resp = CliRunner().invoke(cli, args, catch_exceptions=False, input=input)
+        kw = {}
+        if tuple(map(int, click.__version__.split(".")[:2])) < (8, 2):
+            kw["mix_stderr"] = False
+        resp = CliRunner(**kw).invoke(cli, args, catch_exceptions=False, input=input)
         print(resp.stderr, file=sys.stderr)
         return resp.output.rstrip()
 
