@@ -87,7 +87,10 @@ class SimpleApi:
             test_case.assertIsInstance(dag, Ref)
             desc = api.describe_dag(self.ctx, dag)
             descs.append(desc)
-            test_case.assertCountEqual(desc.keys(), ["id", "edges", "nodes", "argv", "logs", "result", "error"])
+            test_case.assertCountEqual(
+                desc.keys(),
+                ["id", "cache", "edges", "nodes", "argv", "logs", "result", "error"],
+            )
             if delete and dag.name is not None:
                 assert api.delete_dag(self.ctx, dag.name, "deleting...")
         return descs

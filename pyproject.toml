@@ -28,7 +28,7 @@ classifiers = [
 ]
 dependencies = [
   "boto3",
-  "click",
+  "click>8.2",
   "jmespath",
   "lmdb",
   "msgpack",

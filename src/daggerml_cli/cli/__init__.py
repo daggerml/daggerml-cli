@@ -358,6 +358,33 @@ def dag_describe(ctx, name):
 
 
 ###############################################################################
+# CACHE #######################################################################
+###############################################################################
+
+
+@cli.group(name="cache", no_args_is_help=True)
+@clickex
+def cache_group(_):
+    """cache management commands."""
+
+
+@cache_group.command(name="list")
+@clickex
+def cache_list(ctx):
+    """List cached dags."""
+    click.echo(jsdumps(api.list_cache(ctx.obj), ctx.obj))
+
+
+@cache_group.command(name="delete")
+@click.argument("dag_id", type=str)
+@clickex
+def cache_delete(ctx, dag_id):
+    """Delete a cache."""
+    api.delete_cache(ctx.obj, Ref(dag_id))
+    click.echo(f"Uncached dag: {dag_id}")
+
+
+###############################################################################
 # INDEX #######################################################################
 ###############################################################################
 

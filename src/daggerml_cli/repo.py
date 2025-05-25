@@ -279,11 +279,26 @@ class Dag:
         return {v: k for k, v in self.names.items()}.get(ref)
 
 
-@repo_type(hash=["argv"])
+@repo_type(hash=[])
 @dataclass
 class FnDag(Dag):
     argv: Optional[Ref] = None  # -> node(expr)
     logs: Optional[Ref] = None  # -> Datum
+
+
+@repo_type(hash=["argv"])
+@dataclass
+class FnCache:
+    argv: Ref  # -> Node(Argv)
+    dag: Optional[Ref]  # -> fndag
+
+    @property
+    def ready(self):
+        return self.dag is not None and self.dag().ready
+
+    @property
+    def is_error(self):
+        return self.dag is not None and self.dag().error is not None
 
 
 @repo_type(db=False)
@@ -760,14 +775,24 @@ class Repo:
         self.set_head(self.head, commit)
         return True
 
-    def begin(self, *, message, name=None, dag=None):
-        if (name or dag) is None:
+    def dump_ref(self, ref, recursive=True):
+        return to_json([[x, x()] for x in self.walk_ordered(ref)] if recursive else [[ref.to, ref()]])
+
+    def load_ref(self, dump):
+        dump = [self.put(k, v) for k, v in raise_ex(from_json(dump))]
+        return dump[-1] if len(dump) else None
+
+    def begin(self, *, message, name=None, dump=None):
+        if (name or dump) is None:
             msg = "either dag or a name is required"
             raise ValueError(msg)
         ctx = Ctx.from_head(self.head)
-        if dag is None:
+        if dump is None:
             dag = self(Dag([], {}, None, None))
-        ctx.dags[name] = dag
+            ctx.dags[name] = dag
+        else:
+            argv = self.load_ref(dump)
+            dag = self(FnDag([argv], {}, None, None, argv))
         commit = Commit([ctx.head.commit], self(ctx.tree), self.user, self.user, message)
         index = self(Index(self(commit), dag))
         return index
@@ -794,20 +819,11 @@ class Repo:
         assert isinstance(val, Datum)
         return unroll_datum(val)
 
-    def dump_ref(self, ref, recursive=True):
-        return to_json([[x, x()] for x in self.walk_ordered(ref)] if recursive else [[ref.to, ref()]])
-
-    def load_ref(self, dump):
-        dump = [self.put(k, v) for k, v in raise_ex(from_json(dump))]
-        return dump[-1] if len(dump) else None
-
-    def start_fn(self, index, *, argv, retry=False, name=None, doc=None):
-        fn, *data = map(lambda x: x().datum, argv)
+    def start_fn(self, index, *, argv, name=None, doc=None):
         argv_node = self(Node(Argv(self.put_datum([x().value for x in argv]))))
-        fndag = self(FnDag([argv_node], {}, None, None, argv_node), return_existing=True)
-        if fndag().error is not None and retry:
-            self(fndag, FnDag([argv_node], {}, None, None, argv_node))
-        if not fndag().ready:
+        fncache = self(FnCache(argv_node, None), return_existing=True)
+        if not fncache().ready:
+            fn, *data = map(lambda x: x().datum, argv)
             uri = urlparse(fn.uri)
             if fn.adapter is None and uri.scheme == "daggerml":
                 result = error = None
@@ -819,16 +835,15 @@ class Repo:
                 else:
                     result = self(Node(Literal(self.put_datum(result))))
                     nodes.append(result)
-                self(fndag, FnDag(nodes, {}, result, error, argv_node))
+                fndag = self(FnDag(nodes, {}, result, error, argv_node))
             else:
                 cmd = shutil.which(fn.adapter or "")
                 assert cmd, f"no such adapter: {fn.adapter}"
                 data = json.dumps(  # this is all passed to the executor
                     {
-                        "cache_key": argv_node.id,
+                        "cache_key": fncache.id,
                         "kwargs": fn.data,
-                        "retry": retry,
-                        "dump": self.dump_ref(fndag),
+                        "dump": self.dump_ref(argv_node),
                     },
                     default=serialize_resource,
                 )
@@ -844,14 +859,15 @@ class Repo:
                 except json.JSONDecodeError:
                     logger.exception("failed to decode json: %r", stdout)
                     raise
-                self.load_ref(js.get("dump") or to_json([]))
+                fndag = self.load_ref(js.get("dump") or to_json([]))
                 if "logs" in js:
                     fndag_ = fndag()
                     logs = tree_map(lambda x: isinstance(x, str), lambda x: Resource(x), js["logs"])
                     fndag_.logs = self.put_datum(logs)
                     self(fndag, fndag_)
-        if fndag().ready:
-            node = self.put_node(Fn(fndag, None, argv), index=index, name=name, doc=doc)
+            self(fncache, FnCache(argv_node, fndag))
+        if fncache().ready:
+            node = self.put_node(Fn(fncache().dag, None, argv), index=index, name=name, doc=doc)
             raise_ex(node().error)
             return node
 

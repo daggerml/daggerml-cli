@@ -43,7 +43,7 @@ class Cli:
             self._config_dir,
             *args,
         ]
-        resp = CliRunner(mix_stderr=False).invoke(cli, args, catch_exceptions=False, input=input)
+        resp = CliRunner().invoke(cli, args, catch_exceptions=False, input=input)
         print(resp.stderr, file=sys.stderr)
         return resp.output.rstrip()
 

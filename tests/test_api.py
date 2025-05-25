@@ -178,14 +178,23 @@ class TestApiBase(TestCase):
 
             with env(DML_FN_FILTER_ARGS="True", DML_NO_CLEAN="1"):
                 with self.assertRaises(Error):
-                    with SimpleApi.begin(config_dir=config_dir) as d0:
-                        d0.start_fn(*argv)
+                    with d0:
+                        d0.start_fn(*argv, name="test")
+                with d0.tx():
+                    cache = list(api.list_cache(d0.ctx))
+                    assert len(cache) == 1
+                    desc = api.describe_dag(d0.ctx, d0.token().dag)
+                    (fndag,) = [x for x in desc["nodes"] if x["name"] == "test"]
+                    desc = api.describe_dag(d0.ctx, fndag["id"]().data.dag)
+                    api.delete_cache(d0.ctx, desc["id"])
+                    cache = list(api.list_cache(d0.ctx))
+                    assert cache == []
 
-                with SimpleApi.begin(config_dir=config_dir) as d0:
-                    res0 = d0.start_fn(*argv, retry=True)
+                with d0:
+                    res0 = d0.start_fn(*argv)
                     assert d0.unroll(res0)[1] == 3
 
-                with SimpleApi.begin(config_dir=config_dir) as d0:
+                with d0:
                     assert d0.start_fn(*argv) == res0
 
     def test_resource(self):

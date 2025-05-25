@@ -1,4 +1,4 @@
-from daggerml_cli.repo import Fn, Import, Resource
+from daggerml_cli.repo import Fn, FnCache, FnDag, Import, Resource
 from daggerml_cli.util import assoc, flatten, tree_map
 
 
@@ -43,11 +43,20 @@ def get_logs(dag):
     return logs
 
 
-def topology(ref):
+def topology(db, ref):
     dag = ref()
+    cache = None
+    if isinstance(dag, FnDag):
+        fncache = db(FnCache(dag.argv, None), return_existing=True)
+        cache = {
+            "is_cached": fncache().dag == dag,
+            "cache_key": fncache.to,
+            "current_dag": fncache().dag.to,
+        }
     return filter_edges(
         {
             "id": ref,
+            "cache": cache,
             "argv": dag.argv.to if hasattr(dag, "argv") else None,
             "logs": get_logs(dag),
             "nodes": [make_node(dag.nameof(x), x) for x in dag.nodes],

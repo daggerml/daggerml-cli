@@ -18,6 +18,7 @@ from daggerml_cli.repo import (
     Ctx,
     Dag,
     Error,
+    FnCache,
     Import,
     Index,
     Literal,
@@ -266,8 +267,7 @@ def delete_dag(config, name, message):
 def begin_dag(config, *, name=None, message, dump=None):
     with Repo(config.REPO_PATH, config.USER, head=config.BRANCHREF) as db:
         with db.tx(True):
-            dag = None if dump is None else db.load_ref(dump)
-            return db.begin(name=name, message=message, dag=dag)
+            return db.begin(name=name, message=message, dump=dump)
 
 
 def get_dag(config, name_or_id, db=None):
@@ -286,7 +286,29 @@ def describe_dag(config, ref):
     with Repo(config.REPO_PATH, head=config.BRANCHREF) as db:
         with db.tx():
             assert isinstance(ref(), Dag)
-            return topology(ref)
+            return topology(db, ref)
+
+
+###############################################################################
+# CACHE #######################################################################
+###############################################################################
+
+
+def delete_cache(config, dag: Ref):
+    with Repo(config.REPO_PATH, head=config.BRANCHREF) as db:
+        with db.tx(True):
+            fncache = db(FnCache(dag().argv, dag), return_existing=True)
+            assert fncache().dag == dag, f"{fncache.to!r} -> {fncache().dag.to!r} != {dag.to!r}"
+            db.delete(fncache)
+    return True
+
+
+def list_cache(config):
+    # walk all indexes and return all FnCache objects
+    with Repo(config.REPO_PATH, head=config.BRANCHREF) as db:
+        with db.tx():
+            for obj in db.cursor("fncache"):
+                yield with_attrs(obj, result=obj().dag().result, error=obj().dag().error)
 
 
 ###############################################################################
@@ -335,9 +357,9 @@ def format_ops():
 
 
 @invoke_op
-def op_start_fn(db, index, argv, retry=False, name=None, doc=None):
+def op_start_fn(db, index, argv, name=None, doc=None):
     with db.tx(True):
-        return db.start_fn(index, argv=argv, retry=retry, name=name, doc=doc)
+        return db.start_fn(index, argv=argv, name=name, doc=doc)
 
 
 @invoke_op
