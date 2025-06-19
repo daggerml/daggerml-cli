@@ -38,7 +38,7 @@ class TestConfig(TestCase):
         # access haven't been set. For example, REPO_DIR internally references
         # CONFIG_DIR which hasn't been set yet.
         with self.assertRaises(ConfigError):
-            assert config.REPO_DIR is not None
+            config.REPO_DIR  # noqa:B018
 
         # Setting a dynamic (computed) field is an error.
         with self.assertRaises(AttributeError):

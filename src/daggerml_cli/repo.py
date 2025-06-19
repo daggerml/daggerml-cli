@@ -12,13 +12,14 @@ from typing import Any, Dict, Optional, Union
 from urllib.parse import urlparse
 from uuid import uuid4
 
-from daggerml_cli.db import db_type, dbenv
+from daggerml_cli.db import dbenv
 from daggerml_cli.pack import packb, register, unpackb
 from daggerml_cli.util import asserting, assoc, conj, makedirs, now, tree_map
 
 DEFAULT_BRANCH = "head/main"
 DATA_TYPE = {}
 NONE = {}
+REPO_TYPES = []
 
 
 BUILTIN_FNS = {
@@ -155,7 +156,9 @@ def repo_type(cls=None, **kwargs):
     def decorator(cls):
         DATA_TYPE[cls.__name__] = cls
         register(cls, packfn, lambda x: x)
-        return db_type(cls) if dbtype else cls
+        if dbtype:
+            REPO_TYPES.append(cls.__name__.lower())
+        return cls
 
     return decorator(cls) if cls else decorator
 
@@ -282,7 +285,7 @@ class Dag:
 @repo_type(hash=[])
 @dataclass
 class FnDag(Dag):
-    argv: Optional[Ref] = None  # -> node(expr)
+    argv: Optional[Ref] = None  # -> node(expr) (in this dag)
     logs: Optional[Ref] = None  # -> Datum
 
 
@@ -295,10 +298,6 @@ class FnCache:
     @property
     def ready(self):
         return self.dag is not None and self.dag().ready
-
-    @property
-    def is_error(self):
-        return self.dag is not None and self.dag().error is not None
 
 
 @repo_type(db=False)
@@ -388,29 +387,31 @@ class Ctx:
         return cls(head, commit, tree, dags, dag)
 
 
-@repo_type(db=False)
 @dataclass
 class Repo:
     path: str
     user: str = "unknown"
     head: Ref = field(default_factory=lambda: Ref(DEFAULT_BRANCH))  # -> head
     create: InitVar[bool] = False
+    cache_db_path: Optional[str] = None
 
     def __post_init__(self, create):
         self._tx = []
         dbfile = str(os.path.join(self.path, "data.mdb"))
         dbfile_exists = os.path.exists(dbfile)
         if create:
-            assert not dbfile_exists, f"repo exists: {dbfile}"
-            map_size = 10485760
-            with open(os.path.join(self.path, "config"), "w") as f:
-                json.dump({"map_size": map_size}, f)
+            if dbfile_exists and create != "if-needed":
+                raise AssertionError(f"repo exists: {dbfile}")
+            if not dbfile_exists:
+                map_size = 10485760
+                with open(os.path.join(self.path, "config"), "w") as f:
+                    json.dump({"map_size": map_size}, f)
         else:
             assert dbfile_exists, f"repo not found: {dbfile}"
             with open(os.path.join(self.path, "config")) as f:
                 map_size = json.load(f)["map_size"]
-        self.env, self.dbs = dbenv(self.path, map_size=map_size)
-        with self.tx(create):
+        self.env, self.dbs = dbenv(self.path, REPO_TYPES, map_size=map_size)
+        with self.tx(bool(create)):
             if not self.get("/init"):
                 commit = Commit(
                     [],
@@ -440,16 +441,17 @@ class Repo:
 
     @contextmanager
     def tx(self, write=False):
-        old_curr = getattr(Repo, "curr", None)
+        cls = type(self)
+        old_curr = getattr(cls, "curr", None)
         try:
             if not len(self._tx):
                 self._tx.append(self.env.begin(write=write, buffers=True).__enter__())
-                Repo.curr = self
+                cls.curr = self
             else:
                 self._tx.append(None)
             yield True
         finally:
-            Repo.curr = old_curr
+            cls.curr = old_curr
             tx = self._tx.pop()
             if tx:
                 tx.__exit__(None, None, None)
@@ -819,11 +821,12 @@ class Repo:
         assert isinstance(val, Datum)
         return unroll_datum(val)
 
-    def start_fn(self, index, *, argv, name=None, doc=None):
-        argv_node = self(Node(Argv(self.put_datum([x().value for x in argv]))))
-        fncache = self(FnCache(argv_node, None), return_existing=True)
+    def check_or_submit_fn(self, argv):
+        argv_datum = self.put_datum(argv)
+        argv_node = self(Node(Argv(argv_datum)))
+        fncache = self(FnCache(argv_datum, None), return_existing=True)
         if not fncache().ready:
-            fn, *data = map(lambda x: x().datum, argv)
+            fn, *data = [x().value for x in argv]
             uri = urlparse(fn.uri)
             if fn.adapter is None and uri.scheme == "daggerml":
                 result = error = None
@@ -865,9 +868,22 @@ class Repo:
                     logs = tree_map(lambda x: isinstance(x, str), lambda x: Resource(x), js["logs"])
                     fndag_.logs = self.put_datum(logs)
                     self(fndag, fndag_)
-            self(fncache, FnCache(argv_node, fndag))
-        if fncache().ready:
-            node = self.put_node(Fn(fncache().dag, None, argv), index=index, name=name, doc=doc)
+            self(fncache, FnCache(argv_datum, fndag))
+        fndag = fncache().dag
+        if fndag is not None:
+            return self.dump_ref(fndag)
+
+    def start_fn(self, index, *, argv, name=None, doc=None):
+        argv_ = [x().value for x in argv]
+        if self.cache_db_path:
+            # raise RuntimeError("asdf")
+            with CacheDb(self.cache_db_path, create="if-needed") as cache_db:
+                fndag = cache_db.check_or_submit_fn(argv_)
+        else:
+            fndag = self.check_or_submit_fn(argv_)
+        if fndag is not None:
+            fndag = self.load_ref(fndag)
+            node = self.put_node(Fn(fndag, None, argv), index=index, name=name, doc=doc)
             raise_ex(node().error)
             return node
 
@@ -886,3 +902,7 @@ class Repo:
         self.set_head(self.head, commit)
         self.delete(index)
         return self.dump_ref(ref)
+
+
+class CacheDb(Repo):
+    pass

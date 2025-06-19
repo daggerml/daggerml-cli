@@ -97,7 +97,7 @@ def list_other_repo(config):
 
 def create_repo(config, name):
     config._REPO = name
-    with Repo(makedirs(config.REPO_PATH), config.USER, create=True):
+    with Repo(makedirs(config.REPO_PATH), user=config.USER, create=True):
         pass
 
 
@@ -259,13 +259,13 @@ def list_dags(config, *, all=False):
 
 
 def delete_dag(config, name, message):
-    with Repo(config.REPO_PATH, config.USER, head=config.BRANCHREF) as db:
+    with Repo(config.REPO_PATH, user=config.USER, head=config.BRANCHREF) as db:
         with db.tx(True):
             return db.delete_dag(name, message)
 
 
 def begin_dag(config, *, name=None, message, dump=None):
-    with Repo(config.REPO_PATH, config.USER, head=config.BRANCHREF) as db:
+    with Repo(config.REPO_PATH, user=config.USER, head=config.BRANCHREF) as db:
         with db.tx(True):
             return db.begin(name=name, message=message, dump=dump)
 
@@ -286,7 +286,9 @@ def describe_dag(config, ref):
     with Repo(config.REPO_PATH, head=config.BRANCHREF) as db:
         with db.tx():
             assert isinstance(ref(), Dag)
-            return topology(db, ref)
+            desc = topology(db, ref)
+            # print(f"describe_dag: {ref} -> {[x['type'] for x in desc['edges']]}")
+            return desc
 
 
 ###############################################################################
@@ -294,10 +296,16 @@ def describe_dag(config, ref):
 ###############################################################################
 
 
+def create_cache(config, name):
+    config._REPO = name
+    with Repo(makedirs(config.CACHE_PATH), user=config.USER, create=True):
+        pass
+
+
 def delete_cache(config, dag: Ref):
     with Repo(config.REPO_PATH, head=config.BRANCHREF) as db:
         with db.tx(True):
-            fncache = db(FnCache(dag().argv, dag), return_existing=True)
+            fncache = db(FnCache(dag().argv().value, dag), return_existing=True)
             assert fncache().dag == dag, f"{fncache.to!r} -> {fncache().dag.to!r} != {dag.to!r}"
             db.delete(fncache)
     return True
@@ -467,7 +475,12 @@ def invoke_api(config, token, data):
     tok_to = getattr(token, "to", "NONE")
     index = CheckedRef(tok_to, Index, f"invalid token: {tok_to}")
     try:
-        with Repo(config.REPO_PATH, config.USER, config.BRANCHREF) as db:
+        with Repo(
+            config.REPO_PATH,
+            user=config.USER,
+            head=config.BRANCHREF,
+            cache_db_path=config.CACHE_PATH,
+        ) as db:
             op, args, kwargs = data
             if op in BUILTIN_FNS:
                 with db.tx(True):
@@ -499,7 +512,7 @@ def commit_log_graph(config):
         parents: list[Ref]
         children: list[Ref]
 
-    with Repo(config.REPO_PATH, config.USER, head=config.BRANCHREF) as db:
+    with Repo(config.REPO_PATH, user=config.USER, head=config.BRANCHREF) as db:
         with db.tx():
 
             def walk_names(x, head=None):

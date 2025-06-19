@@ -22,15 +22,8 @@ def make_edges(ref):
         out.append({"source": ref, "target": node.data.dag, "type": "dag"})
     if isinstance(node.data, Fn):
         out.extend([{"source": x, "target": ref, "type": "node"} for x in node.data.argv])
+    # print(f"make_edges: {ref} -> {[x['type'] for x in out]}")
     return out
-
-
-def filter_edges(topology):
-    def valid(x):
-        return x["type"] == "dag" or {x["source"], x["target"]} < nodes
-
-    nodes = {x["id"] for x in topology["nodes"]}
-    return assoc(topology, "edges", list(filter(valid, topology["edges"])))
 
 
 def get_logs(dag):
@@ -43,25 +36,26 @@ def get_logs(dag):
     return logs
 
 
-def topology(db, ref):
+def topology(db, ref, cache_db=None):
     dag = ref()
     cache = None
     if isinstance(dag, FnDag):
-        fncache = db(FnCache(dag.argv, None), return_existing=True)
+        fncache = (cache_db or db)(FnCache(dag.argv().value, None), return_existing=True)
         cache = {
             "is_cached": fncache().dag == dag,
             "cache_key": fncache.to,
             "current_dag": fncache().dag.to,
         }
-    return filter_edges(
-        {
-            "id": ref,
-            "cache": cache,
-            "argv": dag.argv.to if hasattr(dag, "argv") else None,
-            "logs": get_logs(dag),
-            "nodes": [make_node(dag.nameof(x), x) for x in dag.nodes],
-            "edges": flatten([make_edges(x) for x in dag.nodes]),
-            "result": dag.result.to if dag.result is not None else None,
-            "error": None if dag.error is None else str(dag.error),
-        }
-    )
+    edges = flatten([make_edges(x) for x in dag.nodes])
+    # print(f"topology edges: {[x['type'] for x in edges]}")
+    return {
+        "id": ref,
+        "cache": cache,
+        "argv": dag.argv.to if hasattr(dag, "argv") else None,
+        "logs": get_logs(dag),
+        "nodes": [make_node(dag.nameof(x), x) for x in dag.nodes],
+        # "edges": flatten([make_edges(x) for x in dag.nodes]),
+        "edges": edges,
+        "result": dag.result.to if dag.result is not None else None,
+        "error": None if dag.error is None else str(dag.error),
+    }

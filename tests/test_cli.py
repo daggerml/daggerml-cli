@@ -213,6 +213,7 @@ class TestCliDag(TestCase):
             assert desc["id"] == daglist[0]["id"]
             # asdf
             daglist = dml.json("dag", "list", "--all")
+            assert daglist[0]["error"]["message"] == None
             assert len(daglist) > 1
 
 

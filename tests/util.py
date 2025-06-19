@@ -46,8 +46,8 @@ class SimpleApi:
         if ctx is None:
             tmpdirs = [TemporaryDirectory() for _ in range(2)]
             ctx = Config(
-                _CONFIG_DIR=(config_dir or tmpdirs[0].__enter__()),
-                _PROJECT_DIR=tmpdirs[1].__enter__(),
+                _CONFIG_DIR=(config_dir or tmpdirs[0].name),
+                _PROJECT_DIR=tmpdirs[1].name,
                 _USER=user,
             )
             os.environ["DML_FN_CACHE_DIR"] = fn_cache_dir
@@ -59,7 +59,7 @@ class SimpleApi:
 
     @contextmanager
     def tx(self, write=False):
-        db = Repo(self.ctx.REPO_PATH, self.ctx.USER, self.ctx.BRANCHREF)
+        db = Repo(self.ctx.REPO_PATH, user=self.ctx.USER, head=self.ctx.BRANCHREF)
         with db.tx(write):
             yield db
 
@@ -73,7 +73,7 @@ class SimpleApi:
     def cleanup(self):
         os.environ.pop("DML_FN_CACHE_DIR", None)
         for x in self.tmpdirs:
-            x.__exit__(None, None, None)
+            x.cleanup()
 
     def __enter__(self):
         return self

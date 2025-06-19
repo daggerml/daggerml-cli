@@ -12,8 +12,7 @@ from tabulate import tabulate
 
 from daggerml_cli import __version__, api
 from daggerml_cli.config import Config
-from daggerml_cli.db import DB_TYPES
-from daggerml_cli.repo import Error, Ref, from_json, to_json
+from daggerml_cli.repo import REPO_TYPES, Error, Ref, from_json, to_json
 from daggerml_cli.util import merge_counters, writefile
 
 logger = logging.getLogger(__name__)
@@ -29,6 +28,7 @@ DEFAULT_CONFIG = {
     "BRANCH": None,
     "USER": None,
     "QUERY": None,
+    "CACHE_REPO": "cache",
 }
 
 BASE_CONFIG = Config(
@@ -37,6 +37,7 @@ BASE_CONFIG = Config(
     os.getenv("DML_REPO", DEFAULT_CONFIG["REPO"]),
     os.getenv("DML_BRANCH", DEFAULT_CONFIG["BRANCH"]),
     os.getenv("DML_USER", DEFAULT_CONFIG["USER"]),
+    _CACHE_REPO=os.getenv("DML_CACHE_REPO", DEFAULT_CONFIG["CACHE_REPO"]),
 )
 
 
@@ -94,6 +95,12 @@ def json_spec(ctx, param, value):
     shell_complete=complete(api.with_query(api.list_repo, "[*].name"), set_config),
     help="Specify a repo other than the project repo.",
 )
+@click.option(
+    "--cache-repo",
+    type=str,
+    default=DEFAULT_CONFIG["CACHE_REPO"],
+    help="Specify a repo to use as the main cache.",
+)
 @click.option("--query", type=str, help="A JMESPath query to use in filtering the response data.")
 @click.option(
     "--project-dir",
@@ -131,7 +138,7 @@ def json_spec(ctx, param, value):
     },
 )
 @clickex
-def cli(ctx, config_dir, project_dir, repo, branch, user, query, debug):
+def cli(ctx, config_dir, project_dir, repo, cache_repo, branch, user, query, debug):
     """The DaggerML command line tool."""
     set_config(ctx)
     ctx.with_resource(ctx.obj)
@@ -423,7 +430,7 @@ def ref_group(_):
 
 
 @click.argument("id", type=str)
-@click.argument("type", type=click.Choice(sorted(DB_TYPES)))
+@click.argument("type", type=click.Choice(sorted(REPO_TYPES)))
 @ref_group.command(name="describe")
 @clickex
 def ref_describe(ctx, type, id):

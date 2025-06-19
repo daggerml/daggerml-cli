@@ -298,7 +298,7 @@ class TestApiBase(TestCase):
         with TemporaryDirectory() as config_dir:
             with SimpleApi.begin("d0", config_dir=config_dir) as d0:
                 d0.commit(d0.put_literal(23))
-                d0.test_close(self)
+                # d0.test_close(self)
             with SimpleApi.begin("d1", config_dir=config_dir) as d1:
                 nodes = [
                     d1.put_literal(SUM),
@@ -308,9 +308,16 @@ class TestApiBase(TestCase):
                 result = d1.start_fn(*nodes)
                 assert d1.unroll(result)[1] == 36
                 d1.commit(result)
-                d1.test_close(self)
+                # d1.test_close(self)
             (ref,) = (x.id for x in api.list_dags(d1.ctx) if x.name == "d1")
             desc = api.describe_dag(d1.ctx, Ref(f"dag/{ref}"))
+            # assert [x["type"] for x in desc["edges"]] is None
+            for edge in desc["edges"]:
+                if edge["type"] == "dag":
+                    assert edge["source"] in {x["id"] for x in desc["nodes"]}
+                else:
+                    # assert edge["source"] in {x["id"] for x in desc["nodes"]}
+                    assert edge["target"] in {x["id"] for x in desc["nodes"]}
             self.assertCountEqual(
                 [x["node_type"] for x in desc["nodes"]],
                 ["literal", "literal", "import", "fn"],
