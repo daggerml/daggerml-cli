@@ -61,7 +61,7 @@ class Config:
     _DEBUG: bool = False
     _QUERY: Optional[str] = None
     _writes: list = field(default_factory=list)
-    _CACHE_REPO: Optional[str] = None
+    _CACHE_PATH: Optional[str] = None
 
     @classmethod
     def new(cls, **kw):
@@ -104,8 +104,8 @@ class Config:
         pass
 
     @property
-    def CACHE_REPO(self):
-        return self._CACHE_REPO
+    def CACHE_PATH(self):
+        return self._CACHE_PATH
 
     @config_property
     def BRANCHREF(self):
@@ -118,12 +118,6 @@ class Config:
     @config_property
     def REPO_PATH(self):
         return os.path.join(self.REPO_DIR, self.REPO)
-
-    @property
-    def CACHE_PATH(self):
-        if self.CACHE_REPO is None:
-            return None
-        return os.path.join(self.REPO_DIR, self.CACHE_REPO)
 
     def replace(self, **changes):
         return replace(self, **changes)

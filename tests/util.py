@@ -39,21 +39,26 @@ class SimpleApi:
         user="test",
         config_dir=None,
         fn_cache_dir="",
+        cache_path=None,
         ctx=None,
         dump=None,
     ):
         tmpdirs = []
         if ctx is None:
-            tmpdirs = [TemporaryDirectory() for _ in range(2)]
+            tmpdirs = [TemporaryDirectory() for _ in range(3)]
             ctx = Config(
                 _CONFIG_DIR=(config_dir or tmpdirs[0].name),
                 _PROJECT_DIR=tmpdirs[1].name,
+                _CACHE_PATH=(cache_path or tmpdirs[2].name),
                 _USER=user,
             )
-            os.environ["DML_FN_CACHE_DIR"] = fn_cache_dir
+            if fn_cache_dir:
+                os.environ["DML_FN_CACHE_DIR"] = fn_cache_dir
             if "test" not in [x["name"] for x in api.list_repo(ctx)]:
                 api.create_repo(ctx, "test")
             api.config_repo(ctx, "test")
+            if cache_path is None:
+                api.create_cache(ctx)
         tok = api.begin_dag(ctx, name=name, message=message, dump=dump)
         return cls(tok, ctx, tmpdirs)
 

@@ -8,7 +8,7 @@ from collections import Counter
 from contextlib import contextmanager
 from dataclasses import InitVar, dataclass, field, fields, is_dataclass
 from hashlib import md5
-from typing import Any, Dict, Optional, Union
+from typing import TYPE_CHECKING, Any, Dict, Optional, Union
 from urllib.parse import urlparse
 from uuid import uuid4
 
@@ -16,6 +16,8 @@ from daggerml_cli.db import dbenv
 from daggerml_cli.pack import packb, register, unpackb
 from daggerml_cli.util import asserting, assoc, conj, makedirs, now, tree_map
 
+if TYPE_CHECKING:
+    from daggerml_cli.config import Config
 DEFAULT_BRANCH = "head/main"
 DATA_TYPE = {}
 NONE = {}
@@ -309,6 +311,16 @@ class Literal:
     def error(self):
         pass
 
+    def get_value(self, repo: "Repo"):
+        return self.value
+
+    def to_pyval(self, db: "Repo"):
+        """Convert Literal to a pure Python value, recursively resolving all references."""
+        datum = db.get(self.value)
+        if datum is None:
+            return None
+        return datum.to_pyval(db)
+
 
 @repo_type(db=False)
 @dataclass
@@ -333,6 +345,23 @@ class Import:
     def error(self):
         ref = self.node or self.dag
         return ref().error
+
+    def get_value(self, repo: "Repo"):
+        """Get the value of the Import, which is either the node or the result of the dag."""
+        ref = self.node or repo.get(self.dag).result
+        if ref is None:
+            return None
+        return repo.get(ref)
+
+    def to_pyval(self, db: "Repo"):
+        """Convert Import to a pure Python value, recursively resolving all references."""
+        ref = self.node or db.get(self.dag).result
+        if ref is None:
+            return None
+        node = db.get(ref)
+        if node is None:
+            return None
+        return node.to_pyval(db)
 
 
 @repo_type(db=False)
@@ -359,11 +388,23 @@ class Node:
     def datum(self):
         return self.value().value
 
+    def to_pyval(self, db: "Repo"):
+        """Convert Node to a pure Python value, recursively resolving all references."""
+        datum_ref = self.data.value
+        datum = db.get(datum_ref)
+        if datum is None:
+            return None
+        return datum.to_pyval(db)
+
 
 @repo_type
 @dataclass
 class Datum:
     value: Union[None, str, bool, int, float, Resource, list, dict, set]
+
+    def to_pyval(self, db: "Repo"):
+        """Convert datum to pure Python value, resolving all references."""
+        return unroll_datum(self)
 
 
 @dataclass
@@ -423,6 +464,18 @@ class Repo:
                 self(self.head, Head(self(commit)))
                 self("/init", "00000000000000000000000000000000")  # so we all have a common root
             self.checkout(self.head)
+
+    @classmethod
+    def from_config(cls, config: "Config", create=False):
+        """
+        Create a Repo instance from a Config object.
+        If the repo does not exist, it will be created if `create` is True.
+        """
+        repo_path = config.REPO_PATH
+        user = config.USER or "unknown"
+        cache_db_path = config.CACHE_PATH or None
+        head = config.BRANCHREF or Ref(DEFAULT_BRANCH)
+        return cls(repo_path, user=user, head=head, create=create, cache_db_path=cache_db_path)
 
     def close(self):
         self.env.close()
@@ -506,7 +559,7 @@ class Repo:
             if isinstance(x, Ref):
                 if x not in result:
                     result.add(x)
-                    xs.append(x())
+                    xs.append(self.get(x))
             elif isinstance(x, (list, set)):
                 xs += [a for a in x if a not in result]
             elif isinstance(x, dict):
@@ -525,7 +578,7 @@ class Repo:
             if isinstance(x, Ref):
                 if x not in result:
                     result.append(x)
-                    xs.append(x())
+                    xs.append(self.get(x))
             elif isinstance(x, (list, set)):
                 xs += [a for a in x if a not in result]
             elif isinstance(x, dict):
@@ -544,12 +597,15 @@ class Repo:
 
     def log(self, db=None, ref=None):
         def sort(xs):
-            return reversed(sorted(xs, key=lambda x: x().modified))
+            return reversed(sorted(xs, key=lambda x: self.get(x).modified))
 
         if db:
-            return {k: self.log(ref=k().commit) for k in self.cursor(db)}
+            return {k: self.log(ref=self.get(k).commit) for k in self.cursor(db)}
         if ref and ref.to:
-            return [ref, [self.log(ref=x) for x in sort(ref().parents) if x and x.to]]
+            return [
+                ref,
+                [self.log(ref=x) for x in sort(self.get(ref).parents) if x and x.to],
+            ]
 
     def commits(self, ref=None):
         ref = self.head if ref is None else ref
@@ -573,7 +629,7 @@ class Repo:
     def gc(self):
         deleted = []
         for ref in self.unreachable_objects():
-            obj = ref()
+            obj = self.get(ref)
             if isinstance(obj, Datum) and isinstance(obj.value, Resource) and not obj.value.uri.startswith("daggerml:"):
                 self(Deleted.resource(obj.value))
             self.delete(ref)
@@ -586,9 +642,9 @@ class Repo:
         result = []
         while len(xs):
             x = xs.pop(0)
-            if x is not None and x() and x not in result:
+            if x is not None and self.get(x) and x not in result:
                 result.append(x)
-                xs = x().parents + xs
+                xs = self.get(x).parents + xs
         return result
 
     def merge_base(self, a, b):
@@ -606,8 +662,8 @@ class Repo:
             a, b = pivot.parents
 
     def diff(self, t1, t2):
-        d1 = t1().dags
-        d2 = t2().dags
+        d1 = self.get(t1).dags
+        d2 = self.get(t2).dags
         result = {"add": {}, "rem": {}}
         for k in set(d1.keys()).union(d2.keys()):
             if k not in d2:
@@ -621,7 +677,7 @@ class Repo:
 
     def patch(self, tree, *diffs):
         diff = {"add": {}, "rem": {}}
-        tree = tree()
+        tree = self.get(tree)
         for d in diffs:
             diff["add"].update(d["add"])
             diff["rem"].update(d["rem"])
@@ -643,7 +699,7 @@ class Repo:
         return self(
             Commit(
                 [c1, c2],
-                merge_trees(c0().tree, c1().tree, c2().tree),
+                merge_trees(self.get(c0).tree, self.get(c1).tree, self.get(c2).tree),
                 author or self.user,
                 self.user,
                 message or f"merge {c2.id} with {c1.id}",
@@ -657,13 +713,13 @@ class Repo:
         def replay(commit):
             if commit == c0:
                 return c1
-            c = commit()
+            c = self.get(commit)
             p = c.parents
             assert len(p), f"commit has no parents: {commit.to}"
             if len(p) == 1:
                 (p,) = p
                 x = replay(p)
-                c.tree = self.patch(x().tree, self.diff(p().tree, c.tree))
+                c.tree = self.patch(self.get(x).tree, self.diff(self.get(p).tree, c.tree))
                 c.parents, c.committer, c.modified = ([x], self.user, now())
                 return self(c)
             assert len(p) == 2, f"commit has more than two parents: {commit.to}"
@@ -675,14 +731,14 @@ class Repo:
     def squash(self, c1, c2):
         c0 = self.merge_base(c1, c2)
         assert c0 == c1, "cannot squash from non ancestor"
-        c = c1()
-        c.tree = self.patch(c.tree, self.diff(c.tree, c2().tree))
+        c = self.get(c1)
+        c.tree = self.patch(c.tree, self.diff(c.tree, self.get(c2).tree))
         c.parents = [c1]
-        c.committer = c2().committer
+        c.committer = self.get(c2).committer
         c.created = now()
 
         def reparent(commit, old_parent, new_parent):
-            comm = commit()
+            comm = self.get(commit)
             replaced = [new_parent if x == old_parent else x for x in comm.parents]
             comm.parents = replaced
             ref = self(comm)
@@ -699,15 +755,15 @@ class Repo:
     def get_child_commits(self, commit):
         children = set()
         for x in self.reachable_objects():
-            if isinstance(x(), Commit) and commit in x().parents:
+            if isinstance(self.get(x), Commit) and commit in self.get(x).parents:
                 children.add(commit)
         return children
 
     def create_branch(self, branch, ref):
         assert branch.type == "head", f"unexpected branch type: {branch.type}"
-        assert branch() is None, "branch already exists"
+        assert self.get(branch) is None, "branch already exists"
         assert ref.type in ["head", "commit"], f"unexpected ref type: {ref.type}"
-        ref = Head(ref) if ref.type == "commit" else ref()
+        ref = Head(ref) if ref.type == "commit" else self.get(ref)
         return self(branch, ref)
 
     def delete_branch(self, branch):
@@ -720,7 +776,7 @@ class Repo:
 
     def checkout(self, ref):
         assert ref.type in ["head"], f"checkout unknown ref type: {ref.type}"
-        assert ref(), f"ref not found: {ref.to}"
+        assert self.get(ref), f"ref not found: {ref.to}"
         self.head = ref
 
     def extract_nodes(self, obj):
@@ -728,7 +784,7 @@ class Repo:
 
         def extract(obj):
             if isinstance(obj, Ref):
-                extract(obj())
+                extract(self.get(obj))
             elif isinstance(obj, Node):
                 if obj not in result:
                     result.append(obj)
@@ -744,9 +800,10 @@ class Repo:
     def put_datum(self, value):
         def put(value):
             if isinstance(value, Ref):
-                if isinstance(value(), Node):
-                    value = value().value
-                assert isinstance(value(), Datum), f"not a datum: {value.to}"
+                obj = self.get(value)
+                if isinstance(obj, Node):
+                    obj = self.get(obj.value)
+                assert isinstance(obj, Datum), f"not a datum: {value.to}"
                 return value
             if isinstance(value, Datum):
                 return self(value)
@@ -778,7 +835,7 @@ class Repo:
         return True
 
     def dump_ref(self, ref, recursive=True):
-        return to_json([[x, x()] for x in self.walk_ordered(ref)] if recursive else [[ref.to, ref()]])
+        return to_json([[x, self.get(x)] for x in self.walk_ordered(ref)] if recursive else [[ref.to, self.get(ref)]])
 
     def load_ref(self, dump):
         dump = [self.put(k, v) for k, v in raise_ex(from_json(dump))]
@@ -793,7 +850,9 @@ class Repo:
             dag = self(Dag([], {}, None, None))
             ctx.dags[name] = dag
         else:
-            argv = self.load_ref(dump)
+            # import a dumped DAG/function under a write transaction
+            with self.tx(True):
+                argv = self.load_ref(dump)
             dag = self(FnDag([argv], {}, None, None, argv))
         commit = Commit([ctx.head.commit], self(ctx.tree), self.user, self.user, message)
         index = self(Index(self(commit), dag))
@@ -813,84 +872,85 @@ class Repo:
         return node
 
     def get_node_value(self, ref: Ref):
-        node = ref()
+        node = self.get(ref)
         assert isinstance(node, Node), f"invalid type: {type(node)}"
         if node.error is not None:
             return node.error
-        val = node.value()
+        val = self.get(node.value)
         assert isinstance(val, Datum)
         return unroll_datum(val)
 
     def check_or_submit_fn(self, argv):
         argv_datum = self.put_datum(argv)
-        argv_node = self(Node(Argv(argv_datum)))
-        fncache = self(FnCache(argv_datum, None), return_existing=True)
-        if not fncache().ready:
-            fn, *data = [x().value for x in argv]
-            uri = urlparse(fn.uri)
-            if fn.adapter is None and uri.scheme == "daggerml":
-                result = error = None
+        fncache_ref = self(FnCache(argv_datum, None), return_existing=True)
+        cache_entry = self.get(fncache_ref)
+        if not cache_entry.ready:
+            argv_node = self(Node(Argv(argv_datum)))
+            fn_obj, *args_obj = argv
+            uri = urlparse(fn_obj.uri)
+            if fn_obj.adapter is None and uri.scheme == "daggerml":
                 nodes = [argv_node]
                 try:
-                    result = BUILTIN_FNS[uri.path](*data)
+                    result_py = BUILTIN_FNS[uri.path](*args_obj)
+                    result_node = self(Node(Literal(self.put_datum(result_py))))
+                    nodes.append(result_node)
+                    error_py = None
                 except Exception as e:
-                    error = Error(e)
-                else:
-                    result = self(Node(Literal(self.put_datum(result))))
-                    nodes.append(result)
-                fndag = self(FnDag(nodes, {}, result, error, argv_node))
+                    result_node = None
+                    error_py = Error(e)
+                fndag_ref = self(FnDag(nodes, {}, result_node, error_py, argv_node))
             else:
-                cmd = shutil.which(fn.adapter or "")
-                assert cmd, f"no such adapter: {fn.adapter}"
-                data = json.dumps(  # this is all passed to the executor
+                cmd = shutil.which(fn_obj.adapter or "")
+                assert cmd, f"no such adapter: {fn_obj.adapter}"
+                payload = json.dumps(
                     {
-                        "cache_key": fncache.id,
-                        "kwargs": fn.data,
+                        "db": self.path,
+                        "cache_key": fncache_ref.id,
+                        "kwargs": fn_obj.data,
                         "dump": self.dump_ref(argv_node),
                     },
                     default=serialize_resource,
                 )
-                args = [cmd, fn.uri]
-                proc = subprocess.run(args, input=data, capture_output=True, text=True, check=False)
-                err = "" if not proc.stderr else f"\n{proc.stderr}"
+                proc = subprocess.run([cmd, fn_obj.uri], input=payload, capture_output=True, text=True)
                 if proc.stderr:
                     logger.error(proc.stderr.rstrip())
-                assert proc.returncode == 0, f"{cmd}: exit status: {proc.returncode}{err}"
-                stdout = proc.stdout
+                assert proc.returncode == 0, f"{cmd}: exit status: {proc.returncode}\n{proc.stderr}"
                 try:
-                    js = json.loads(stdout or "{}")
+                    js = json.loads(proc.stdout or "{}")
                 except json.JSONDecodeError:
-                    logger.exception("failed to decode json: %r", stdout)
+                    logger.exception("failed to decode json: %r", proc.stdout)
                     raise
-                fndag = self.load_ref(js.get("dump") or to_json([]))
+                fndag_ref = self.load_ref(js.get("dump") or to_json([]))
                 if "logs" in js:
-                    fndag_ = fndag()
+                    fndag_data = self.get(fndag_ref)
                     logs = tree_map(lambda x: isinstance(x, str), lambda x: Resource(x), js["logs"])
-                    fndag_.logs = self.put_datum(logs)
-                    self(fndag, fndag_)
-            self(fncache, FnCache(argv_datum, fndag))
-        fndag = fncache().dag
-        if fndag is not None:
-            return self.dump_ref(fndag)
+                    fndag_data.logs = self.put_datum(logs)
+                    self(fndag_ref, fndag_data)
+            self(fncache_ref, FnCache(argv_datum, fndag_ref))
+        updated = self.get(fncache_ref)
+        if updated.dag is not None:
+            return self.dump_ref(updated.dag)
 
     def start_fn(self, index, *, argv, name=None, doc=None):
-        argv_ = [x().value for x in argv]
+        argv_pyvals = [self.get(x).to_pyval(self) for x in argv]
         if self.cache_db_path:
-            # raise RuntimeError("asdf")
-            with CacheDb(self.cache_db_path, create="if-needed") as cache_db:
-                fndag = cache_db.check_or_submit_fn(argv_)
+            # use a transaction for function-cache operations
+            # Assume the cache DB has already been created externally
+            with CacheDb(self.cache_db_path, create=False) as cache_db:
+                with cache_db.tx(True):
+                    fndag = cache_db.check_or_submit_fn(argv_pyvals)
         else:
-            fndag = self.check_or_submit_fn(argv_)
+            fndag = self.check_or_submit_fn(argv_pyvals)
         if fndag is not None:
             fndag = self.load_ref(fndag)
             node = self.put_node(Fn(fndag, None, argv), index=index, name=name, doc=doc)
-            raise_ex(node().error)
+            raise_ex(self.get(node).error)
             return node
 
     def commit(self, res_or_err, index: Ref):
         result, error = (res_or_err, None) if isinstance(res_or_err, Ref) else (None, res_or_err)
         assert result is not None or error is not None, "both result and error are none"
-        dag = index().dag
+        dag = self.get(index).dag
         ctx = Ctx.from_head(index, dag=dag)
         assert (ctx.dag.result or ctx.dag.error) is None, "dag has been committed already"
         ctx.dag.result = result
@@ -898,7 +958,7 @@ class Repo:
         ctx.commit.tree = self(ctx.tree)
         ctx.commit.created = ctx.commit.modified = now()
         ref = self(dag, ctx.dag)
-        commit = self.merge(self.head().commit, self(ctx.commit))
+        commit = self.merge(self.get(self.head).commit, self(ctx.commit))
         self.set_head(self.head, commit)
         self.delete(index)
         return self.dump_ref(ref)

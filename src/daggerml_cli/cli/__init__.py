@@ -28,7 +28,7 @@ DEFAULT_CONFIG = {
     "BRANCH": None,
     "USER": None,
     "QUERY": None,
-    "CACHE_REPO": "cache",
+    "CACHE_PATH": f"{CONFIG_DIR}/cachedb",
 }
 
 BASE_CONFIG = Config(
@@ -37,7 +37,7 @@ BASE_CONFIG = Config(
     os.getenv("DML_REPO", DEFAULT_CONFIG["REPO"]),
     os.getenv("DML_BRANCH", DEFAULT_CONFIG["BRANCH"]),
     os.getenv("DML_USER", DEFAULT_CONFIG["USER"]),
-    _CACHE_REPO=os.getenv("DML_CACHE_REPO", DEFAULT_CONFIG["CACHE_REPO"]),
+    _CACHE_PATH=os.getenv("DML_CACHE_PATH", DEFAULT_CONFIG["CACHE_PATH"]),
 )
 
 
@@ -96,10 +96,10 @@ def json_spec(ctx, param, value):
     help="Specify a repo other than the project repo.",
 )
 @click.option(
-    "--cache-repo",
+    "--cache-path",
     type=str,
-    default=DEFAULT_CONFIG["CACHE_REPO"],
-    help="Specify a repo to use as the main cache.",
+    default=DEFAULT_CONFIG["CACHE_PATH"],
+    help="Specify a repo to use as the main cache (full path).",
 )
 @click.option("--query", type=str, help="A JMESPath query to use in filtering the response data.")
 @click.option(
@@ -138,7 +138,7 @@ def json_spec(ctx, param, value):
     },
 )
 @clickex
-def cli(ctx, config_dir, project_dir, repo, cache_repo, branch, user, query, debug):
+def cli(ctx, config_dir, project_dir, repo, cache_path, branch, user, query, debug):
     """The DaggerML command line tool."""
     set_config(ctx)
     ctx.with_resource(ctx.obj)

@@ -22,8 +22,9 @@ class Dag:
     _dml: Any
     _token: str
 
-    def __call__(self, op, *args, **kwargs):
-        return self._dml("api", "invoke", self._token, input=to_json([op, args, kwargs]))
+    def __call__(self, op, *args, _flags=None, **kwargs):
+        _flags = _flags or []
+        return self._dml(*_flags, "api", "invoke", self._token, input=to_json([op, args, kwargs]))
 
     def json(self, op, *args, **kwargs):
         return self(op, *args, **kwargs)
@@ -103,9 +104,7 @@ class Cli:
 def cliTmpDirs():
     with TemporaryDirectory(prefix="dml-test-") as config_dir:
         with TemporaryDirectory(prefix="dml-test-") as project_dir:
-            with TemporaryDirectory(prefix="dml-test-") as fn_cache_dir:
-                os.environ["DML_FN_CACHE_DIR"] = fn_cache_dir
-                yield Cli(config_dir, project_dir)
+            yield Cli(config_dir, project_dir)
 
 
 class TestCliBranch(TestCase):
@@ -187,11 +186,11 @@ class TestCliDag(TestCase):
             dml.repo_create("repo0")
             dml.config_repo("repo0")
             assert dml.json("dag", "list") == []
+            assert dml.json("dag", "list", "--all") == []
             d0 = dml.dag_create("d0", "dag d0")
-            assert dml.json("dag", "list") == []
+            assert dml.json("dag", "list", "--all") == []
             v0 = d0("put_literal", data=SUM, name="sum-fn")
             ns = [d0("put_literal", data=i, name=f"a{i}") for i in range(3)]
-            # r0 = d0("put_literal", data=list(map(from_json, [v0, *ns])))
             r0 = d0("start_fn", argv=list(map(from_json, [v0, *ns])))
             d0("commit", result=from_json(r0))
             daglist = dml.json("dag", "list")
@@ -204,6 +203,8 @@ class TestCliDag(TestCase):
                 "nodes",
                 "result",
             ]
+            print("".join(daglist[0]["error"]["context"]["trace"]))
+            assert daglist[0]["error"] is None
             assert list(daglist[0]["names"]) == [
                 *[f"a{i}" for i in range(3)],
                 # "daggerml:build",
@@ -213,7 +214,9 @@ class TestCliDag(TestCase):
             assert desc["id"] == daglist[0]["id"]
             # asdf
             daglist = dml.json("dag", "list", "--all")
-            assert daglist[0]["error"]["message"] == None
+            assert len(daglist) == 1
+            print("".join(daglist[0]["error"]["context"]["trace"]))
+            assert daglist[0]["error"] is None
             assert len(daglist) > 1
 
 
@@ -296,6 +299,7 @@ class TestCliStatus(TestCase):
                 "user": None,
                 "config_dir": dml._config_dir,
                 "project_dir": dml._project_dir,
+                "cache_dir": os.path.expanduser("~/.config/dml/cachedb"),
             }
 
     def test_status_set(self):
@@ -311,4 +315,5 @@ class TestCliStatus(TestCase):
                 "user": "Testy McTesterstein",
                 "config_dir": dml._config_dir,
                 "project_dir": dml._project_dir,
+                "cache_dir": os.path.expanduser("~/.config/dml/cachedb"),
             }

@@ -29,7 +29,13 @@ from daggerml_cli.repo import (
     unroll_datum,
 )
 from daggerml_cli.topology import topology
-from daggerml_cli.util import asserting, detect_executable, makedirs, some
+from daggerml_cli.util import (
+    assert_exactly_one,
+    asserting,
+    detect_executable,
+    makedirs,
+    some,
+)
 
 ###############################################################################
 # HELPERS #####################################################################
@@ -165,6 +171,7 @@ def status(config):
         "user": config.get("USER"),
         "config_dir": config.get("CONFIG_DIR"),
         "project_dir": config.get("PROJECT_DIR") and os.path.abspath(config.get("PROJECT_DIR")),
+        "cache_dir": config.get("CACHE_PATH"),
     }
 
 
@@ -186,6 +193,10 @@ def config_branch(config, name):
 
 def config_user(config, user):
     config.USER = user
+
+
+def config_cache(config, path):
+    config.CACHE_PATH = path
 
 
 ###############################################################################
@@ -296,24 +307,25 @@ def describe_dag(config, ref):
 ###############################################################################
 
 
-def create_cache(config, name):
-    config._REPO = name
-    with Repo(makedirs(config.CACHE_PATH), user=config.USER, create=True):
+def create_cache(config):
+    with Repo(makedirs(config.CACHE_PATH), create=True):
         pass
 
 
-def delete_cache(config, dag: Ref):
-    with Repo(config.REPO_PATH, head=config.BRANCHREF) as db:
+def delete_cache(config, dag: Ref = None, fncache: Ref = None):
+    assert_exactly_one(dag, fncache)
+    with Repo(config.CACHE_PATH) as db:
         with db.tx(True):
-            fncache = db(FnCache(dag().argv().value, dag), return_existing=True)
-            assert fncache().dag == dag, f"{fncache.to!r} -> {fncache().dag.to!r} != {dag.to!r}"
+            if fncache is None:
+                fncache = db(FnCache(dag().argv().value, dag), return_existing=True)
+                assert fncache().dag == dag, f"{fncache.to!r} -> {fncache().dag.to!r} != {dag.to!r}"
             db.delete(fncache)
     return True
 
 
 def list_cache(config):
     # walk all indexes and return all FnCache objects
-    with Repo(config.REPO_PATH, head=config.BRANCHREF) as db:
+    with Repo(config.CACHE_PATH) as db:
         with db.tx():
             for obj in db.cursor("fncache"):
                 yield with_attrs(obj, result=obj().dag().result, error=obj().dag().error)
@@ -350,6 +362,15 @@ def delete_index(config, index: Ref):
 ###############################################################################
 # API #########################################################################
 ###############################################################################
+
+
+def deref(config, ref):
+    """
+    Dereference a Ref object to its underlying data.
+    """
+    with Repo.from_config(config) as db:
+        with db.tx():
+            return db.get(ref)
 
 
 def invoke_op(f):

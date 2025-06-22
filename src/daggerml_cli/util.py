@@ -26,6 +26,17 @@ def some(xs, default=None):
     return next((x for x in xs if x), default)
 
 
+def assert_exactly_one(*objs, message=None):
+    """
+    Asserts that exactly one of the provided objects is not None.
+    """
+    count = sum(1 for v in objs if v is not None)
+    if count != 1:
+        raise ValueError(
+            message or f"Exactly one of the provided values must be non-None, but found {count} non-None values: {objs}"
+        )
+
+
 def asserting(x, message=None):
     if isinstance(message, str):
         assert x, message

@@ -43,7 +43,8 @@ class TestApiCreate(TestCase):
 class TestApiBase(TestCase):
     def test_create_dag(self):
         with TemporaryDirectory() as config_dir:
-            with SimpleApi.begin("d0", config_dir=config_dir) as d0:
+            with SimpleApi.begin("d0", config_dir=config_dir, cache_path=config_dir) as d0:
+                api.create_cache(d0.ctx)
                 data = {"foo": 23, "bar": {4, 6}, "baz": [True, 3]}
                 n0 = d0.put_literal(data, name="n0", doc="This is my data.")
                 with d0.tx():
@@ -51,9 +52,9 @@ class TestApiBase(TestCase):
                     assert n0().doc == "This is my data."
                 d0.commit(n0)
                 d0.test_close(self)
-            with SimpleApi.begin("d1", config_dir=config_dir) as d1:
+            with SimpleApi.begin("d1", config_dir=config_dir, cache_path=config_dir) as d1:
                 n0 = d1.put_load("d0", name="n0", doc="From dag d0.")
-                with d0.tx():
+                with d1.tx():
                     assert d1.get_node("n0") == n0
                     assert n0().doc == "From dag d0."
                 n1 = d1.put_literal([n0, n0, 2])
@@ -169,33 +170,38 @@ class TestApiBase(TestCase):
         with env(DML_FN_FILTER_ARGS="True", DML_NO_CLEAN="1"):
             with SimpleApi.begin() as d0:
                 assert d0.unroll(d0.start_fn(*argv))[1] == 3
+        with TemporaryDirectory() as cache_dir:
+            with TemporaryDirectory() as config_dir:
+                with env(DML_NO_CLEAN="1"):
+                    with self.assertRaises(Error):
+                        with SimpleApi.begin(config_dir=config_dir, cache_path=cache_dir) as d0:
+                            d0.start_fn(*argv)
 
-        with TemporaryDirectory() as config_dir:
-            with env(DML_NO_CLEAN="1"):
-                with self.assertRaises(Error):
-                    with SimpleApi.begin(config_dir=config_dir) as d0:
-                        d0.start_fn(*argv)
+                cache = list(api.list_cache(d0.ctx))
+                assert len(cache) == 1
+                api.delete_cache(d0.ctx, fncache=cache[0])
+                assert len(list(api.list_cache(d0.ctx))) == 0
+                with env(DML_FN_FILTER_ARGS="True", DML_NO_CLEAN="1"):
+                    with self.assertRaises(Error):
+                        with d0:
+                            d0.start_fn(*argv, name="test")
+                    with d0.tx():
+                        cache = list(api.list_cache(d0.ctx))
+                        assert len(cache) == 1
+                        desc = api.describe_dag(d0.ctx, d0.token().dag)
+                        print(f"{desc['nodes'] = }")
+                        (fndag,) = [x for x in desc["nodes"] if x["name"] == "test"]
+                        desc = api.describe_dag(d0.ctx, fndag["id"]().data.dag)
+                        api.delete_cache(d0.ctx, desc["id"])
+                        cache = list(api.list_cache(d0.ctx))
+                        assert cache == []
 
-            with env(DML_FN_FILTER_ARGS="True", DML_NO_CLEAN="1"):
-                with self.assertRaises(Error):
                     with d0:
-                        d0.start_fn(*argv, name="test")
-                with d0.tx():
-                    cache = list(api.list_cache(d0.ctx))
-                    assert len(cache) == 1
-                    desc = api.describe_dag(d0.ctx, d0.token().dag)
-                    (fndag,) = [x for x in desc["nodes"] if x["name"] == "test"]
-                    desc = api.describe_dag(d0.ctx, fndag["id"]().data.dag)
-                    api.delete_cache(d0.ctx, desc["id"])
-                    cache = list(api.list_cache(d0.ctx))
-                    assert cache == []
+                        res0 = d0.start_fn(*argv)
+                        assert d0.unroll(res0)[1] == 3
 
-                with d0:
-                    res0 = d0.start_fn(*argv)
-                    assert d0.unroll(res0)[1] == 3
-
-                with d0:
-                    assert d0.start_fn(*argv) == res0
+                    with d0:
+                        assert d0.start_fn(*argv) == res0
 
     def test_resource(self):
         with SimpleApi.begin() as d0:
