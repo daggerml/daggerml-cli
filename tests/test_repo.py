@@ -10,11 +10,11 @@ from daggerml_cli.repo import Literal, Node, Ref, Repo, Resource, unroll_datum
 
 
 @contextmanager
-def tmp_repo(cache_dir=None):
+def tmp_repo(cache_path=None):
     """Context manager to create a temporary repository."""
     tmpdirs = [tempfile.mkdtemp() for _ in range(2)]
-    repo = Repo(tmpdirs[0], user="test", create=True, cache_db_path=cache_dir or tmpdirs[1])
-    if cache_dir is None:
+    repo = Repo(tmpdirs[0], user="test", create=True, cache_db_path=cache_path or tmpdirs[1])
+    if cache_path is None:
         with Repo(repo.cache_db_path, create=True):
             pass
     try:

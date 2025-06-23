@@ -139,12 +139,12 @@ class TestApiBase(TestCase):
     def test_cross_repo_cache(self):
         argv = [SUM, 1, 2]
 
-        with self.tmpd() as cache_dir:
-            with SimpleApi.begin(cache_path=cache_dir) as d0:
+        with self.tmpd() as cache_path:
+            with SimpleApi.begin(cache_path=cache_path) as d0:
                 res0 = d0.unroll(d0.start_fn(*argv))
                 d0.test_close(self)
 
-            with SimpleApi.begin(cache_path=cache_dir) as d0:
+            with SimpleApi.begin(cache_path=cache_path) as d0:
                 res1 = d0.unroll(d0.start_fn(*argv))
                 d0.test_close(self)
 
@@ -154,8 +154,8 @@ class TestApiBase(TestCase):
         argv = [SUM, 1, 2]
 
         with env(DML_FN_FILTER_ARGS="True"):
-            with self.tmpd() as cache_dir:
-                with SimpleApi.begin(cache_path=cache_dir) as d0:
+            with self.tmpd() as cache_path:
+                with SimpleApi.begin(cache_path=cache_path) as d0:
                     res0 = d0.unroll(d0.start_fn(*argv))
                     d0.test_close(self)
                 cache = api.list_cache(d0.ctx)
@@ -163,7 +163,7 @@ class TestApiBase(TestCase):
                 assert cache[0].keys() == {"cache_key", "dag_id"}
                 api.delete_cache(d0.ctx, cache[0]["cache_key"])
 
-                with SimpleApi.begin(cache_path=cache_dir) as d0:
+                with SimpleApi.begin(cache_path=cache_path) as d0:
                     res1 = d0.unroll(d0.start_fn(*argv))
                     d0.test_close(self)
 
@@ -189,14 +189,14 @@ class TestApiBase(TestCase):
 
     def test_cached_errors(self):
         argv = [SUM, 1, 2, "BOGUS"]
-        with self.tmpd() as cache_dir:
+        with self.tmpd() as cache_path:
             with env(DML_NO_CLEAN="1"):
-                with SimpleApi.begin(cache_path=cache_dir) as d0:
+                with SimpleApi.begin(cache_path=cache_path) as d0:
                     with self.assertRaises(Error):
                         d0.start_fn(*argv)
             with env(DML_FN_FILTER_ARGS="True", DML_NO_CLEAN="1"):
                 with self.assertRaises(Error):
-                    with SimpleApi.begin(cache_path=cache_dir) as d0:
+                    with SimpleApi.begin(cache_path=cache_path) as d0:
                         d0.start_fn(*argv)
 
     def test_resource(self):

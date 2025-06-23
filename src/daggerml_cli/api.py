@@ -28,12 +28,7 @@ from daggerml_cli.repo import (
     unroll_datum,
 )
 from daggerml_cli.topology import topology
-from daggerml_cli.util import (
-    asserting,
-    detect_executable,
-    makedirs,
-    some,
-)
+from daggerml_cli.util import asserting, detect_executable, makedirs, some
 
 ###############################################################################
 # HELPERS #####################################################################
@@ -169,7 +164,7 @@ def status(config):
         "user": config.get("USER"),
         "config_dir": config.get("CONFIG_DIR"),
         "project_dir": config.get("PROJECT_DIR") and os.path.abspath(config.get("PROJECT_DIR")),
-        "cache_dir": config.get("CACHE_PATH"),
+        "cache_path": config.get("CACHE_PATH"),
     }
 
 

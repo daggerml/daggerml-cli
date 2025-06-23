@@ -862,50 +862,6 @@ class Repo:
         return unroll_datum(val)
 
     def start_fn(self, index, *, argv, name=None, doc=None):
-        """
-        Old code:
-
-        def start_fn(self, index, *, argv, retry=False, name=None, doc=None):
-            fn, *data = map(lambda x: x().datum, argv)
-            argv_node = self(Node(Argv(self.put_datum([x().value for x in argv]))))
-            fndag = self(FnDag([argv_node], {}, None, None, argv_node), return_existing=True)
-            if fndag().error is not None and retry:
-                self(fndag, FnDag([argv_node], {}, None, None, argv_node))
-            if not fndag().ready:
-                uri = urlparse(fn.uri)
-                if fn.adapter is None and uri.scheme == "daggerml":
-                    result = error = None
-                    nodes = [argv_node]
-                    try:
-                        result = BUILTIN_FNS[uri.path](*data)
-                    except Exception as e:
-                        error = Error(e)
-                    else:
-                        result = self(Node(Literal(self.put_datum(result))))
-                        nodes.append(result)
-                    self(fndag, FnDag(nodes, {}, result, error, argv_node))
-                else:
-                    cmd = shutil.which(fn.adapter or "")
-                    assert cmd, f"no such adapter: {fn.adapter}"
-                    kwgs = tree_map(lambda x: isinstance(x, Resource), lambda x: x.uri, fn.data)
-                    data = json.dumps(  # this is all passed to the executor
-                        {
-                            "cache_key": argv_node.id,
-                            "kwargs": kwgs,
-                            "retry": retry,
-                            "dump": self.dump_ref(fndag),
-                        }
-                    )
-                    args = [cmd, fn.uri]
-                    proc = subprocess.run(args, input=data, capture_output=True, text=True, check=False)
-                    err = "" if not proc.stderr else f"\n{proc.stderr}"
-                    if proc.stderr:
-                        logger.error(proc.stderr.rstrip())
-                    assert proc.returncode == 0, f"{cmd}: exit status: {proc.returncode}{err}"
-                    self.load_ref(proc.stdout or to_json([]))
-            if fndag().ready:
-
-        """
         fn, *data = map(lambda x: x().datum, argv)
         argv_datum = self.put_datum([x().value for x in argv])
         if fn.adapter is None:

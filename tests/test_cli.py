@@ -36,7 +36,7 @@ class Cli:
 
     _config_dir: str
     _project_dir: str
-    _cache_dir: str
+    _cache_path: str
 
     def _flags(self):
         out = [
@@ -45,8 +45,8 @@ class Cli:
             "--config-dir",
             self._config_dir,
         ]
-        if isinstance(self._cache_dir, str):
-            out += ["--cache-path", self._cache_dir]
+        if isinstance(self._cache_path, str):
+            out += ["--cache-path", self._cache_path]
         return out
 
     def __call__(self, *args, input=None):
@@ -308,7 +308,7 @@ class TestCliStatus(TestCase):
                 "user": None,
                 "config_dir": dml._config_dir,
                 "project_dir": dml._project_dir,
-                "cache_dir": os.path.expanduser("~/.config/dml/cachedb"),
+                "cache_path": os.path.expanduser("~/.config/dml/cachedb"),
             }
 
     def test_status_set(self):
@@ -324,5 +324,5 @@ class TestCliStatus(TestCase):
                 "user": "Testy McTesterstein",
                 "config_dir": dml._config_dir,
                 "project_dir": dml._project_dir,
-                "cache_dir": dml._cache_dir,
+                "cache_path": dml._cache_path,
             }
