@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Any, Dict, Optional, Union
 from urllib.parse import urlparse
 from uuid import uuid4
 
-from daggerml_cli.db import dbenv
+from daggerml_cli.db import Cache, dbenv
 from daggerml_cli.pack import packb, register, unpackb
 from daggerml_cli.util import asserting, assoc, conj, makedirs, now, tree_map
 
@@ -288,38 +288,28 @@ class Dag:
 @dataclass
 class FnDag(Dag):
     argv: Optional[Ref] = None  # -> node(expr) (in this dag)
-    logs: Optional[Ref] = None  # -> Datum
 
 
-@repo_type(hash=["argv"])
-@dataclass
-class FnCache:
-    argv: Ref  # -> Node(Argv)
-    dag: Optional[Ref]  # -> fndag
+@repo_type(db=False)
+@dataclass(frozen=True)
+class Edge:
+    path: tuple[Union[str, int]]
+    node: Ref  # -> node
 
-    @property
-    def ready(self):
-        return self.dag is not None and self.dag().ready
+    def __post_init__(self):
+        if isinstance(self.path, list):
+            object.__setattr__(self, "path", tuple(self.path))
 
 
 @repo_type(db=False)
 @dataclass
 class Literal:
     value: Ref  # -> datum
+    edges: Optional[tuple[Edge]] = None
 
     @property
     def error(self):
         pass
-
-    def get_value(self, repo: "Repo"):
-        return self.value
-
-    def to_pyval(self, db: "Repo"):
-        """Convert Literal to a pure Python value, recursively resolving all references."""
-        datum = db.get(self.value)
-        if datum is None:
-            return None
-        return datum.to_pyval(db)
 
 
 @repo_type(db=False)
@@ -346,23 +336,6 @@ class Import:
         ref = self.node or self.dag
         return ref().error
 
-    def get_value(self, repo: "Repo"):
-        """Get the value of the Import, which is either the node or the result of the dag."""
-        ref = self.node or repo.get(self.dag).result
-        if ref is None:
-            return None
-        return repo.get(ref)
-
-    def to_pyval(self, db: "Repo"):
-        """Convert Import to a pure Python value, recursively resolving all references."""
-        ref = self.node or db.get(self.dag).result
-        if ref is None:
-            return None
-        node = db.get(ref)
-        if node is None:
-            return None
-        return node.to_pyval(db)
-
 
 @repo_type(db=False)
 @dataclass
@@ -388,23 +361,11 @@ class Node:
     def datum(self):
         return self.value().value
 
-    def to_pyval(self, db: "Repo"):
-        """Convert Node to a pure Python value, recursively resolving all references."""
-        datum_ref = self.data.value
-        datum = db.get(datum_ref)
-        if datum is None:
-            return None
-        return datum.to_pyval(db)
-
 
 @repo_type
 @dataclass
 class Datum:
     value: Union[None, str, bool, int, float, Resource, list, dict, set]
-
-    def to_pyval(self, db: "Repo"):
-        """Convert datum to pure Python value, resolving all references."""
-        return unroll_datum(self)
 
 
 @dataclass
@@ -780,22 +741,43 @@ class Repo:
         self.head = ref
 
     def extract_nodes(self, obj):
-        result = []
+        """
+        Given a nested object, find the Node instances, put them into a list of Edge objects, and replace the
+        instance with the underlying datum.
 
-        def extract(obj):
+        Examples
+        --------
+        >>> from tempfile import TemporaryDirectory
+        >>> with TemporaryDirectory(prefix="dml-") as tmpdir:
+        ...    repo = Repo(tmpdir, create=True)
+        ...    node1 = Node(Literal(Datum("value1")))
+        ...    node2 = Node(Literal(Datum("value2")))
+        ...    nested_obj = {"a": node1, "b": [1, {"c": node2}]}
+        ...    edges, new_obj = repo.extract_nodes(nested_obj)
+        >>> [x.path for x in edges]
+        [('a',), ('b', 1, 'c')]
+        >>> [x.node.to for x in edges]
+        ["node/...", "node/..."]
+        >>> new_obj == {'a': Ref('datum/...'), 'b': [1, {'c': Ref('datum/...')}]}
+        True
+        """
+        edges = []
+
+        def extract(obj, path=()):
             if isinstance(obj, Ref):
-                extract(self.get(obj))
-            elif isinstance(obj, Node):
-                if obj not in result:
-                    result.append(obj)
-            elif isinstance(obj, (list, set, tuple)):
-                for x in obj:
-                    extract(x)
-            elif isinstance(obj, dict):
-                for v in obj.values():
-                    extract(v)
+                if obj.type == "node":
+                    edges.append(Edge(path, obj))
+                    obj = self.get(obj).value
+                assert obj.type == "datum", f"expected datum or node, got: {obj.type}"
+                return obj
+            if isinstance(obj, list):
+                return [extract(x, (*path, i)) for i, x in enumerate(obj)]
+            if isinstance(obj, dict):
+                return {k: extract(v, (*path, k)) for k, v in obj.items()}
+            return obj
 
-        return extract(obj) or result
+        new_obj = extract(obj)
+        return tuple(edges), new_obj
 
     def put_datum(self, value):
         def put(value):
@@ -850,9 +832,8 @@ class Repo:
             dag = self(Dag([], {}, None, None))
             ctx.dags[name] = dag
         else:
-            # import a dumped DAG/function under a write transaction
             with self.tx(True):
-                argv = self.load_ref(dump)
+                argv = self(Node(Argv(self.load_ref(dump))))
             dag = self(FnDag([argv], {}, None, None, argv))
         commit = Commit([ctx.head.commit], self(ctx.tree), self.user, self.user, message)
         index = self(Index(self(commit), dag))
@@ -880,69 +861,94 @@ class Repo:
         assert isinstance(val, Datum)
         return unroll_datum(val)
 
-    def check_or_submit_fn(self, argv):
-        argv_datum = self.put_datum(argv)
-        fncache_ref = self(FnCache(argv_datum, None), return_existing=True)
-        cache_entry = self.get(fncache_ref)
-        if not cache_entry.ready:
-            argv_node = self(Node(Argv(argv_datum)))
-            fn_obj, *args_obj = argv
-            uri = urlparse(fn_obj.uri)
-            if fn_obj.adapter is None and uri.scheme == "daggerml":
-                nodes = [argv_node]
-                try:
-                    result_py = BUILTIN_FNS[uri.path](*args_obj)
-                    result_node = self(Node(Literal(self.put_datum(result_py))))
-                    nodes.append(result_node)
-                    error_py = None
-                except Exception as e:
-                    result_node = None
-                    error_py = Error(e)
-                fndag_ref = self(FnDag(nodes, {}, result_node, error_py, argv_node))
-            else:
-                cmd = shutil.which(fn_obj.adapter or "")
-                assert cmd, f"no such adapter: {fn_obj.adapter}"
-                payload = json.dumps(
-                    {
-                        "db": self.path,
-                        "cache_key": fncache_ref.id,
-                        "kwargs": fn_obj.data,
-                        "dump": self.dump_ref(argv_node),
-                    },
-                    default=serialize_resource,
-                )
-                proc = subprocess.run([cmd, fn_obj.uri], input=payload, capture_output=True, text=True)
-                if proc.stderr:
-                    logger.error(proc.stderr.rstrip())
-                assert proc.returncode == 0, f"{cmd}: exit status: {proc.returncode}\n{proc.stderr}"
-                try:
-                    js = json.loads(proc.stdout or "{}")
-                except json.JSONDecodeError:
-                    logger.exception("failed to decode json: %r", proc.stdout)
-                    raise
-                fndag_ref = self.load_ref(js.get("dump") or to_json([]))
-                if "logs" in js:
-                    fndag_data = self.get(fndag_ref)
-                    logs = tree_map(lambda x: isinstance(x, str), lambda x: Resource(x), js["logs"])
-                    fndag_data.logs = self.put_datum(logs)
-                    self(fndag_ref, fndag_data)
-            self(fncache_ref, FnCache(argv_datum, fndag_ref))
-        updated = self.get(fncache_ref)
-        if updated.dag is not None:
-            return self.dump_ref(updated.dag)
-
     def start_fn(self, index, *, argv, name=None, doc=None):
-        argv_pyvals = [self.get(x).to_pyval(self) for x in argv]
-        if self.cache_db_path:
-            # use a transaction for function-cache operations
-            # Assume the cache DB has already been created externally
-            with CacheDb(self.cache_db_path, create=False) as cache_db:
-                with cache_db.tx(True):
-                    fndag = cache_db.check_or_submit_fn(argv_pyvals)
+        """
+        Old code:
+
+        def start_fn(self, index, *, argv, retry=False, name=None, doc=None):
+            fn, *data = map(lambda x: x().datum, argv)
+            argv_node = self(Node(Argv(self.put_datum([x().value for x in argv]))))
+            fndag = self(FnDag([argv_node], {}, None, None, argv_node), return_existing=True)
+            if fndag().error is not None and retry:
+                self(fndag, FnDag([argv_node], {}, None, None, argv_node))
+            if not fndag().ready:
+                uri = urlparse(fn.uri)
+                if fn.adapter is None and uri.scheme == "daggerml":
+                    result = error = None
+                    nodes = [argv_node]
+                    try:
+                        result = BUILTIN_FNS[uri.path](*data)
+                    except Exception as e:
+                        error = Error(e)
+                    else:
+                        result = self(Node(Literal(self.put_datum(result))))
+                        nodes.append(result)
+                    self(fndag, FnDag(nodes, {}, result, error, argv_node))
+                else:
+                    cmd = shutil.which(fn.adapter or "")
+                    assert cmd, f"no such adapter: {fn.adapter}"
+                    kwgs = tree_map(lambda x: isinstance(x, Resource), lambda x: x.uri, fn.data)
+                    data = json.dumps(  # this is all passed to the executor
+                        {
+                            "cache_key": argv_node.id,
+                            "kwargs": kwgs,
+                            "retry": retry,
+                            "dump": self.dump_ref(fndag),
+                        }
+                    )
+                    args = [cmd, fn.uri]
+                    proc = subprocess.run(args, input=data, capture_output=True, text=True, check=False)
+                    err = "" if not proc.stderr else f"\n{proc.stderr}"
+                    if proc.stderr:
+                        logger.error(proc.stderr.rstrip())
+                    assert proc.returncode == 0, f"{cmd}: exit status: {proc.returncode}{err}"
+                    self.load_ref(proc.stdout or to_json([]))
+            if fndag().ready:
+
+        """
+        fn, *data = map(lambda x: x().datum, argv)
+        argv_datum = self.put_datum([x().value for x in argv])
+        if fn.adapter is None:
+            uri = urlparse(fn.uri)
+            assert uri.scheme == "daggerml", f"unexpected URI scheme: {uri.scheme!r} for null adapter"
+            argv_node = self(Node(Argv(argv_datum)))
+            result = error = None
+            nodes = [argv_node]
+            try:
+                result = BUILTIN_FNS[uri.path](*data)
+            except Exception as e:
+                error = Error(e)
+            else:
+                result = self(Node(Literal(self.put_datum(result))))
+                nodes.append(result)
+            fndag = self(FnDag(nodes, {}, result, error, argv_node))
         else:
-            fndag = self.check_or_submit_fn(argv_pyvals)
+            fndag = None
+            with Cache(self.cache_db_path, create=False) as cache_db:
+                cached_val = cache_db.get(argv_datum.id)
+                if cached_val is None:
+                    cmd = shutil.which(fn.adapter or "")
+                    assert cmd, f"no such adapter: {fn.adapter}"
+                    payload = json.dumps(
+                        {
+                            "cache_db": self.cache_db_path,
+                            "cache_key": argv_datum.id,
+                            "kwargs": fn.data,
+                            "dump": self.dump_ref(argv_datum),
+                        },
+                        default=serialize_resource,
+                    )
+                    proc = subprocess.run([cmd, fn.uri], input=payload, capture_output=True, text=True)
+                    if proc.stderr:
+                        logger.error(proc.stderr.rstrip())
+                    assert proc.returncode == 0, f"{cmd}: exit status: {proc.returncode}\n{proc.stderr}"
+                    cached_val = json.loads(proc.stdout or "{}")
+                    # cached_val = cached_val.get("dump")
+                    if cached_val.get("dump"):
+                        cache_db.put(argv_datum.id, cached_val)
+            if cached_val:
+                fndag = self.load_ref(cached_val["dump"])
         if fndag is not None:
-            fndag = self.load_ref(fndag)
             node = self.put_node(Fn(fndag, None, argv), index=index, name=name, doc=doc)
             raise_ex(self.get(node).error)
             return node
@@ -962,7 +968,3 @@ class Repo:
         self.set_head(self.head, commit)
         self.delete(index)
         return self.dump_ref(ref)
-
-
-class CacheDb(Repo):
-    pass

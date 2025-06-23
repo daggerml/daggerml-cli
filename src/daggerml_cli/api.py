@@ -11,14 +11,15 @@ import jmespath
 from asciidag.graph import Graph as AsciiGraph
 from asciidag.node import Node as AsciiNode
 
+from daggerml_cli.db import Cache
 from daggerml_cli.repo import (
     BUILTIN_FNS,
     DEFAULT_BRANCH,
     CheckedRef,
     Ctx,
     Dag,
+    Edge,
     Error,
-    FnCache,
     Import,
     Index,
     Literal,
@@ -308,27 +309,19 @@ def describe_dag(config, ref):
 
 
 def create_cache(config):
-    with Repo(makedirs(config.CACHE_PATH), create=True):
+    with Cache(config.CACHE_PATH, create=True):
         pass
 
 
-def delete_cache(config, dag: Ref = None, fncache: Ref = None):
-    assert_exactly_one(dag, fncache)
-    with Repo(config.CACHE_PATH) as db:
-        with db.tx(True):
-            if fncache is None:
-                fncache = db(FnCache(dag().argv().value, dag), return_existing=True)
-                assert fncache().dag == dag, f"{fncache.to!r} -> {fncache().dag.to!r} != {dag.to!r}"
-            db.delete(fncache)
-    return True
+def delete_cache(config, cache_key: Ref = None):
+    with Cache(config.CACHE_PATH) as cache:
+        return cache.delete(cache_key)
 
 
 def list_cache(config):
     # walk all indexes and return all FnCache objects
-    with Repo(config.CACHE_PATH) as db:
-        with db.tx():
-            for obj in db.cursor("fncache"):
-                yield with_attrs(obj, result=obj().dag().result, error=obj().dag().error)
+    with Cache(config.CACHE_PATH) as cache:
+        return list(cache)
 
 
 ###############################################################################
@@ -395,19 +388,12 @@ def op_start_fn(db, index, argv, name=None, doc=None):
 def op_put_literal(db, index, data, name=None, doc=None):
     # TODO: refactor so that Resource.data -> Ref(datum)
     with db.tx(True):
-        if isinstance(data, Ref) and isinstance(data(), Node):
+        if isinstance(data, Ref) and data.type == "node":
             return op_set_node(db, index, name, data) if name else data
-        nodes = db.extract_nodes(data)
-        result = Literal(db.put_datum(data))
-        if not len(nodes):
-            return db.put_node(result, index=index, name=name, doc=doc)
-        else:
-            fn = Literal(db.put_datum(Resource("daggerml:build")))
-            fn = db.put_node(fn, index=index, name="daggerml:build")
-            result = db.put_node(result, index=index)
-            nodes = [db.put_node(x.data, index=index, doc=x.doc) for x in nodes]
-            result = db.start_fn(index, argv=[fn, result, *nodes], name=name, doc=doc)
-            return result
+        edges, data = db.extract_nodes(data)
+        log.debug("op_put_literal: paths=%s", [x.path for x in edges])
+        result = db.put_node(Literal(db.put_datum(data), edges=edges), index=index, name=name, doc=doc)
+        return result
 
 
 @invoke_op

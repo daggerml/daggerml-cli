@@ -1,16 +1,18 @@
 import json
 import logging
+import math
 import os
-from contextlib import contextmanager
 from dataclasses import InitVar, dataclass, field
-from hashlib import md5
+from typing import Optional
 
 import lmdb
 
-from daggerml_cli.pack import packb, unpackb
 from daggerml_cli.util import makedirs
 
 logger = logging.getLogger(__name__)
+MAP_SIZE_HEADROOM = 1.5  # 50% more than current size
+MAP_SIZE_MIN = 128 * 1024**2  # Minimum 128MB
+MAP_SIZE_MAX = 128 * 1024**3  # Hard cap 64GB
 
 
 def dbenv(path, db_types, **kw):
@@ -28,95 +30,108 @@ def dbenv(path, db_types, **kw):
 
 
 @dataclass
-class Database:
+class Cache:
     path: str
+    env: Optional[lmdb.Environment] = field(init=False, default=None)
     create: InitVar[bool] = False
-    repo_types: InitVar[list] = None
+    map_size: InitVar[Optional[int]] = None
 
-    def __post_init__(self, create, repo_types):
-        self._tx = []
-        dbfile = str(os.path.join(self.path, "data.mdb"))
-        dbfile_exists = os.path.exists(dbfile)
+    def __post_init__(self, create=None, map_size=None):
         if create:
-            assert not dbfile_exists, f"repo exists: {dbfile}"
-            map_size = 10485760
-            with open(os.path.join(self.path, "config"), "w") as f:
-                json.dump({"map_size": map_size}, f)
-        else:
-            assert dbfile_exists, f"repo not found: {dbfile}"
-            with open(os.path.join(self.path, "config")) as f:
-                map_size = json.load(f)["map_size"]
-        self.env, self.dbs = dbenv(self.path, repo_types, map_size=map_size)
+            assert not os.path.exists(self.path), f"cache exists: {self.path}"
+            makedirs(self.path)
+        if map_size is None:
+            map_size = [f"{self.path}/{f}" for f in os.listdir(self.path)]
+            map_size = [f for f in map_size if os.path.isfile(f)]
+            map_size = sum(os.stat(f).st_size for f in map_size)
+            if map_size < MAP_SIZE_MIN:
+                logger.info("Db too small... setting size %r -> %r", map_size, MAP_SIZE_MIN)
+                map_size = MAP_SIZE_MIN
+        map_size = map_size / MAP_SIZE_HEADROOM
+        for _ in range(3):
+            try:
+                self.env = lmdb.open(self.path, max_dbs=1, map_size=self._get_size(map_size))
+                break
+            except lmdb.Error as e:
+                logger.exception("LMDB error while opening environment: %s", e)
+                if _ == 2:
+                    raise
 
-    def close(self):
-        self.env.close()
+    def _get_size(self, curr_size=None):
+        if curr_size is None:
+            curr_size = self.env.info()["map_size"]
+        if curr_size >= MAP_SIZE_MAX:
+            msg = f"LMDB map size is already at maximum: {curr_size}"
+            raise RuntimeError(msg)
+        new_size = min(int(math.ceil(curr_size * MAP_SIZE_HEADROOM)), MAP_SIZE_MAX)
+        logger.info("Growing LMDB map_size from %r to %r", curr_size, new_size)
+
+    def _resize_call(self, func, write=False):
+        while True:
+            try:
+                with self.env.begin(write=write) as tx:
+                    return func(tx)
+            except lmdb.MapFullError as e:
+                self.env.set_mapsize(self._get_size())
+                curr_size = self.env.info()["map_size"]
+                if curr_size == MAP_SIZE_MAX:
+                    msg = f"LMDB map size is already at maximum: {curr_size}"
+                    raise RuntimeError(msg) from e
+                new_size = min(int(math.ceil(curr_size * 1.5)), MAP_SIZE_MAX)
+                logger.info("Growing LMDB map_size from %r to %r", curr_size, new_size)
+                self.env.set_mapsize(new_size)
+
+    def get(self, key):
+        def inner(tx):
+            data = tx.get(key.encode())
+            if data is not None:
+                data = json.loads(data.decode())
+            return data
+
+        return self._resize_call(inner)
+
+    def put(self, key, value):
+        def inner(tx):
+            data = json.dumps(value, sort_keys=True).encode()
+            tx.put(key.encode(), data)
+
+        self._resize_call(inner, write=True)
+
+    def delete(self, key):
+        def inner(tx):
+            tx.delete(key.encode())
+
+        self._resize_call(inner, write=True)
+        return True
+
+    def __iter__(self):
+        def inner(tx):
+            with tx.cursor() as cursor:
+                return sorted(
+                    [
+                        {
+                            "cache_key": key.decode(),
+                            "dag_id": json.loads(json.loads(val.decode())["dump"])[-1][1][1],
+                        }
+                        for key, val in cursor
+                    ],
+                    key=lambda x: x["cache_key"],
+                )
+
+        return iter(self._resize_call(inner))
+
+    def _close(self):
+        if self.env is not None:
+            self.env.close()
+            self.env = None
+        else:
+            logger.warning("Cache environment already closed or never opened.")
 
     def __enter__(self):
         return self
 
-    def __exit__(self, *errs, **err_kw):
-        self.close()
-
-    def db(self, type):
-        return self.dbs[type] if type else None
-
-    @contextmanager
-    def tx(self, write=False):
-        cls = type(self)
-        old_curr = getattr(cls, "curr", None)
-        try:
-            if not len(self._tx):
-                self._tx.append(self.env.begin(write=write, buffers=True).__enter__())
-                cls.curr = self
-            else:
-                self._tx.append(None)
-            yield True
-        finally:
-            cls.curr = old_curr
-            tx = self._tx.pop()
-            if tx:
-                tx.__exit__(None, None, None)
-
-    def copy(self, path):
-        self.env.copy(makedirs(path))
-
-    def hash(self, obj):
-        _hash = md5(packb(obj, True)).hexdigest()
-        db = type(obj).__name__.lower()
-        return f"{db}/{_hash}"
-
-    def get(self, key):
-        db = key.split("/", 1)[0]
-        if key:
-            return unpackb(self._tx[0].get(key.encode(), db=self.db(db)))
-
-    def put(self, key, obj=None, *, return_existing=False) -> str:
-        key, obj = (key, obj) if obj else (obj, key)
-        assert obj is not None
-        db = type(obj).__name__.lower()
-        data = packb(obj)
-        key2 = key or self.hash(obj)
-        comp = None
-        if key is None:
-            comp = self._tx[0].get(key2.encode(), db=self.db(db))
-            if comp not in [None, data]:
-                if return_existing:
-                    return key2
-                msg = f"attempt to update immutable object: {key2}"
-                raise AssertionError(msg)
-        if key is None or comp is None:
-            self._tx[0].put(key2.encode(), data, db=self.db(db))
-        return key2
-
-    def delete(self, key):
-        db = key.split("/", 1)[0]
-        self._tx[0].delete(key.encode(), db=self.db(db))
-
-    def cursor(self, db):
-        return map(lambda x: bytes(x[0]).decode(), iter(self._tx[0].cursor(db=self.db(db))))
-
-    def objects(self, type=None):
-        result = set()
-        for db in [type] if type else list(self.dbs.keys()):
-            [result.add(x) for x in self.cursor(db)]
-        return result
+    def __exit__(self, exc_type, exc_value, traceback):
+        self._close()
+        if exc_type is not None:
+            logger.error("Exception occurred: %s", exc_value, exc_info=True)
+        return False

@@ -36,15 +36,21 @@ class Cli:
 
     _config_dir: str
     _project_dir: str
+    _cache_dir: str
 
-    def __call__(self, *args, input=None):
-        args = [
+    def _flags(self):
+        out = [
             "--project-dir",
             self._project_dir,
             "--config-dir",
             self._config_dir,
-            *args,
         ]
+        if isinstance(self._cache_dir, str):
+            out += ["--cache-path", self._cache_dir]
+        return out
+
+    def __call__(self, *args, input=None):
+        args = [*self._flags(), *args]
         kw = {}
         if tuple(map(int, click.__version__.split(".")[:2])) < (8, 2):
             kw["mix_stderr"] = False
@@ -101,10 +107,17 @@ class Cli:
 
 
 @contextmanager
-def cliTmpDirs():
-    with TemporaryDirectory(prefix="dml-test-") as config_dir:
-        with TemporaryDirectory(prefix="dml-test-") as project_dir:
-            yield Cli(config_dir, project_dir)
+def cliTmpDirs(config_dir=None, project_dir=None, cache_path=None):
+    tmpdirs = [TemporaryDirectory(prefix="dml-test-") for _ in range(3)]
+    try:
+        yield Cli(
+            config_dir or tmpdirs[0].name,
+            project_dir or tmpdirs[1].name,
+            cache_path or tmpdirs[2].name,
+        )
+    finally:
+        for tmpd in tmpdirs:
+            tmpd.cleanup()
 
 
 class TestCliBranch(TestCase):
@@ -203,7 +216,7 @@ class TestCliDag(TestCase):
                 "nodes",
                 "result",
             ]
-            print("".join(daglist[0]["error"]["context"]["trace"]))
+            # print("".join(daglist[0]["error"]["context"]["trace"]))
             assert daglist[0]["error"] is None
             assert list(daglist[0]["names"]) == [
                 *[f"a{i}" for i in range(3)],
@@ -212,12 +225,8 @@ class TestCliDag(TestCase):
             ]
             desc = dml.json("dag", "describe", daglist[0]["id"])
             assert desc["id"] == daglist[0]["id"]
-            # asdf
             daglist = dml.json("dag", "list", "--all")
-            assert len(daglist) == 1
-            print("".join(daglist[0]["error"]["context"]["trace"]))
-            assert daglist[0]["error"] is None
-            assert len(daglist) > 1
+            assert len(daglist) == 2
 
 
 class TestCliProject(TestCase):
@@ -291,7 +300,7 @@ class TestCliRepo(TestCase):
 
 class TestCliStatus(TestCase):
     def test_status_unset(self):
-        with cliTmpDirs() as dml:
+        with cliTmpDirs(cache_path=True) as dml:
             status = json.loads(dml("status"))
             assert status == {
                 "repo": None,
@@ -315,5 +324,5 @@ class TestCliStatus(TestCase):
                 "user": "Testy McTesterstein",
                 "config_dir": dml._config_dir,
                 "project_dir": dml._project_dir,
-                "cache_dir": os.path.expanduser("~/.config/dml/cachedb"),
+                "cache_dir": dml._cache_dir,
             }

@@ -1,5 +1,5 @@
-from daggerml_cli.repo import Fn, FnCache, FnDag, Import, Resource
-from daggerml_cli.util import assoc, flatten, tree_map
+from daggerml_cli.repo import Fn, FnDag, Import, Resource
+from daggerml_cli.util import flatten, tree_map
 
 
 def make_node(name, ref):
@@ -39,13 +39,6 @@ def get_logs(dag):
 def topology(db, ref, cache_db=None):
     dag = ref()
     cache = None
-    if isinstance(dag, FnDag):
-        fncache = (cache_db or db)(FnCache(dag.argv().value, None), return_existing=True)
-        cache = {
-            "is_cached": fncache().dag == dag,
-            "cache_key": fncache.to,
-            "current_dag": fncache().dag.to,
-        }
     edges = flatten([make_edges(x) for x in dag.nodes])
     # print(f"topology edges: {[x['type'] for x in edges]}")
     return {

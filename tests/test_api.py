@@ -41,10 +41,12 @@ class TestApiCreate(TestCase):
 
 
 class TestApiBase(TestCase):
+    def tmpd(self):
+        return TemporaryDirectory(prefix=f"dml.{self.id()}")
+
     def test_create_dag(self):
-        with TemporaryDirectory() as config_dir:
+        with self.tmpd() as config_dir:
             with SimpleApi.begin("d0", config_dir=config_dir, cache_path=config_dir) as d0:
-                api.create_cache(d0.ctx)
                 data = {"foo": 23, "bar": {4, 6}, "baz": [True, 3]}
                 n0 = d0.put_literal(data, name="n0", doc="This is my data.")
                 with d0.tx():
@@ -81,7 +83,7 @@ class TestApiBase(TestCase):
             d0.test_close(self)
 
     def test_fn_load_names(self):
-        with TemporaryDirectory() as config_dir:
+        with self.tmpd() as config_dir:
             with SimpleApi.begin("d0", config_dir=config_dir) as d0:
                 foo = d0.start_fn(SUM, 1, 2, name="foo")
                 d0.put_literal("x", name="bar")
@@ -134,18 +136,39 @@ class TestApiBase(TestCase):
             assert res0[1] == 3
             d0.test_close(self)
 
-    def test_fn_nocache(self):
+    def test_cross_repo_cache(self):
         argv = [SUM, 1, 2]
 
-        with SimpleApi.begin() as d0:
-            res0 = d0.unroll(d0.start_fn(*argv))
-            d0.test_close(self)
+        with self.tmpd() as cache_dir:
+            with SimpleApi.begin(cache_path=cache_dir) as d0:
+                res0 = d0.unroll(d0.start_fn(*argv))
+                d0.test_close(self)
 
-        with SimpleApi.begin() as d0:
-            res1 = d0.unroll(d0.start_fn(*argv))
-            d0.test_close(self)
+            with SimpleApi.begin(cache_path=cache_dir) as d0:
+                res1 = d0.unroll(d0.start_fn(*argv))
+                d0.test_close(self)
+
+        assert res0 == res1
+
+    def test_retry(self):
+        argv = [SUM, 1, 2]
+
+        with env(DML_FN_FILTER_ARGS="True"):
+            with self.tmpd() as cache_dir:
+                with SimpleApi.begin(cache_path=cache_dir) as d0:
+                    res0 = d0.unroll(d0.start_fn(*argv))
+                    d0.test_close(self)
+                cache = api.list_cache(d0.ctx)
+                assert len(cache) == 1
+                assert cache[0].keys() == {"cache_key", "dag_id"}
+                api.delete_cache(d0.ctx, cache[0]["cache_key"])
+
+                with SimpleApi.begin(cache_path=cache_dir) as d0:
+                    res1 = d0.unroll(d0.start_fn(*argv))
+                    d0.test_close(self)
 
         assert res0 != res1
+        assert res0[1] == 3
 
     def test_serde(self):
         data = {"x": Resource("u", adapter="bar")}
@@ -153,55 +176,28 @@ class TestApiBase(TestCase):
         d2 = json.loads(js, object_hook=deserialize_resource)
         assert data == d2
 
-    def test_fn_logs(self):
-        argv = [SUM, 1, 2]
+    # def test_fn_logs(self):
+    #     argv = [SUM, 1, 2]
+    #
+    #     with SimpleApi.begin() as d0:
+    #         res = d0.start_fn(*argv)
+    #         with d0.tx():
+    #             res = d0.get_dag(res)
+    #         desc = api.describe_dag(d0.ctx, res)
+    #         d0.test_close(self)
+    #     assert desc["logs"] == {"foo": "bar"}
 
-        with SimpleApi.begin() as d0:
-            res = d0.start_fn(*argv)
-            with d0.tx():
-                res = d0.get_dag(res)
-            desc = api.describe_dag(d0.ctx, res)
-            d0.test_close(self)
-        assert desc["logs"] == {"foo": "bar"}
-
-    def test_fn_error(self):
+    def test_cached_errors(self):
         argv = [SUM, 1, 2, "BOGUS"]
-
-        with env(DML_FN_FILTER_ARGS="True", DML_NO_CLEAN="1"):
-            with SimpleApi.begin() as d0:
-                assert d0.unroll(d0.start_fn(*argv))[1] == 3
-        with TemporaryDirectory() as cache_dir:
-            with TemporaryDirectory() as config_dir:
-                with env(DML_NO_CLEAN="1"):
+        with self.tmpd() as cache_dir:
+            with env(DML_NO_CLEAN="1"):
+                with SimpleApi.begin(cache_path=cache_dir) as d0:
                     with self.assertRaises(Error):
-                        with SimpleApi.begin(config_dir=config_dir, cache_path=cache_dir) as d0:
-                            d0.start_fn(*argv)
-
-                cache = list(api.list_cache(d0.ctx))
-                assert len(cache) == 1
-                api.delete_cache(d0.ctx, fncache=cache[0])
-                assert len(list(api.list_cache(d0.ctx))) == 0
-                with env(DML_FN_FILTER_ARGS="True", DML_NO_CLEAN="1"):
-                    with self.assertRaises(Error):
-                        with d0:
-                            d0.start_fn(*argv, name="test")
-                    with d0.tx():
-                        cache = list(api.list_cache(d0.ctx))
-                        assert len(cache) == 1
-                        desc = api.describe_dag(d0.ctx, d0.token().dag)
-                        print(f"{desc['nodes'] = }")
-                        (fndag,) = [x for x in desc["nodes"] if x["name"] == "test"]
-                        desc = api.describe_dag(d0.ctx, fndag["id"]().data.dag)
-                        api.delete_cache(d0.ctx, desc["id"])
-                        cache = list(api.list_cache(d0.ctx))
-                        assert cache == []
-
-                    with d0:
-                        res0 = d0.start_fn(*argv)
-                        assert d0.unroll(res0)[1] == 3
-
-                    with d0:
-                        assert d0.start_fn(*argv) == res0
+                        d0.start_fn(*argv)
+            with env(DML_FN_FILTER_ARGS="True", DML_NO_CLEAN="1"):
+                with self.assertRaises(Error):
+                    with SimpleApi.begin(cache_path=cache_dir) as d0:
+                        d0.start_fn(*argv)
 
     def test_resource(self):
         with SimpleApi.begin() as d0:
@@ -301,7 +297,7 @@ class TestApiBase(TestCase):
             d0.test_close(self)
 
     def test_describe_dag(self):
-        with TemporaryDirectory() as config_dir:
+        with self.tmpd() as config_dir:
             with SimpleApi.begin("d0", config_dir=config_dir) as d0:
                 d0.commit(d0.put_literal(23))
                 # d0.test_close(self)
