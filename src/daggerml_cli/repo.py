@@ -14,7 +14,7 @@ from uuid import uuid4
 
 from daggerml_cli.db import Cache, dbenv
 from daggerml_cli.pack import packb, register, unpackb
-from daggerml_cli.util import asserting, assoc, conj, makedirs, now, tree_map
+from daggerml_cli.util import asserting, assoc, conj, makedirs, now
 
 if TYPE_CHECKING:
     from daggerml_cli.config import Config

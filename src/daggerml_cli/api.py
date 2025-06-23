@@ -18,12 +18,10 @@ from daggerml_cli.repo import (
     CheckedRef,
     Ctx,
     Dag,
-    Edge,
     Error,
     Import,
     Index,
     Literal,
-    Node,
     Ref,
     Repo,
     Resource,
@@ -31,7 +29,6 @@ from daggerml_cli.repo import (
 )
 from daggerml_cli.topology import topology
 from daggerml_cli.util import (
-    assert_exactly_one,
     asserting,
     detect_executable,
     makedirs,

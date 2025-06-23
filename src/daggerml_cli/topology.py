@@ -1,4 +1,4 @@
-from daggerml_cli.repo import Fn, FnDag, Import, Resource
+from daggerml_cli.repo import Fn, Import, Resource
 from daggerml_cli.util import flatten, tree_map
 
 
