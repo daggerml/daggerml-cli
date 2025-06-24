@@ -856,7 +856,7 @@ class Repo:
         else:
             with Cache(self.cache_path, create=False) as cache_db:
                 cached_val = cache_db.submit(fn, argv_datum.id, self.dump_ref(argv_datum))
-            fndag = self.load_ref(cached_val["dump"]) if cached_val.get("dump") else None
+            fndag = self.load_ref(cached_val) if cached_val else None
         if fndag is not None:
             node = self.put_node(Fn(fndag, None, argv), index=index, name=name, doc=doc)
             raise_ex(self.get(node).error)

@@ -106,7 +106,7 @@ class Cache:
         def inner(tx):
             data = tx.get(key.encode())
             if data is not None:
-                data = json.loads(data.decode())
+                data = data.decode()
             return data
 
         return self._resize_call(inner)
@@ -116,7 +116,7 @@ class Cache:
             old_val = tx.get(key.encode())
             if old_val != old_value:
                 raise CacheError(f"Cache key '{key}' has been modified by another process.")
-            data = json.dumps(value, sort_keys=True).encode()
+            data = value.encode()
             tx.put(key.encode(), data)
 
         self._resize_call(inner, write=True)
@@ -135,7 +135,7 @@ class Cache:
                     [
                         {
                             "cache_key": key.decode(),
-                            "dag_id": json.loads(json.loads(val.decode())["dump"])[-1][1][1],
+                            "dag_id": json.loads(val.decode())[-1][1][1],
                         }
                         for key, val in cursor
                     ],
@@ -165,7 +165,7 @@ class Cache:
         with self.tx(True) as tx:
             cached_val = tx.get(cache_key.encode())
             if cached_val:
-                return json.loads(cached_val.decode())
+                return cached_val.decode()
             cmd = shutil.which(fn.adapter or "")
             assert cmd, f"no such adapter: {fn.adapter}"
             payload = json.dumps(
@@ -181,13 +181,10 @@ class Cache:
             if proc.stderr:
                 logger.error(proc.stderr.rstrip())
             assert proc.returncode == 0, f"{cmd}: exit status: {proc.returncode}\n{proc.stderr}"
-            resp = json.loads(proc.stdout or "{}")
-            if resp.get("dump"):
+            resp = proc.stdout
+            if resp:
                 try:
-                    tx.put(
-                        cache_key.encode(),
-                        json.dumps(resp, sort_keys=True).encode(),
-                    )
+                    tx.put(cache_key.encode(), resp.encode())
                     return resp
                 except lmdb.MapFullError:
                     self.put(cache_key, resp)

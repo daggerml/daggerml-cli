@@ -22,4 +22,4 @@ if __name__ == "__main__":
         except Exception as e:
             n0 = Error(e)
         result = d0.commit(n0)
-        print(json.dumps({"dump": result, "logs": {"foo": "bar"}}))
+        print(result)

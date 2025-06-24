@@ -9,7 +9,7 @@ class TestCache(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             cache_path = f"{tmpdir}/cache.db"
             with db.Cache(cache_path, create=True) as cache:
-                val = {"key": "value", "number": 42}
+                val = "value"
                 cache.put("key", val)
                 self.assertEqual(cache.get("key"), val)
 
@@ -31,7 +31,7 @@ class TestCache(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             cache_path = f"{tmpdir}/cache.db"
             with db.Cache(cache_path, create=True) as cache:
-                val = {"key": "value", "number": 42}
+                val = "value"
                 cache.put("key", val)
                 cache.delete("key")
                 self.assertIsNone(cache.get("key"))
@@ -40,15 +40,15 @@ class TestCache(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             cache_path = f"{tmpdir}/cache.db"
             with db.Cache(cache_path, create=True) as cache:
-                val = {"key": "value", "number": 42}
+                val = "v0"
                 # specifying incorrect old_value when none exists
                 with self.assertRaises(db.CacheError):
-                    cache.put("key", val, old_value={"key": "wrong_value"})
+                    cache.put("key", val, old_value=val)
                 cache.put("key", val)
                 # specifying incorrect old_value when one exists
                 with self.assertRaises(db.CacheError):
-                    cache.put("key", {"key": "new_value"}, old_value={"key": "wrong_value"})
+                    cache.put("key", {"key": "new_value"}, old_value="wrong_value")
                 # failing to specify old_value when one exists
                 with self.assertRaises(db.CacheError):
-                    cache.put("key", {"key": "new_value"})
+                    cache.put("key", "new_value")
                 assert cache.get("key") == val
