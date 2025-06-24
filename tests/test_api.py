@@ -1,19 +1,10 @@
-import json
 import os
 from tempfile import TemporaryDirectory
 from unittest import TestCase, mock
 
 from daggerml_cli import api
 from daggerml_cli.config import Config
-from daggerml_cli.repo import (
-    Error,
-    FnDag,
-    Node,
-    Ref,
-    Resource,
-    deserialize_resource,
-    serialize_resource,
-)
+from daggerml_cli.repo import Error, FnDag, Node, Ref, Resource
 from daggerml_cli.util import assoc, conj
 from tests.util import SimpleApi
 
@@ -169,12 +160,6 @@ class TestApiBase(TestCase):
 
         assert res0 != res1
         assert res0[1] == 3
-
-    def test_serde(self):
-        data = {"x": Resource("u", adapter="bar")}
-        js = json.dumps(data, default=serialize_resource)
-        d2 = json.loads(js, object_hook=deserialize_resource)
-        assert data == d2
 
     # def test_fn_logs(self):
     #     argv = [SUM, 1, 2]

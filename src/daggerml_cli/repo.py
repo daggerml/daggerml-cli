@@ -1,8 +1,6 @@
 import json
 import logging
 import os
-import shutil
-import subprocess
 import traceback as tb
 from collections import Counter
 from contextlib import contextmanager
@@ -99,22 +97,6 @@ def unroll_datum(value):
         raise TypeError(f"unroll_datum unknown type: {type(value)}")
 
     return get(value)
-
-
-def serialize_resource(x):
-    if isinstance(x, Resource):
-        return {
-            "__type__": "resource",
-            "uri": x.uri,
-            "data": x.data,
-            "adapter": x.adapter,
-        }
-
-
-def deserialize_resource(x):
-    if isinstance(x, dict) and x.get("__type__") == "resource":
-        return Resource(x["uri"], x["data"], x["adapter"])
-    return x
 
 
 def raise_ex(x):
@@ -276,10 +258,6 @@ class Dag:
     result: Optional[Ref]  # -> node
     error: Optional[Error]
 
-    @property
-    def ready(self):
-        return (self.result or self.error) is not None
-
     def nameof(self, ref):
         return {v: k for k, v in self.names.items()}.get(ref)
 
@@ -395,19 +373,17 @@ class Repo:
     user: str = "unknown"
     head: Ref = field(default_factory=lambda: Ref(DEFAULT_BRANCH))  # -> head
     create: InitVar[bool] = False
-    cache_db_path: Optional[str] = None
+    cache_path: Optional[str] = None
 
     def __post_init__(self, create):
         self._tx = []
         dbfile = str(os.path.join(self.path, "data.mdb"))
         dbfile_exists = os.path.exists(dbfile)
         if create:
-            if dbfile_exists and create != "if-needed":
-                raise AssertionError(f"repo exists: {dbfile}")
-            if not dbfile_exists:
-                map_size = 10485760
-                with open(os.path.join(self.path, "config"), "w") as f:
-                    json.dump({"map_size": map_size}, f)
+            assert not dbfile_exists, f"repo already exists: {dbfile}"
+            map_size = 10485760
+            with open(os.path.join(self.path, "config"), "w") as f:
+                json.dump({"map_size": map_size}, f)
         else:
             assert dbfile_exists, f"repo not found: {dbfile}"
             with open(os.path.join(self.path, "config")) as f:
@@ -434,9 +410,9 @@ class Repo:
         """
         repo_path = config.REPO_PATH
         user = config.USER or "unknown"
-        cache_db_path = config.CACHE_PATH or None
+        cache_path = config.CACHE_PATH or None
         head = config.BRANCHREF or Ref(DEFAULT_BRANCH)
-        return cls(repo_path, user=user, head=head, create=create, cache_db_path=cache_db_path)
+        return cls(repo_path, user=user, head=head, create=create, cache_path=cache_path)
 
     def close(self):
         self.env.close()
@@ -477,11 +453,10 @@ class Repo:
         return md5(packb(obj, True)).hexdigest()
 
     def get(self, key):
-        if key:
-            key = key if isinstance(key, Ref) else Ref(key)
-            if key.to:
-                obj = unpackb(self._tx[0].get(key.to.encode(), db=self.db(key.type)))
-                return obj
+        assert isinstance(key, (Ref, str)), f"unexpected key type: {type(key)}"
+        key = key if isinstance(key, Ref) else Ref(key)
+        obj = unpackb(self._tx[0].get(key.to.encode(), db=self.db(key.type)))
+        return obj
 
     def put(self, key, obj=None, *, return_existing=False) -> Ref:
         key, obj = (key, obj) if obj else (obj, key)
@@ -879,31 +854,9 @@ class Repo:
                 nodes.append(result)
             fndag = self(FnDag(nodes, {}, result, error, argv_node))
         else:
-            fndag = None
-            with Cache(self.cache_db_path, create=False) as cache_db:
-                cached_val = cache_db.get(argv_datum.id)
-                if cached_val is None:
-                    cmd = shutil.which(fn.adapter or "")
-                    assert cmd, f"no such adapter: {fn.adapter}"
-                    payload = json.dumps(
-                        {
-                            "cache_db": self.cache_db_path,
-                            "cache_key": argv_datum.id,
-                            "kwargs": fn.data,
-                            "dump": self.dump_ref(argv_datum),
-                        },
-                        default=serialize_resource,
-                    )
-                    proc = subprocess.run([cmd, fn.uri], input=payload, capture_output=True, text=True)
-                    if proc.stderr:
-                        logger.error(proc.stderr.rstrip())
-                    assert proc.returncode == 0, f"{cmd}: exit status: {proc.returncode}\n{proc.stderr}"
-                    cached_val = json.loads(proc.stdout or "{}")
-                    # cached_val = cached_val.get("dump")
-                    if cached_val.get("dump"):
-                        cache_db.put(argv_datum.id, cached_val)
-            if cached_val:
-                fndag = self.load_ref(cached_val["dump"])
+            with Cache(self.cache_path, create=False) as cache_db:
+                cached_val = cache_db.submit(fn, argv_datum.id, self.dump_ref(argv_datum))
+            fndag = self.load_ref(cached_val["dump"]) if cached_val.get("dump") else None
         if fndag is not None:
             node = self.put_node(Fn(fndag, None, argv), index=index, name=name, doc=doc)
             raise_ex(self.get(node).error)

@@ -2,6 +2,9 @@ import json
 import logging
 import math
 import os
+import shutil
+import subprocess
+from contextlib import contextmanager
 from dataclasses import InitVar, dataclass, field
 from typing import Optional
 
@@ -10,9 +13,25 @@ import lmdb
 from daggerml_cli.util import makedirs
 
 logger = logging.getLogger(__name__)
-MAP_SIZE_HEADROOM = 1.5  # 50% more than current size
+MAP_SIZE_HEADROOM = 2  # x more than current size
 MAP_SIZE_MIN = 128 * 1024**2  # Minimum 128MB
 MAP_SIZE_MAX = 128 * 1024**3  # Hard cap 64GB
+
+
+class CacheError(Exception):
+    """Custom exception for cache-related errors."""
+
+
+def serialize_resource(x):
+    from daggerml_cli.repo import Resource
+
+    if isinstance(x, Resource):
+        return {
+            "__type__": "resource",
+            "uri": x.uri,
+            "data": x.data,
+            "adapter": x.adapter,
+        }
 
 
 def dbenv(path, db_types, **kw):
@@ -65,21 +84,23 @@ class Cache:
             raise RuntimeError(msg)
         new_size = min(int(math.ceil(curr_size * MAP_SIZE_HEADROOM)), MAP_SIZE_MAX)
         logger.info("Growing LMDB map_size from %r to %r", curr_size, new_size)
+        return new_size
+
+    def resize(self, curr_size=None):
+        self.env.set_mapsize(self._get_size(curr_size))
+
+    @contextmanager
+    def tx(self, write=False):
+        with self.env.begin(write=write) as tx:
+            yield tx
 
     def _resize_call(self, func, write=False):
         while True:
             try:
-                with self.env.begin(write=write) as tx:
+                with self.tx(write=write) as tx:
                     return func(tx)
-            except lmdb.MapFullError as e:
-                self.env.set_mapsize(self._get_size())
-                curr_size = self.env.info()["map_size"]
-                if curr_size == MAP_SIZE_MAX:
-                    msg = f"LMDB map size is already at maximum: {curr_size}"
-                    raise RuntimeError(msg) from e
-                new_size = min(int(math.ceil(curr_size * 1.5)), MAP_SIZE_MAX)
-                logger.info("Growing LMDB map_size from %r to %r", curr_size, new_size)
-                self.env.set_mapsize(new_size)
+            except lmdb.MapFullError:
+                self.resize()
 
     def get(self, key):
         def inner(tx):
@@ -90,8 +111,11 @@ class Cache:
 
         return self._resize_call(inner)
 
-    def put(self, key, value):
+    def put(self, key, value, old_value=None):
         def inner(tx):
+            old_val = tx.get(key.encode())
+            if old_val != old_value:
+                raise CacheError(f"Cache key '{key}' has been modified by another process.")
             data = json.dumps(value, sort_keys=True).encode()
             tx.put(key.encode(), data)
 
@@ -135,3 +159,36 @@ class Cache:
         if exc_type is not None:
             logger.error("Exception occurred: %s", exc_value, exc_info=True)
         return False
+
+    def submit(self, fn, cache_key, dump):
+        # all in one transaction to avoid race conditions and muitiple calls to adapter
+        with self.tx(True) as tx:
+            cached_val = tx.get(cache_key.encode())
+            if cached_val:
+                return json.loads(cached_val.decode())
+            cmd = shutil.which(fn.adapter or "")
+            assert cmd, f"no such adapter: {fn.adapter}"
+            payload = json.dumps(
+                {
+                    "cache_path": self.path,
+                    "cache_key": cache_key,
+                    "kwargs": fn.data,
+                    "dump": dump,
+                },
+                default=serialize_resource,
+            )
+            proc = subprocess.run([cmd, fn.uri], input=payload, capture_output=True, text=True)
+            if proc.stderr:
+                logger.error(proc.stderr.rstrip())
+            assert proc.returncode == 0, f"{cmd}: exit status: {proc.returncode}\n{proc.stderr}"
+            resp = json.loads(proc.stdout or "{}")
+            if resp.get("dump"):
+                try:
+                    tx.put(
+                        cache_key.encode(),
+                        json.dumps(resp, sort_keys=True).encode(),
+                    )
+                    return resp
+                except lmdb.MapFullError:
+                    self.put(cache_key, resp)
+            return resp

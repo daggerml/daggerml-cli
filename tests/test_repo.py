@@ -13,9 +13,9 @@ from daggerml_cli.repo import Literal, Node, Ref, Repo, Resource, unroll_datum
 def tmp_repo(cache_path=None):
     """Context manager to create a temporary repository."""
     tmpdirs = [tempfile.mkdtemp() for _ in range(2)]
-    repo = Repo(tmpdirs[0], user="test", create=True, cache_db_path=cache_path or tmpdirs[1])
+    repo = Repo(tmpdirs[0], user="test", create=True, cache_path=cache_path or tmpdirs[1])
     if cache_path is None:
-        with Repo(repo.cache_db_path, create=True):
+        with Repo(repo.cache_path, create=True):
             pass
     try:
         yield repo
@@ -117,9 +117,9 @@ def test_adapter_called_correctly():
     assert args[0] == shutil.which(argv[0].adapter)  # Ensure correct adapter is called
     assert args[1] == argv[0].uri  # Ensure correct URI is passed
     payload = json.loads(kwargs["input"])
-    assert set(payload.keys()) == {"cache_db", "cache_key", "kwargs", "dump"}
+    assert set(payload.keys()) == {"cache_path", "cache_key", "kwargs", "dump"}
     assert payload["kwargs"] == argv[0].data
-    assert payload["cache_db"] == repo.cache_db_path
+    assert payload["cache_path"] == repo.cache_path
     assert isinstance(payload["cache_key"], str)
     assert isinstance(payload["dump"], str)
     # check to ensure the dump is loadable

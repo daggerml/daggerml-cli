@@ -13,7 +13,7 @@ if __name__ == "__main__":
     filter_args = os.getenv("DML_FN_FILTER_ARGS", "")
     fnc_dir = os.getenv("DML_FN_CACHE_DIR", "")
 
-    with SimpleApi.begin("test", "test", cache_path=js["cache_db"], fn_cache_dir=fnc_dir, dump=dump) as d0:
+    with SimpleApi.begin("test", "test", cache_path=js["cache_path"], fn_cache_dir=fnc_dir, dump=dump) as d0:
         _, *args = d0.unroll(d0.get_argv())
         args = filter(lambda x: isinstance(x, int), args) if filter_args else args
         uuid = d0.put_literal(uuid4().hex, name="uuid")

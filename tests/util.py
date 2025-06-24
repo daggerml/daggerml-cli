@@ -57,8 +57,6 @@ class SimpleApi:
             if "test" not in [x["name"] for x in api.list_repo(ctx)]:
                 api.create_repo(ctx, "test")
             api.config_repo(ctx, "test")
-            # if cache_path is None:
-            #     api.create_cache(ctx)
         tok = api.begin_dag(ctx, name=name, message=message, dump=dump)
         return cls(tok, ctx, tmpdirs)
 
@@ -94,7 +92,7 @@ class SimpleApi:
             descs.append(desc)
             test_case.assertCountEqual(
                 desc.keys(),
-                ["id", "cache", "edges", "nodes", "argv", "logs", "result", "error"],
+                ["id", "edges", "nodes", "argv", "result", "error"],
             )
             if delete and dag.name is not None:
                 assert api.delete_dag(self.ctx, dag.name, "deleting...")

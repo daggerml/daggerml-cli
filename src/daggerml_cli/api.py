@@ -67,13 +67,6 @@ def with_attrs(x, **kwargs):
     return x
 
 
-@contextmanager
-def tx(config, write=False):
-    with Repo(config.REPO_PATH, head=config.BRANCHREF, user=config.USER) as db:
-        with db.tx(write):
-            yield db
-
-
 ###############################################################################
 # REPO ########################################################################
 ###############################################################################
@@ -478,7 +471,7 @@ def invoke_api(config, token, data):
             config.REPO_PATH,
             user=config.USER,
             head=config.BRANCHREF,
-            cache_db_path=config.CACHE_PATH,
+            cache_path=config.CACHE_PATH,
         ) as db:
             op, args, kwargs = data
             if op in BUILTIN_FNS:

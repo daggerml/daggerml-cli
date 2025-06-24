@@ -1,5 +1,5 @@
-from daggerml_cli.repo import Fn, Import, Resource
-from daggerml_cli.util import flatten, tree_map
+from daggerml_cli.repo import Fn, Import
+from daggerml_cli.util import flatten
 
 
 def make_node(name, ref):
@@ -22,32 +22,16 @@ def make_edges(ref):
         out.append({"source": ref, "target": node.data.dag, "type": "dag"})
     if isinstance(node.data, Fn):
         out.extend([{"source": x, "target": ref, "type": "node"} for x in node.data.argv])
-    # print(f"make_edges: {ref} -> {[x['type'] for x in out]}")
     return out
 
 
-def get_logs(dag):
-    logs = getattr(dag, "logs", None)
-    if logs is None:
-        return
-    from daggerml_cli.repo import unroll_datum
-
-    logs = tree_map(lambda x: isinstance(x, Resource), lambda x: x.uri, unroll_datum(logs))
-    return logs
-
-
-def topology(db, ref, cache_db=None):
+def topology(db, ref):
     dag = ref()
-    cache = None
     edges = flatten([make_edges(x) for x in dag.nodes])
-    # print(f"topology edges: {[x['type'] for x in edges]}")
     return {
         "id": ref,
-        "cache": cache,
         "argv": dag.argv.to if hasattr(dag, "argv") else None,
-        "logs": get_logs(dag),
         "nodes": [make_node(dag.nameof(x), x) for x in dag.nodes],
-        # "edges": flatten([make_edges(x) for x in dag.nodes]),
         "edges": edges,
         "result": dag.result.to if dag.result is not None else None,
         "error": None if dag.error is None else str(dag.error),

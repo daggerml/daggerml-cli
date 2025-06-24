@@ -383,12 +383,12 @@ def cache_list(ctx):
 
 
 @cache_group.command(name="delete")
-@click.argument("dag_id", type=str)
+@click.argument("cache_key", type=str)
 @clickex
-def cache_delete(ctx, dag_id):
-    """Delete a cache."""
-    api.delete_cache(ctx.obj, Ref(dag_id))
-    click.echo(f"Uncached dag: {dag_id}")
+def cache_delete(ctx, cache_key):
+    """Delete a cached item."""
+    api.delete_cache(ctx.obj, cache_key)
+    click.echo(f"Deleted: {cache_key!r} from cache")
 
 
 ###############################################################################
