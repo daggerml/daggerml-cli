@@ -284,7 +284,6 @@ def describe_dag(config, ref):
         with db.tx():
             assert isinstance(ref(), Dag)
             desc = topology(db, ref)
-            # print(f"describe_dag: {ref} -> {[x['type'] for x in desc['edges']]}")
             return desc
 
 

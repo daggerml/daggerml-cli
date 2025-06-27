@@ -161,17 +161,6 @@ class TestApiBase(TestCase):
         assert res0 != res1
         assert res0[1] == 3
 
-    # def test_fn_logs(self):
-    #     argv = [SUM, 1, 2]
-    #
-    #     with SimpleApi.begin() as d0:
-    #         res = d0.start_fn(*argv)
-    #         with d0.tx():
-    #             res = d0.get_dag(res)
-    #         desc = api.describe_dag(d0.ctx, res)
-    #         d0.test_close(self)
-    #     assert desc["logs"] == {"foo": "bar"}
-
     def test_cached_errors(self):
         argv = [SUM, 1, 2, "BOGUS"]
         with self.tmpd() as cache_path:

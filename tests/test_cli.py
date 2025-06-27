@@ -216,11 +216,9 @@ class TestCliDag(TestCase):
                 "nodes",
                 "result",
             ]
-            # print("".join(daglist[0]["error"]["context"]["trace"]))
             assert daglist[0]["error"] is None
             assert list(daglist[0]["names"]) == [
                 *[f"a{i}" for i in range(3)],
-                # "daggerml:build",
                 "sum-fn",
             ]
             desc = dml.json("dag", "describe", daglist[0]["id"])
@@ -235,7 +233,6 @@ class TestCliProject(TestCase):
             dml.config_user("Testy McTesterstein")
             dml.repo_create("repo0")
             dml.config_repo("repo0")
-            # dml.repo('repo0')
 
 
 class TestCliRepo(TestCase):
