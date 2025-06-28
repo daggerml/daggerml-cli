@@ -20,9 +20,11 @@ from daggerml_cli.repo import (
     Ctx,
     Dag,
     Error,
+    FnDag,
     Import,
     Index,
     Literal,
+    Node,
     Ref,
     Repo,
     Resource,
@@ -480,7 +482,11 @@ def op_get_node_value(db, _, node: Ref):
 def op_get_argv(db, index, dag: Ref = None):
     with db.tx():
         dag = dag() if dag else index().dag()
-        return dag.argv
+        if isinstance(dag, FnDag):
+            return dag.argv
+        if isinstance(dag, Node):
+            return dag.data.argv
+        raise TypeError(f"cannot get argv from {dag.type} dag: {dag.id}")
 
 
 @invoke_op
