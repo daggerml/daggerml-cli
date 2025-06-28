@@ -302,6 +302,15 @@ class TestApiBase(TestCase):
             ["resource", "int", "str", "error", "nonetype"],
         )
 
+    def test_backtrack_node(self):
+        with SimpleApi.begin("d0") as d0:
+            n0 = d0.put_literal(42)
+            n1 = d0.put_literal({"a": 1, "b": [n0, "23"]})
+            assert api.backtrack_node(d0.ctx, n1, "b", 0) == n0
+            with self.assertRaisesRegex(ValueError, r"invalid literal for int\(\) with base 10: 'x'"):
+                api.backtrack_node(d0.ctx, n1, "b", "x")
+            assert api.backtrack_node(d0.ctx, api.backtrack_node(d0.ctx, n1, "b"), 0) == n0
+
 
 @pytest.mark.parametrize(
     "op,args,expected",

@@ -6,7 +6,7 @@ from contextlib import contextmanager
 from copy import copy
 from dataclasses import dataclass, fields, is_dataclass
 from shutil import rmtree
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Union
 
 import jmespath
 from asciidag.graph import Graph as AsciiGraph
@@ -357,6 +357,32 @@ def delete_index(config, index: Ref):
             assert isinstance(index(), Index), f"no such index: {index.id}"
             db.delete(index)
     return True
+
+
+###############################################################################
+# Node ########################################################################
+###############################################################################
+
+
+def backtrack_node(config: "Config", node: Ref, *keys: Union[str, int]) -> Ref:
+    with Repo.from_config(config) as db:
+        with db.tx():
+            keys = list(keys)
+            while len(keys) > 0:
+                key = keys.pop(0)
+                if not isinstance(node, Ref) or node.type != "node":
+                    raise TypeError(f"invalid type {node!r} for backtrack_node")
+                argv = node().data.argv
+                fn, *args = (x().value().value for x in argv)
+                if fn.uri == "daggerml:list":
+                    key = int(key)
+                elif fn.uri == "daggerml:dict":
+                    i = args.index(key)
+                    key = i + 1
+                else:
+                    raise Error(f"{fn.uri} is not a collection constructor")
+                node = argv[key + 1]
+            return node
 
 
 ###############################################################################

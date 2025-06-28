@@ -365,6 +365,26 @@ def dag_describe(ctx, name):
 
 
 ###############################################################################
+# NODE ########################################################################
+###############################################################################
+
+
+@cli.group(name="node", no_args_is_help=True)
+@clickex
+def node_group(_):
+    """Node management commands."""
+
+
+@node_group.command(name="backtrack")
+@click.argument("node_id", type=str)
+@click.argument("keys", type=str, nargs=-1)
+@clickex
+def node_backtrack(ctx, node_id, keys):
+    """Backtrack a node within a dag."""
+    click.echo(to_json(api.backtrack_node(ctx.obj, Ref(node_id), *keys)))
+
+
+###############################################################################
 # CACHE #######################################################################
 ###############################################################################
 
@@ -379,7 +399,7 @@ def cache_group(_):
 @clickex
 def cache_list(ctx):
     """List cached dags."""
-    click.echo(jsdumps(api.list_cache(ctx.obj), ctx.obj))
+    click.echo(jsdumps(api.list_cache(ctx.obj)))
 
 
 @cache_group.command(name="info")
