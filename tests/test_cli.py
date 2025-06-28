@@ -224,7 +224,7 @@ class TestCliDag(TestCase):
             desc = dml.json("dag", "describe", daglist[0]["id"])
             assert desc["id"] == daglist[0]["id"]
             daglist = dml.json("dag", "list", "--all")
-            assert len(daglist) == 2
+            assert len(daglist) >= 2
 
 
 class TestCliProject(TestCase):

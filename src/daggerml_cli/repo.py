@@ -18,7 +18,7 @@ if TYPE_CHECKING:
     from daggerml_cli.config import Config
 DEFAULT_BRANCH = "head/main"
 DATA_TYPE = {}
-NONE = {}
+NONE = uuid4()
 REPO_TYPES = []
 
 
@@ -27,15 +27,14 @@ BUILTIN_FNS = {
     "len": lambda x: len(x),
     "keys": lambda x: sorted(x.keys()),
     "get": lambda x, k, d=NONE: (
-        x[slice(*[x().value for x in k])] if isinstance(k, list) else x[k] if d is NONE else x.get(k, d)
+        x[slice(*[a().value for a in k])] if isinstance(k, list) else x[k] if d is NONE else x.get(k, d)
     ),
     "contains": lambda x, k: k in unroll_datum(x),
     "list": lambda *xs: list(xs),
-    "dict": lambda *kvs: {k: v for k, v in [kvs[i : i + 2] for i in range(0, len(kvs), 2)]},
+    "dict": lambda *kvs: dict(zip(kvs[0::2], kvs[1::2])),
     "set": lambda *xs: set(xs),
     "assoc": assoc,
     "conj": conj,
-    "build": lambda x, *_: x,
 }
 
 logger = logging.getLogger(__name__)
@@ -83,9 +82,9 @@ def to_data(obj):
 def unroll_datum(value):
     def get(value):
         if isinstance(value, Ref):
-            return get(value())
+            value = value()
         if isinstance(value, Datum):
-            return get(value.value)
+            value = value.value
         if isinstance(value, (type(None), str, bool, int, float, Resource)):
             return value
         if isinstance(value, list):
@@ -269,21 +268,9 @@ class FnDag(Dag):
 
 
 @repo_type(db=False)
-@dataclass(frozen=True)
-class Edge:
-    path: tuple[Union[str, int]]
-    node: Ref  # -> node
-
-    def __post_init__(self):
-        if isinstance(self.path, list):
-            object.__setattr__(self, "path", tuple(self.path))
-
-
-@repo_type(db=False)
 @dataclass
 class Literal:
     value: Ref  # -> datum
-    edges: Optional[tuple[Edge]] = None
 
     @property
     def error(self):
@@ -714,45 +701,6 @@ class Repo:
         assert ref.type in ["head"], f"checkout unknown ref type: {ref.type}"
         assert self.get(ref), f"ref not found: {ref.to}"
         self.head = ref
-
-    def extract_nodes(self, obj):
-        """
-        Given a nested object, find the Node instances, put them into a list of Edge objects, and replace the
-        instance with the underlying datum.
-
-        Examples
-        --------
-        >>> from tempfile import TemporaryDirectory
-        >>> with TemporaryDirectory(prefix="dml-") as tmpdir:
-        ...    repo = Repo(tmpdir, create=True)
-        ...    node1 = Node(Literal(Datum("value1")))
-        ...    node2 = Node(Literal(Datum("value2")))
-        ...    nested_obj = {"a": node1, "b": [1, {"c": node2}]}
-        ...    edges, new_obj = repo.extract_nodes(nested_obj)
-        >>> [x.path for x in edges]
-        [('a',), ('b', 1, 'c')]
-        >>> [x.node.to for x in edges]
-        ["node/...", "node/..."]
-        >>> new_obj == {'a': Ref('datum/...'), 'b': [1, {'c': Ref('datum/...')}]}
-        True
-        """
-        edges = []
-
-        def extract(obj, path=()):
-            if isinstance(obj, Ref):
-                if obj.type == "node":
-                    edges.append(Edge(path, obj))
-                    obj = self.get(obj).value
-                assert obj.type == "datum", f"expected datum or node, got: {obj.type}"
-                return obj
-            if isinstance(obj, list):
-                return [extract(x, (*path, i)) for i, x in enumerate(obj)]
-            if isinstance(obj, dict):
-                return {k: extract(v, (*path, k)) for k, v in obj.items()}
-            return obj
-
-        new_obj = extract(obj)
-        return tuple(edges), new_obj
 
     def put_datum(self, value):
         def put(value):

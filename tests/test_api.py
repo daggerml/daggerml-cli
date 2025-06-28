@@ -2,10 +2,12 @@ import os
 from tempfile import TemporaryDirectory
 from unittest import TestCase, mock
 
+import pytest
+
 from daggerml_cli import api
 from daggerml_cli.config import Config
+from daggerml_cli.db import CacheError
 from daggerml_cli.repo import Error, FnDag, Node, Ref, Resource
-from daggerml_cli.util import assoc, conj
 from tests.util import SimpleApi
 
 SUM = Resource("./tests/fn/sum.py", adapter="dml-python-fork-adapter")
@@ -144,22 +146,58 @@ class TestApiBase(TestCase):
     def test_retry(self):
         argv = [SUM, 1, 2]
 
-        with env(DML_FN_FILTER_ARGS="True"):
-            with self.tmpd() as cache_path:
-                with SimpleApi.begin(cache_path=cache_path) as d0:
-                    res0 = d0.unroll(d0.start_fn(*argv))
-                    d0.test_close(self)
-                cache = api.list_cache(d0.ctx)
-                assert len(cache) == 1
-                assert cache[0].keys() == {"cache_key", "dag_id"}
-                api.delete_cache(d0.ctx, cache[0]["cache_key"])
+        with self.tmpd() as cache_path:
+            with SimpleApi.begin(cache_path=cache_path) as d0:
+                res0 = d0.unroll(d0.start_fn(*argv))
+                d0.test_close(self)
+            cache = api.list_cache(d0.ctx)
+            assert len(cache) == 1
+            assert cache[0].keys() == {"cache_key", "dag_id"}
+            api.delete_cache(d0.ctx, cache[0]["cache_key"])
 
-                with SimpleApi.begin(cache_path=cache_path) as d0:
-                    res1 = d0.unroll(d0.start_fn(*argv))
-                    d0.test_close(self)
+            with SimpleApi.begin(cache_path=cache_path) as d0:
+                res1 = d0.unroll(d0.start_fn(*argv))
+                d0.test_close(self)
 
         assert res0 != res1
         assert res0[1] == 3
+
+    def test_cache_list(self):
+        with self.tmpd() as cache_path:
+            with SimpleApi.begin(cache_path=cache_path) as d0:
+                nodes = [
+                    d0.start_fn(SUM, 1),
+                    d0.start_fn(SUM, 1, 2),
+                    d0.start_fn(SUM, 1, 2, 3),
+                ]
+                cache = api.list_cache(d0.ctx)
+                assert len(cache) == len(nodes)
+                with d0.tx():
+                    assert {x().data.dag.to for x in nodes} == {x["dag_id"] for x in cache}
+                assert [api.info_cache(d0.ctx, x["cache_key"]) for x in cache] == cache
+                api.delete_cache(d0.ctx, cache[0]["cache_key"])
+                cache = api.list_cache(d0.ctx)
+                assert len(cache) == len(nodes) - 1
+
+    def test_cache_put(self):
+        with self.tmpd() as cache_path:
+            with SimpleApi.begin(cache_path=cache_path) as d0:
+                a = d0.start_fn(SUM, 1, 2, 3)
+                api.delete_cache(d0.ctx, api.list_cache(d0.ctx)[0]["cache_key"])
+                b = d0.start_fn(SUM, 1, 2, 3)
+                with d0.tx():
+                    dag = a().data.dag
+                with self.assertRaisesRegex(CacheError, r"Cache key \'([a-z0-9]+)\' failed the value check"):
+                    api.put_cache(d0.ctx, dag)
+                api.delete_cache(d0.ctx, api.list_cache(d0.ctx)[0]["cache_key"])
+                api.put_cache(d0.ctx, dag)
+                c = d0.start_fn(SUM, 1, 2, 3)
+                a_ = d0.unroll(a)
+                b_ = d0.unroll(b)
+                c_ = d0.unroll(c)
+                assert a_ == c_
+                assert a_[0] != b_[0]
+                assert a_[1] == b_[1] == c_[1]
 
     def test_cached_errors(self):
         argv = [SUM, 1, 2, "BOGUS"]
@@ -178,132 +216,66 @@ class TestApiBase(TestCase):
             resource = Resource("uri:here", data={"a": 1, "b": [2, 3], "c": Resource("qwer")})
             d0.put_literal(resource)
 
-    def test_specials(self):
-        with SimpleApi.begin() as d0:
-
-            def check_len(n, v):
-                assert d0.unroll(d0.len(n)) == len(v)
-
-            def check_keys(n, v):
-                assert d0.unroll(d0.keys(n)) == sorted(v.keys())
-
-            def check_contains(n, v):
-                for i in v:
-                    assert d0.unroll(d0.contains(n, d0.put_literal(i)))
-                assert not d0.unroll(d0.contains(n, d0.put_literal("BOGUS")))
-
-            def check_list_get(n, v):
-                for i in range(len(v)):
-                    assert d0.unroll(d0.get(n, d0.put_literal(i))) == v[i]
-                len_v = d0.put_literal(len(v))
-                with self.assertRaisesRegex(Error, "list index out of range"):
-                    d0.get(n, len_v)
-
-            def check_slice(n, v, *k):
-                assert d0.unroll(d0.get(n, d0.put_literal(list(k)))) == v[slice(*k)]
-
-            def check_dict_get(n, v):
-                for i in v:
-                    assert d0.unroll(d0.get(n, d0.put_literal(i)))
-                with self.assertRaises(Error):
-                    d0.unroll(d0.get(n, d0.put_literal("BOGUS")))
-
-            def check_assoc(n, v, k, x):
-                assert d0.unroll(d0.assoc(n, k, x)) == assoc(v, k, x)
-
-            def check_conj(n, v, x):
-                assert d0.unroll(d0.conj(n, x)) == conj(v, x)
-
-            x0 = {
-                "list": [1, 2, 3],
-                "set": {1, 2, 3},
-                "dict": {"x": 1, "y": 2, "z": 3},
-                "int": 0,
-                "float": 0.1,
-                "bool": True,
-                "NoneType": None,
-                "Resource": Resource("test"),
-            }
-            n0 = d0.put_literal(x0)
-            for k, v in x0.items():
-                n = d0.get(n0, d0.put_literal(k), name="n", doc="a node")
-                with d0.tx():
-                    assert n().doc == "a node"
-                assert d0.unroll(n) == v
-                assert d0.unroll(d0.type(n)) == k
-                if k == "list":
-                    check_len(n, v)
-                    check_list_get(n, v)
-                    check_contains(n, v)
-                    check_conj(n, v, 4)
-                    check_assoc(n, v, 0, 0)
-                    check_slice(n, v, 1, None, None)
-                elif k == "set":
-                    check_len(n, v)
-                    check_contains(n, v)
-                    check_conj(n, v, 4)
-                elif k == "dict":
-                    check_len(n, v)
-                    check_keys(n, v)
-                    check_dict_get(n, v)
-                    check_contains(n, v)
-                    check_assoc(n, v, "x", 0)
-
-            assert d0.unroll(d0.list()) == []
-            assert d0.unroll(d0.list(0, 1, 2, 3)) == [0, 1, 2, 3]
-
-            assert d0.unroll(d0.dict()) == {}
-            assert d0.unroll(d0.dict("x", 1, "y", 2, "z", 3)) == {
-                "x": 1,
-                "y": 2,
-                "z": 3,
-            }
-
-            assert d0.unroll(d0.set()) == set()
-            assert d0.unroll(d0.set(0, 1, 2, 3)) == {0, 1, 2, 3}
-
-            assert d0.unroll(d0.build([1, {"x": 42}], d0.put_literal(42))) == [
-                1,
-                {"x": 42},
-            ]
-            literal = d0.put_literal(42)
-            d0.commit(literal)
-            d0.test_close(self)
-
     def test_describe_dag(self):
-        with self.tmpd() as config_dir:
-            with SimpleApi.begin("d0", config_dir=config_dir) as d0:
-                d0.commit(d0.put_literal(23))
-                # d0.test_close(self)
-            with SimpleApi.begin("d1", config_dir=config_dir) as d1:
+        with self.tmpd() as cache_path:
+            with self.tmpd() as config_dir:
+                with SimpleApi.begin("d0", config_dir=config_dir, cache_path=cache_path) as d0:
+                    d0.commit(d0.put_literal(23))
+                    # d0.test_close(self)
+                with SimpleApi.begin("d1", config_dir=config_dir, cache_path=cache_path) as d1:
+                    nodes = [
+                        d1.put_literal(SUM),
+                        d1.put_load("d0"),
+                        d1.put_literal(13),
+                    ]
+                    result = d1.start_fn(*nodes)
+                    assert d1.unroll(result)[1] == 36
+                    d1.commit(result)
+                    # d1.test_close(self)
+                (ref,) = (x.id for x in api.list_dags(d1.ctx) if x.name == "d1")
+                desc = api.describe_dag(d1.ctx, Ref(f"dag/{ref}"))
+                self.assertCountEqual(
+                    desc.keys(),
+                    ["id", "argv", "cache_key", "nodes", "edges", "result", "error"],
+                )
+                assert desc["argv"] is None
+                # assert [x["type"] for x in desc["edges"]] is None
+                for edge in desc["edges"]:
+                    if edge["type"] == "dag":
+                        assert edge["source"] in {x["id"] for x in desc["nodes"]}
+                    else:
+                        # assert edge["source"] in {x["id"] for x in desc["nodes"]}
+                        assert edge["target"] in {x["id"] for x in desc["nodes"]}
+                self.assertCountEqual(
+                    [x["node_type"] for x in desc["nodes"]],
+                    ["literal", "literal", "import", "fn"],
+                )
+                self.assertCountEqual(
+                    [x["data_type"] for x in desc["nodes"]],
+                    ["resource", "int", "int", "list"],
+                )
+                assert len(desc["edges"]) == len(nodes) + 2  # +1 because dag->node edge
+                assert {e["source"] for e in desc["edges"] if e["type"] == "node"} == {x for x in nodes}
+
+    def test_describe_dag_w_cache(self):
+        """
+        Checks the round robin of dag_id and cache_key
+        Both the dag description and cache info should have both fields.
+        """
+        with self.tmpd() as cache_path:
+            with SimpleApi.begin("d0", cache_path=cache_path) as d0:
                 nodes = [
-                    d1.put_literal(SUM),
-                    d1.put_load("d0"),
-                    d1.put_literal(13),
+                    d0.put_literal(SUM),
+                    d0.put_literal(1),
+                    d0.put_literal(2),
                 ]
-                result = d1.start_fn(*nodes)
-                assert d1.unroll(result)[1] == 36
-                d1.commit(result)
-                # d1.test_close(self)
-            (ref,) = (x.id for x in api.list_dags(d1.ctx) if x.name == "d1")
-            desc = api.describe_dag(d1.ctx, Ref(f"dag/{ref}"))
-            # assert [x["type"] for x in desc["edges"]] is None
-            for edge in desc["edges"]:
-                if edge["type"] == "dag":
-                    assert edge["source"] in {x["id"] for x in desc["nodes"]}
-                else:
-                    # assert edge["source"] in {x["id"] for x in desc["nodes"]}
-                    assert edge["target"] in {x["id"] for x in desc["nodes"]}
-            self.assertCountEqual(
-                [x["node_type"] for x in desc["nodes"]],
-                ["literal", "literal", "import", "fn"],
-            )
-            self.assertCountEqual(
-                [x["data_type"] for x in desc["nodes"]],
-                ["resource", "int", "int", "list"],
-            )
-            assert len(desc["edges"]) == len(nodes) + 2  # +1 because dag->node edge
-            assert {e["source"] for e in desc["edges"] if e["type"] == "node"} == {x for x in nodes}
+                result = d0.start_fn(*nodes)
+                with d0.tx():
+                    _dag = result().data.dag
+                desc = api.describe_dag(d0.ctx, _dag)
+                assert isinstance(desc["argv"], str)
+                cache_info = api.info_cache(d0.ctx, desc["cache_key"])
+                assert _dag.to == cache_info["dag_id"]
 
     def test_describe_dag_w_errs(self):
         with SimpleApi.begin("d0") as d0:
@@ -329,3 +301,31 @@ class TestApiBase(TestCase):
             [x["data_type"] for x in desc["nodes"]],
             ["resource", "int", "str", "error", "nonetype"],
         )
+
+
+@pytest.mark.parametrize(
+    "op,args,expected",
+    [
+        ("type", [1, 2, 3], "list"),
+        ("len", [1, 2, 3], 3),
+        ("len", {"a": 1, "b": 2}, 2),
+        ("keys", {"a": 1, "b": 2}, ["a", "b"]),
+        ("get", ({"a": 1, "b": 2}, "a"), 1),
+        ("get", ({"a": 1}, "b", 42), 42),
+        ("get", (["a", "b", "c"], 1), "b"),
+        ("get", (list("abcde"), [1, 3]), ["b", "c"]),  # slice
+        ("contains", ([1, 2, 3], 2), True),
+        ("contains", ({"a": 1, "b": 2}, "a"), True),
+        ("contains", ([1, 2, 3], "a"), False),
+        ("contains", ({"a": 1, "b": 2}, "x"), False),
+        ("list", (1, 2, 3), [1, 2, 3]),
+        ("dict", ("a", 1, "b", 2), {"a": 1, "b": 2}),
+        ("set", (1, 2, 3, 2), {1, 2, 3}),
+        ("assoc", ({"a": 1}, "b", 2), {"a": 1, "b": 2}),
+        ("conj", ([1, 2], 3), [1, 2, 3]),
+    ],
+)
+def test_specials(op, args, expected):
+    with SimpleApi.begin() as d0:
+        xs = [d0.put_literal(x) for x in (args if isinstance(args, tuple) else [args])]
+        assert d0.unroll(getattr(d0, op)(*xs)) == expected

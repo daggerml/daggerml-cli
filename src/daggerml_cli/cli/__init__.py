@@ -382,6 +382,14 @@ def cache_list(ctx):
     click.echo(jsdumps(api.list_cache(ctx.obj), ctx.obj))
 
 
+@cache_group.command(name="info")
+@click.argument("cache_key", type=str)
+@clickex
+def cache_info(ctx, cache_key):
+    """Delete a cached item."""
+    click.echo(jsdumps(api.info_cache(cache_key)))
+
+
 @cache_group.command(name="delete")
 @click.argument("cache_key", type=str)
 @clickex
@@ -389,6 +397,14 @@ def cache_delete(ctx, cache_key):
     """Delete a cached item."""
     api.delete_cache(ctx.obj, cache_key)
     click.echo(f"Deleted: {cache_key!r} from cache")
+
+
+@cache_group.command(name="put")
+@click.argument("dag_id", type=str)
+@clickex
+def cache_put(ctx, dag_id):
+    """Delete a cached item."""
+    click.echo(jsdumps({"cache_key": api.put_cache(ctx.obj, Ref(dag_id))}))
 
 
 ###############################################################################

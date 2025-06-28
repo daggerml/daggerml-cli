@@ -92,7 +92,7 @@ class SimpleApi:
             descs.append(desc)
             test_case.assertCountEqual(
                 desc.keys(),
-                ["id", "edges", "nodes", "argv", "result", "error"],
+                ["id", "edges", "nodes", "argv", "result", "error", "cache_key"],
             )
             if delete and dag.name is not None:
                 assert api.delete_dag(self.ctx, dag.name, "deleting...")

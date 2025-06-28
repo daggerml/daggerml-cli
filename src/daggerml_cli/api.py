@@ -6,6 +6,7 @@ from contextlib import contextmanager
 from copy import copy
 from dataclasses import dataclass, fields, is_dataclass
 from shutil import rmtree
+from typing import TYPE_CHECKING
 
 import jmespath
 from asciidag.graph import Graph as AsciiGraph
@@ -28,7 +29,10 @@ from daggerml_cli.repo import (
     unroll_datum,
 )
 from daggerml_cli.topology import topology
-from daggerml_cli.util import asserting, detect_executable, makedirs, some
+from daggerml_cli.util import asserting, detect_executable, flatten, makedirs, some
+
+if TYPE_CHECKING:
+    from daggerml_cli.config import Config
 
 ###############################################################################
 # HELPERS #####################################################################
@@ -308,6 +312,23 @@ def list_cache(config):
         return list(cache)
 
 
+def info_cache(config, cache_key: Ref = None):
+    with Cache(config.CACHE_PATH) as cache:
+        val = json.loads(cache.get(cache_key))[-1][1][1]
+        return {"cache_key": cache_key, "dag_id": val}
+
+
+def put_cache(config: "Config", dag: Ref):
+    with Cache(config.CACHE_PATH) as cache:
+        dump = dump_ref(config, dag, recursive=True)
+        assert isinstance(dump, str), "dump_ref should return a JSON string"
+        cache_key = describe_dag(config, dag)["cache_key"]
+        if cache_key is None:
+            raise ValueError("dag has no cache key")
+        cache.put(cache_key, dump, old_value=None)
+    return cache_key
+
+
 ###############################################################################
 # INDEX #######################################################################
 ###############################################################################
@@ -365,18 +386,37 @@ def format_ops():
 @invoke_op
 def op_start_fn(db, index, argv, name=None, doc=None):
     with db.tx(True):
+        argv = [op_put_literal(db, index, x) for x in argv]
         return db.start_fn(index, argv=argv, name=name, doc=doc)
 
 
 @invoke_op
 def op_put_literal(db, index, data, name=None, doc=None):
     # TODO: refactor so that Resource.data -> Ref(datum)
+    def fn(args):
+        fn_ = None
+        if isinstance(args, list):
+            args = [fn(x) for x in args]
+            if any(isinstance(x, Ref) for x in args):
+                fn_ = db.put_datum(Resource("daggerml:list"))
+        elif isinstance(args, dict):
+            args = {k: fn(v) for k, v in args.items()}
+            if any(isinstance(x, Ref) for x in args.values()):
+                fn_ = db.put_datum(Resource("daggerml:dict"))
+                args = flatten(args.items())
+        elif isinstance(args, set):
+            args = {fn(x) for x in args}
+            if any(isinstance(x, Ref) for x in args):
+                fn_ = db.put_datum(Resource("daggerml:set"))
+        if fn_ is not None:
+            return op_start_fn(db, index, [fn_, *args])
+        return args
+
     with db.tx(True):
+        data = fn(data)
         if isinstance(data, Ref) and data.type == "node":
             return op_set_node(db, index, name, data) if name else data
-        edges, data = db.extract_nodes(data)
-        log.debug("op_put_literal: paths=%s", [x.path for x in edges])
-        result = db.put_node(Literal(db.put_datum(data), edges=edges), index=index, name=name, doc=doc)
+        result = db.put_node(Literal(db.put_datum(data)), index=index, name=name, doc=doc)
         return result
 
 
@@ -466,19 +506,13 @@ def invoke_api(config, token, data):
     tok_to = getattr(token, "to", "NONE")
     index = CheckedRef(tok_to, Index, f"invalid token: {tok_to}")
     try:
-        with Repo(
-            config.REPO_PATH,
-            user=config.USER,
-            head=config.BRANCHREF,
-            cache_path=config.CACHE_PATH,
-        ) as db:
+        with Repo.from_config(config) as db:
             op, args, kwargs = data
             if op in BUILTIN_FNS:
                 with db.tx(True):
                     fn = db.put_datum(Resource(f"daggerml:{op}"))
                     fn = op_put_literal(db, index, fn, name=f"daggerml:{op}")
-                    argv = [fn, *[op_put_literal(db, index, x) for x in args]]
-                return op_start_fn(db, index, argv, **kwargs)
+                return op_start_fn(db, index, [fn, *args], **kwargs)
             return invoke_op.fns.get(op, no_such_op(op))(db, index, *args, **kwargs)
     except Exception as e:
         raise Error(e) from e

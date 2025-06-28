@@ -115,7 +115,7 @@ class Cache:
         def inner(tx):
             old_val = tx.get(key.encode())
             if old_val != old_value:
-                raise CacheError(f"Cache key '{key}' has been modified by another process.")
+                raise CacheError(f"Cache key {key!r} failed the value check")
             data = value.encode()
             tx.put(key.encode(), data)
 

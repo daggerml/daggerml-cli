@@ -74,25 +74,33 @@ def test_dump_and_load(name, test_value):
 
 
 @pytest.mark.parametrize(
-    "name,fn_uri,args,expected",
+    "op,args,expected",
     [
-        ("list_type", "daggerml:type", [1, 2, 3], "list"),
-        ("len_list", "daggerml:len", [1, 2, 3], 3),
-        ("len_dict", "daggerml:len", {"a": 1, "b": 2}, 2),
-        ("get_dict", "daggerml:get", ({"a": 1, "b": 2}, "a"), 1),
-        ("get_default", "daggerml:get", ({"a": 1}, "b", 42), 42),
-        ("contains_list", "daggerml:contains", ([1, 2, 3], 2), True),
-        ("contains_dict", "daggerml:contains", ({"a": 1, "b": 2}, "a"), True),
-        ("assoc_dict", "daggerml:assoc", ({"a": 1}, "b", 2), {"a": 1, "b": 2}),
-        ("conj_list", "daggerml:conj", ([1, 2], 3), [1, 2, 3]),
+        ("type", [1, 2, 3], "list"),
+        ("len", [1, 2, 3], 3),
+        ("len", {"a": 1, "b": 2}, 2),
+        ("keys", {"a": 1, "b": 2}, ["a", "b"]),
+        ("get", ({"a": 1, "b": 2}, "a"), 1),
+        ("get", ({"a": 1}, "b", 42), 42),
+        ("get", (["a", "b", "c"], 1), "b"),
+        ("get", (list("abcde"), [1, 3]), ["b", "c"]),  # slice
+        ("contains", ([1, 2, 3], 2), True),
+        ("contains", ({"a": 1, "b": 2}, "a"), True),
+        ("contains", ([1, 2, 3], "a"), False),
+        ("contains", ({"a": 1, "b": 2}, "x"), False),
+        ("list", (1, 2, 3), [1, 2, 3]),
+        ("dict", ("a", 1, "b", 2), {"a": 1, "b": 2}),
+        ("set", (1, 2, 3, 2), {1, 2, 3}),
+        ("assoc", ({"a": 1}, "b", 2), {"a": 1, "b": 2}),
+        ("conj", ([1, 2], 3), [1, 2, 3]),
     ],
 )
-def test_start_fn_with_builtins(name, fn_uri, args, expected):
+def test_start_fn_with_builtins(op, args, expected):
     """Test start_fn with built-in functions using patched methods."""
-    argv = [Resource(fn_uri)] + (list(args) if isinstance(args, tuple) else [args])
+    argv = [Resource(f"daggerml:{op}")] + (list(args) if isinstance(args, tuple) else [args])
     with tmp_repo() as repo:
         with repo.tx(True):
-            dag = repo.begin(message="test dag", name=f"test:{name}")
+            dag = repo.begin(message="test dag", name="test")
             argvs = [repo.put_node(Literal(repo.put_datum(arg)), index=dag) for arg in argv]
             result = repo.start_fn(index=dag, argv=argvs)
             assert unroll_datum(result().value) == expected
@@ -128,17 +136,3 @@ def test_adapter_called_correctly():
             ref = repo.begin(message="foo", dump=payload["dump"])
             assert isinstance(ref, Ref)
             assert unroll_datum(ref().dag().argv().value) == argv
-
-
-def test_extract_nodes():
-    """Test the extract_nodes function."""
-    with tmp_repo() as repo:
-        with repo.tx(True):
-            dag = repo.begin(message="test dag", name="test")
-            node0 = repo.put_node(Literal(repo.put_datum("node1")), doc="Node 1", index=dag)
-            node1 = repo.put_node(Literal(repo.put_datum("node2")), doc="Node 2", index=dag)
-            nested_obj = {"a": node0, "b": [1, {"c": node1}]}
-            edges, new_obj = repo.extract_nodes(nested_obj)
-            assert [x.path for x in edges] == [("a",), ("b", 1, "c")]
-            assert [x.node for x in edges] == [node0, node1]
-            assert new_obj == {"a": node0().value, "b": [1, {"c": node1().value}]}

@@ -31,6 +31,7 @@ def topology(db, ref):
     return {
         "id": ref,
         "argv": dag.argv.to if hasattr(dag, "argv") else None,
+        "cache_key": dag.argv().value.id if hasattr(dag, "argv") else None,
         "nodes": [make_node(dag.nameof(x), x) for x in dag.nodes],
         "edges": edges,
         "result": dag.result.to if dag.result is not None else None,
