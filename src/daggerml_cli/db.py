@@ -177,7 +177,10 @@ class Cache:
                 },
                 default=serialize_resource,
             )
-            proc = subprocess.run([cmd, fn.uri], input=payload, capture_output=True, text=True)
+            env = os.environ.copy()
+            env["DML_CACHE_PATH"] = self.path
+            env["DML_CACHE_KEY"] = cache_key
+            proc = subprocess.run([cmd, fn.uri], input=payload, capture_output=True, text=True, env=env)
             if proc.stderr:
                 logger.error(proc.stderr.rstrip())
             assert proc.returncode == 0, f"{cmd}: exit status: {proc.returncode}\n{proc.stderr}"
