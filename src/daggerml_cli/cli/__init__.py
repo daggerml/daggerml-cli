@@ -395,6 +395,13 @@ def cache_group(_):
     """cache management commands."""
 
 
+@cache_group.command(name="create")
+@clickex
+def cache_create(ctx):
+    """Create a fndag cache."""
+    click.echo(jsdumps(api.create_cache(ctx.obj)))
+
+
 @cache_group.command(name="list")
 @clickex
 def cache_list(ctx):
