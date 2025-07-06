@@ -30,7 +30,7 @@ from daggerml_cli.repo import (
     Resource,
     unroll_datum,
 )
-from daggerml_cli.topology import topology
+from daggerml_cli.topology import node_info, topology
 from daggerml_cli.util import asserting, detect_executable, flatten, makedirs, some
 
 if TYPE_CHECKING:
@@ -362,6 +362,12 @@ def delete_index(config, index: Ref):
 ###############################################################################
 # Node ########################################################################
 ###############################################################################
+
+
+def describe_node(config: "Config", node: Ref):
+    with Repo.from_config(config) as db:
+        with db.tx():
+            return node_info(node)
 
 
 def backtrack_node(config: "Config", node: Ref, *keys: Union[str, int]) -> Ref:

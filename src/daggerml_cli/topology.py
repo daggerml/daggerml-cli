@@ -2,17 +2,24 @@ from daggerml_cli.repo import Fn, Import
 from daggerml_cli.util import flatten
 
 
-def make_node(name, ref):
+def node_info(ref):
     node = ref()
-    val = node.value
-    data_type = type(node.error if val is None else val().value)
+    datume = node.value
+    val = node.error if datume is None else datume().value
+    data_type = type(val)
     return {
         "id": ref,
-        "name": name,
         "doc": node.doc,
         "node_type": type(node.data).__name__.lower(),
         "data_type": data_type.__name__.lower(),
+        "length": len(val) if isinstance(val, (list, dict, set)) else None,
+        "keys": list(val.keys()) if isinstance(val, dict) else None,
+        "datum_id": datume or None,
     }
+
+
+def make_node(name, ref):
+    return {"name": name, **node_info(ref)}
 
 
 def make_edges(ref):

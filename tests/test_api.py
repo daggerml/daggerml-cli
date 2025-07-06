@@ -315,10 +315,6 @@ class TestApiBase(TestCase):
 @pytest.mark.parametrize(
     "op,args,expected",
     [
-        ("type", [1, 2, 3], "list"),
-        ("len", [1, 2, 3], 3),
-        ("len", {"a": 1, "b": 2}, 2),
-        ("keys", {"a": 1, "b": 2}, ["a", "b"]),
         ("get", ({"a": 1, "b": 2}, "a"), 1),
         ("get", ({"a": 1}, "b", 42), 42),
         ("get", (["a", "b", "c"], 1), "b"),

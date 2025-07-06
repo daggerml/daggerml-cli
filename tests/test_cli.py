@@ -227,6 +227,28 @@ class TestCliDag(TestCase):
             assert len(daglist) >= 2
 
 
+class TestCliNode:
+    @pytest.mark.parametrize(
+        "obj,expected",
+        [
+            ({"a": 1, "b": 2}, {"node_type": "literal", "data_type": "dict", "length": 2, "keys": ["a", "b"]}),
+            ([1, 2, 3], {"node_type": "literal", "data_type": "list", "length": 3, "keys": None}),
+            (1, {"node_type": "literal", "data_type": "int", "length": None, "keys": None}),
+            ("hello", {"node_type": "literal", "data_type": "str", "length": None, "keys": None}),
+        ],
+    )
+    def test_node_describe(self, obj, expected):
+        with cliTmpDirs() as dml:
+            dml.config_user("Testy McTesterstein")
+            dml.repo_create("repo0")
+            dml.config_repo("repo0")
+            d0 = dml.dag_create("d0", "dag d0")
+            v0 = d0("put_literal", data=obj)
+            node_info = dml.json("node", "describe", from_json(v0).to)
+            assert {k: v for k, v in node_info.items() if k in expected} == expected
+            assert node_info["datum_id"].startswith("datum/")
+
+
 class TestCliProject(TestCase):
     def test_project_init(self):
         with cliTmpDirs() as dml:

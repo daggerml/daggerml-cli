@@ -380,8 +380,36 @@ def node_group(_):
 @click.argument("keys", type=str, nargs=-1)
 @clickex
 def node_backtrack(ctx, node_id, keys):
-    """Backtrack a node within a dag."""
+    """Backtrack a node within a dag.
+
+    If you insert a literal node with another node inside somewhere, this is how
+    you can get the original back. This is useful when the original node was in
+    import or a function node, and you want to get to that node's dag.
+
+    For example, let's say you're doing a parameter search. For each parameter
+    set, you run the function with those parameters and then save the results
+    as a list of dicts: `[{"params": params, "result": fn(params)}, ...]`, where
+    `fn` is a function node. If you want to get some intermediate results out of
+    `results_node[0]["result"]`, you can use this command to backtrack like so:
+    `dml node backtrack <result-node-id> 0 result`.
+
+    If you instead use the get methods, you would get new nodes unassociated
+    with the original function node, which is not what you want.
+
+    \b
+    Notes:
+    - This command does not add nodes to the DAG.
+    - This command only works with collection nodes created via put_literal.
+    """
     click.echo(to_json(api.backtrack_node(ctx.obj, Ref(node_id), *keys)))
+
+
+@node_group.command(name="describe")
+@click.argument("node_id", type=str)
+@clickex
+def node_describe(ctx, node_id):
+    """Get information about a node."""
+    click.echo(jsdumps(api.describe_node(ctx.obj, Ref(node_id))))
 
 
 ###############################################################################
@@ -413,7 +441,7 @@ def cache_list(ctx):
 @click.argument("cache_key", type=str)
 @clickex
 def cache_info(ctx, cache_key):
-    """Delete a cached item."""
+    """Prints information about what's in the cache for a given key."""
     click.echo(jsdumps(api.info_cache(cache_key)))
 
 
@@ -430,7 +458,7 @@ def cache_delete(ctx, cache_key):
 @click.argument("dag_id", type=str)
 @clickex
 def cache_put(ctx, dag_id):
-    """Delete a cached item."""
+    """Adds an item to the cache."""
     click.echo(jsdumps({"cache_key": api.put_cache(ctx.obj, Ref(dag_id))}))
 
 
