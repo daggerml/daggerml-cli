@@ -23,9 +23,6 @@ REPO_TYPES = []
 
 
 BUILTIN_FNS = {
-    "type": lambda x: str(type(x).__name__),
-    "len": lambda x: len(x),
-    "keys": lambda x: sorted(x.keys()),
     "get": lambda x, k, d=NONE: (
         x[slice(*[a().value for a in k])] if isinstance(k, list) else x[k] if d is NONE else x.get(k, d)
     ),
