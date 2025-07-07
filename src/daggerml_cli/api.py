@@ -253,11 +253,8 @@ def list_dags(config, *, all=False):
             if all:
                 dag_ids = [d.to for d in dags.values()]
                 for obj in db.walk(db.head):
-                    if not isinstance(obj, Ref):
-                        raise RuntimeError("ahhhhhh %r" % obj)
                     if isinstance(obj(), Dag) and obj.to not in dag_ids:
                         result.append(with_attrs(obj, name=None))
-            # return sorted(result, key=lambda x: x.name or "")
             return result
 
 

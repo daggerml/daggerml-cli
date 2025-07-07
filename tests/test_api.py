@@ -241,11 +241,9 @@ class TestApiBase(TestCase):
                 assert desc["argv"] is None
                 # assert [x["type"] for x in desc["edges"]] is None
                 for edge in desc["edges"]:
-                    if edge["type"] == "dag":
+                    if edge["type"] != "dag":
                         assert edge["source"] in {x["id"] for x in desc["nodes"]}
-                    else:
-                        # assert edge["source"] in {x["id"] for x in desc["nodes"]}
-                        assert edge["target"] in {x["id"] for x in desc["nodes"]}
+                    assert edge["target"] in {x["id"] for x in desc["nodes"]}
                 self.assertCountEqual(
                     [x["node_type"] for x in desc["nodes"]],
                     ["literal", "literal", "import", "fn"],
