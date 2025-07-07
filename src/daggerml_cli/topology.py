@@ -2,12 +2,12 @@ from daggerml_cli.repo import Fn, Import
 from daggerml_cli.util import flatten
 
 
-def node_info(ref):
+def node_info(ref, *, include_argv=True):
     node = ref()
     datume = node.value
     val = node.error if datume is None else datume().value
     data_type = type(val)
-    return {
+    info = {
         "id": ref,
         "doc": node.doc,
         "node_type": type(node.data).__name__.lower(),
@@ -16,6 +16,11 @@ def node_info(ref):
         "keys": list(val.keys()) if isinstance(val, dict) else None,
         "datum_id": datume or None,
     }
+    if include_argv and isinstance(node.data, Fn):
+        info["argv"] = [node_info(x, include_argv=False) for x in node.data.argv]
+    elif include_argv:
+        info["argv"] = None
+    return info
 
 
 def make_node(name, ref):
