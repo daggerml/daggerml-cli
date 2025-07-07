@@ -26,7 +26,7 @@ def make_edges(ref):
     node = ref()
     out = []
     if isinstance(node.data, Import):
-        out.append({"source": ref, "target": node.data.dag, "type": "dag"})
+        out.append({"source": node.data.dag, "target": ref, "type": "dag"})
     if isinstance(node.data, Fn):
         out.extend([{"source": x, "target": ref, "type": "node"} for x in node.data.argv])
     return out
