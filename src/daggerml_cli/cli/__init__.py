@@ -266,12 +266,23 @@ def commit_list(ctx):
     click.echo(jsdumps(api.list_commit(ctx.obj), ctx.obj))
 
 
-@click.option("--graph", is_flag=True, help="Print a graph of all commits.")
+@commit_group.command(name="describe")
+@click.argument("commit", required=False, shell_complete=complete(api.with_query(api.list_commit, "[*].id")))
+@clickex
+def commit_describe(ctx, commit=None):
+    """List commits."""
+    commit = Ref(commit) if commit else None
+    click.echo(jsdumps(api.describe_commit(ctx.obj, commit), ctx.obj))
+
+
+@click.option("--output", type=click.Choice(["json", "ascii"]), default="ascii", help="Print a graph of all commits.")
 @commit_group.command(name="log")
 @clickex
-def commit_log(ctx, graph):
+def commit_log(ctx, output):
     """Query the commit log."""
-    return api.commit_log_graph(ctx.obj)
+    resp = api.commit_log_graph(ctx.obj, output=output)
+    if output == "json":
+        click.echo(jsdumps(resp, ctx.obj))
 
 
 @click.argument("commit", shell_complete=complete(api.with_query(api.list_commit, "[*].id")))

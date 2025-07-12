@@ -4,7 +4,7 @@ import os
 import subprocess
 from contextlib import contextmanager
 from copy import copy
-from dataclasses import dataclass, fields, is_dataclass
+from dataclasses import fields, is_dataclass
 from shutil import rmtree
 from typing import TYPE_CHECKING, Union
 
@@ -211,7 +211,10 @@ def list_other_branch(config):
 
 
 def create_branch(config, name, commit=None):
-    with Repo(config.REPO_PATH, head=config.BRANCHREF) as db:
+    kw = {}
+    if commit is not None:
+        kw["head"] = config.BRANCHREF
+    with Repo(config.REPO_PATH, **kw) as db:
         with db.tx(True):
             ref = db.head if commit is None else Ref(f"commit/{commit}")
             db.create_branch(Ref(f"head/{name}"), ref)
@@ -219,7 +222,7 @@ def create_branch(config, name, commit=None):
 
 
 def delete_branch(config, name):
-    with Repo(config.REPO_PATH, head=config.BRANCHREF) as db:
+    with Repo(config.REPO_PATH) as db:
         with db.tx(True):
             db.delete_branch(Ref(f"head/{name}"))
 
@@ -565,14 +568,18 @@ def list_commit(config):
             return sorted(result, key=lambda x: x.modified, reverse=True)
 
 
-def commit_log_graph(config):
-    @dataclass
-    class GNode:
-        commit: Ref
-        parents: list[Ref]
-        children: list[Ref]
+def describe_commit(config, commit: Ref = None):
+    kw = {}
+    if commit is None:
+        kw["head"] = config.BRANCHREF
+    with Repo(config.REPO_PATH, **kw) as db:
+        with db.tx():
+            commit = commit or db.head().commit
+            return with_attrs(commit, dags=commit().tree().dags)
 
-    with Repo(config.REPO_PATH, user=config.USER, head=config.BRANCHREF) as db:
+
+def commit_log_graph(config, output="ascii"):
+    with Repo(config.REPO_PATH, user=config.USER) as db:
         with db.tx():
 
             def walk_names(x, head=None):
@@ -581,22 +588,32 @@ def commit_log_graph(config):
                     tag1 = " HEAD" if head and head.to == db.head.to else ""
                     tag2 = f" {head.id}" if head else ""
                     names[x[0]] = f"{k}{tag1}{tag2}"
+                    attrs[x[0]] = {"head": head.id if head else None}
                     [walk_names(p) for p in x[1]]
 
             def walk_nodes(x):
                 if x and x[0]:
                     if x[0] not in nodes:
                         parents = [walk_nodes(y) for y in x[1] if y]
-                        nodes[x[0]] = AsciiNode(names[x[0]], parents=parents)
+                        if output == "ascii":
+                            nodes[x[0]] = AsciiNode(names[x[0]], parents=parents)
+                        else:
+                            nodes[x[0]] = with_attrs(x[0], head=attrs[x[0]]["head"])
                     return nodes[x[0]]
 
             names = {}
             nodes = {}
+            attrs = {}
             log = dict(asserting(db.log("head")))
             ks = [db.head, *[k for k in log.keys() if k != db.head]]
             [walk_names(log[k], head=k) for k in ks]
             heads = [walk_nodes(log[k]) for k in ks]
-            AsciiGraph().show_nodes(heads)
+            if output == "ascii":
+                AsciiGraph().show_nodes(heads)
+                return
+            out = [*heads, *[x for x in reversed(nodes.values()) if x not in heads]]
+            return out
+            # return print(json.dumps([asdict(x) for x in out], indent=2, sort_keys=True))
 
 
 def revert_commit(config, commit):
