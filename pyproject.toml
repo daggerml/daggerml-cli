@@ -27,16 +27,12 @@ classifiers = [
   "Programming Language :: Python :: Implementation :: PyPy",
 ]
 dependencies = [
-  "boto3",
   "click",
   "jmespath",
   "lmdb",
   "msgpack",
   "tabulate",
   "asciidag",
-  "pyyaml",
-  "dataclasses; python_version < '3.7'",
-  "importlib_metadata; python_version < '3.8'",
 ]
 
 [project.optional-dependencies]
@@ -73,7 +69,7 @@ source = "vcs"
 [tool.hatch.version.raw-options]
 version_scheme = "only-version"   # use tag as version
 local_scheme = "no-local-version"  # pypi does not support local-schemes
-tag_regex = "^v(?P<version>[0-9.]+)$"
+tag_regex = "^v(?P<version>[0-9]+(?:\\.[0-9]+)*[a-zA-Z0-9\\.\\-]*)$"  # pypi regex
 version_file = "src/daggerml_cli/__about__.py"  # write version info to this file
 relative_to = "{root:uri}"
 
@@ -87,16 +83,8 @@ artifacts = [
 python = "3.10"
 dependencies = [
   "twine",
-  "daggerml_cli[test]"
 ]
-
-[tool.hatch.envs.default.env-vars]
-PYTHONPATH="."
-
-[tool.hatch.envs.scripts]
-test = 'pytest . {args}'
-coverage-report = 'pytest --cov-report term-missing --cov=daggerml_cli tests/'
-dml-build = "hatch build && twine upload -r {args:testpypi} dist/*"
+features = ["test"]
 
 [tool.hatch.envs.test-all]
 template = "default"
