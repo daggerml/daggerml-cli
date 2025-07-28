@@ -389,8 +389,15 @@ def backtrack_node(config: "Config", node: Ref, *_keys: Union[str, int]) -> Ref:
                     raise Error(
                         "invalid collection type for backtrack_node",
                         origin="dml",
-                        type="invalid_type",
-                        stack=[{"filename": "backtrack_node", "lineno": None, "function": fn.uri}],
+                        type="TypeError",
+                        stack=[
+                            {
+                                "filename": "api/invoke",
+                                "lineno": None,
+                                "function": "backtrack_node",
+                                "line": fn.uri,
+                            }
+                        ],
                     )
                 node = argv[key + 1]
             return node
