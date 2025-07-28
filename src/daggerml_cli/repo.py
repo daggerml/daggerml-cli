@@ -6,7 +6,7 @@ from collections import Counter
 from contextlib import contextmanager
 from dataclasses import InitVar, dataclass, field, fields, is_dataclass
 from hashlib import md5
-from typing import TYPE_CHECKING, Any, Dict, Optional, Union
+from typing import TYPE_CHECKING, Dict, Optional, Type, Union
 from urllib.parse import urlparse
 from uuid import uuid4
 
@@ -162,15 +162,15 @@ class Ref:
 
 @dataclass(frozen=True, order=True)
 class CheckedRef(Ref):
-    check_type: Optional[Any] = None
-    message: Optional[str] = None
+    check_type: Type = type(None)
+    message: str = ""
 
     def __call__(self):
         result = None
         try:
             result = super().__call__()
         except Exception as e:
-            raise Error(self.message) from e
+            raise Error(self.message, "dml", "checked_ref") from e
         assert isinstance(result, self.check_type), self.message
         return result
 
@@ -178,26 +178,38 @@ class CheckedRef(Ref):
 @repo_type(db=False)
 @dataclass
 class Error(Exception):
-    message: Union[str, Exception]
-    context: dict = field(default_factory=dict)
-    code: Optional[str] = None
+    message: str
+    origin: str
+    type: str
+    stack: list[dict] = field(default_factory=list)
 
-    def __post_init__(self):
-        if isinstance(self.message, Error):
-            ex = self.message
-            self.message = ex.message
-            self.context = ex.context
-            self.code = ex.code
-        elif isinstance(self.message, Exception):
-            ex = self.message
-            self.message = str(ex)
-            self.context = {"trace": tb.format_exception(type(ex), value=ex, tb=ex.__traceback__)}
-            self.code = type(ex).__name__
-        else:
-            self.code = type(self).__name__ if self.code is None else self.code
+    @classmethod
+    def from_ex(cls, ex: BaseException) -> "Error":
+        if isinstance(ex, Error):
+            return ex
+        return cls(
+            message=str(ex),
+            origin="python",
+            type=ex.__class__.__name__,
+            stack=[
+                {
+                    "filename": frame.filename,
+                    "function": frame.name,
+                    "lineno": frame.lineno,
+                    "line": (frame.line or "").strip(),
+                }
+                for frame in tb.extract_tb(ex.__traceback__)
+            ],
+        )
 
     def __str__(self):
-        return "".join(self.context.get("trace", [self.message]))
+        lines = [f"Traceback (most recent call last) from {self.origin}:\n"]
+        for frame in self.stack:
+            lines.append(f'  File "{frame["filename"]}", line {frame["lineno"]}, in {frame["function"]}\n')
+            if "line" in frame and frame["line"]:
+                lines.append(f"    {frame['line']}\n")
+        lines.append(f"{self.type}: {self.message}")
+        return "".join(lines)
 
 
 @repo_type(db=False)
@@ -802,6 +814,8 @@ class Repo:
             with Cache(self.cache_path, create=False) as cache_db:
                 cached_val = cache_db.submit(fn, argv_datum.id, self.dump_ref(argv_datum))
             fndag = self.load_ref(cached_val) if cached_val else None
+            if isinstance(fndag, Error):
+                fndag = self(FnDag([argv], {}, None, fndag, argv))
         if fndag is not None:
             node = self.put_node(Fn(fndag, None, argv), index=index, name=name, doc=doc)
             raise_ex(self.get(node).error)

@@ -6,7 +6,7 @@ import shutil
 import subprocess
 from contextlib import contextmanager
 from dataclasses import InitVar, dataclass, field
-from typing import Optional
+from typing import Optional, cast
 
 import lmdb
 
@@ -165,7 +165,7 @@ class Cache:
         with self.tx(True) as tx:
             cached_val = tx.get(cache_key.encode())
             if cached_val:
-                return cached_val.decode()
+                return cast(bytes, cached_val).decode()
             cmd = shutil.which(fn.adapter or "")
             assert cmd, f"no such adapter: {fn.adapter}"
             payload = json.dumps(

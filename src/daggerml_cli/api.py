@@ -370,10 +370,10 @@ def describe_node(config: "Config", node: Ref):
             return node_info(node)
 
 
-def backtrack_node(config: "Config", node: Ref, *keys: Union[str, int]) -> Ref:
+def backtrack_node(config: "Config", node: Ref, *_keys: Union[str, int]) -> Ref:
     with Repo.from_config(config) as db:
         with db.tx():
-            keys = list(keys)
+            keys = list(_keys)
             while len(keys) > 0:
                 key = keys.pop(0)
                 if not isinstance(node, Ref) or node.type != "node":
@@ -386,7 +386,19 @@ def backtrack_node(config: "Config", node: Ref, *keys: Union[str, int]) -> Ref:
                     i = args.index(key)
                     key = i + 1
                 else:
-                    raise Error(f"{fn.uri} is not a collection constructor")
+                    raise Error(
+                        "invalid collection type for backtrack_node",
+                        origin="dml",
+                        type="TypeError",
+                        stack=[
+                            {
+                                "filename": "api/invoke",
+                                "lineno": None,
+                                "function": "backtrack_node",
+                                "line": fn.uri,
+                            }
+                        ],
+                    )
                 node = argv[key + 1]
             return node
 
@@ -553,7 +565,7 @@ def invoke_api(config, token, data):
                 return op_start_fn(db, index, [fn, *args], **kwargs)
             return invoke_op.fns.get(op, no_such_op(op))(db, index, *args, **kwargs)
     except Exception as e:
-        raise Error(e) from e
+        raise Error.from_ex(e) from e
 
 
 ###############################################################################
