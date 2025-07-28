@@ -172,7 +172,7 @@ def api_create(ctx, name, message, dump):
         idx = api.begin_dag(ctx.obj, name=name, message=message, dump=dump)
         click.echo(to_json(idx))
     except Exception as e:
-        click.echo(to_json(Error(e)))
+        click.echo(to_json(Error.from_ex(e)))
 
 
 @click.argument("data", type=click.File("r"), default="-", required=False)
@@ -188,7 +188,7 @@ def api_invoke(ctx, token, data):
     try:
         click.echo(to_json(api.invoke_api(ctx.obj, from_json(token), from_json(data.read().strip()))))
     except Exception as e:
-        click.echo(to_json(Error(e)))
+        click.echo(to_json(Error.from_ex(e)))
 
 
 ###############################################################################

@@ -20,6 +20,6 @@ if __name__ == "__main__":
         try:
             n0 = d0.put_literal([uuid, sum(args)], name="sum")
         except Exception as e:
-            n0 = Error(e)
+            n0 = Error.from_ex(e)
         result = d0.commit(n0)
         print(result)

@@ -11,6 +11,7 @@ from daggerml_cli.repo import Error, FnDag, Node, Ref, Resource
 from tests.util import SimpleApi
 
 SUM = Resource("./tests/fn/sum.py", adapter="dml-python-fork-adapter")
+AER = Resource("./tests/fn/adapter_error.py", adapter="dml-python-fork-adapter")
 
 
 def env(**kwargs):
@@ -73,6 +74,14 @@ class TestApiBase(TestCase):
                     d0.get_node("BOGUS")
                 assert result().doc == "I called a func!"
             assert d0.unroll(result)[1] == 3
+            d0.test_close(self)
+
+    def test_fn_adapter_err(self):
+        with SimpleApi.begin() as d0:
+            with pytest.raises(Error, match="test error") as exc:
+                d0.start_fn(AER)
+            assert isinstance(exc.value, Error)
+            assert exc.value.type == "ValueError"
             d0.test_close(self)
 
     def test_fn_load_names(self):
