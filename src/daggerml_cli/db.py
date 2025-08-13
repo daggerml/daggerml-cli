@@ -13,7 +13,7 @@ import lmdb
 from daggerml_cli.util import makedirs
 
 logger = logging.getLogger(__name__)
-MAP_SIZE_MIN = 128 * 1024**2  # Minimum 128MB
+MAP_SIZE_MIN = 512 * 1024**2  # Minimum 512MB
 MAP_SIZE_MAX = 128 * 1024**3  # Maximum 128GB
 
 
