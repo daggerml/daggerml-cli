@@ -138,7 +138,7 @@ class Cache:
         js = cast(list, json.loads(val))
         if js[0] == "Error":
             return {"cache_key": key, "error": True, "data": None, "dag_id": None}
-        return {"cache_key": key, "error": False, "data": js, "dag_id": js[-1][1][1]}
+        return {"cache_key": key, "error": False, "data": val, "dag_id": js[-1][1][1]}
 
     def _close(self):
         if self.env is not None:
