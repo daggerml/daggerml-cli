@@ -438,7 +438,8 @@ def cache_group(_):
 @clickex
 def cache_create(ctx):
     """Create a fndag cache."""
-    click.echo(jsdumps(api.create_cache(ctx.obj)))
+    api.create_cache(ctx.obj)
+    click.echo("Created cache at: {}".format(ctx.obj.CACHE_PATH))
 
 
 @cache_group.command(name="list")
@@ -453,7 +454,7 @@ def cache_list(ctx):
 @clickex
 def cache_info(ctx, cache_key):
     """Prints information about what's in the cache for a given key."""
-    click.echo(jsdumps(api.info_cache(cache_key)))
+    click.echo(jsdumps(api.info_cache(ctx.obj, cache_key)))
 
 
 @cache_group.command(name="delete")
@@ -461,8 +462,10 @@ def cache_info(ctx, cache_key):
 @clickex
 def cache_delete(ctx, cache_key):
     """Delete a cached item."""
-    api.delete_cache(ctx.obj, cache_key)
-    click.echo(f"Deleted: {cache_key!r} from cache")
+    if api.delete_cache(ctx.obj, cache_key):
+        click.echo(f"Deleted: {cache_key!r} from cache")
+    else:
+        click.echo(f"Not found: {cache_key!r} in cache")
 
 
 @cache_group.command(name="put")
@@ -491,12 +494,14 @@ def index_list(ctx):
     click.echo(jsdumps(api.list_indexes(ctx.obj), ctx.obj))
 
 
-@click.argument("id", shell_complete=complete(api.with_query(api.list_indexes, "[*].id")))
+@click.argument("id", shell_complete=complete(api.with_query(api.list_indexes, "[*].to")))
 @index_group.command(name="delete")
 @clickex
 def index_delete(ctx, id):
     """Delete index."""
-    if api.delete_index(ctx.obj, Ref(f"index/{id}")):
+    if not id.startswith("index/"):
+        id = f"index/{id}"
+    if api.delete_index(ctx.obj, Ref(id)):
         click.echo(f"Deleted index: {id}")
 
 
@@ -567,16 +572,6 @@ def repo_create(ctx, name):
     """Create a new repository."""
     api.create_repo(ctx.obj, name)
     click.echo(f"Created repository: {name}")
-
-
-@repo_group.command(name="resize")
-@click.argument("name")
-@click.argument("size", type=int)
-@clickex
-def repo_resize(ctx, name, size):
-    """Resize a repository."""
-    api.resize_repo(ctx.obj, name, size)
-    click.echo(f"Resized repository: {name} to {size / 1024 / 1024} MB")
 
 
 @click.argument("name", shell_complete=complete(api.with_query(api.list_repo, "[*].name")))

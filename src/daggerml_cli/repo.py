@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Dict, Optional, Type, Union
 from urllib.parse import urlparse
 from uuid import uuid4
 
-from daggerml_cli.db import Cache, dbenv
+from daggerml_cli.db import Cache, dbenv, get_map_size
 from daggerml_cli.pack import packb, register, unpackb
 from daggerml_cli.util import asserting, assoc, conj, makedirs, now
 
@@ -377,14 +377,9 @@ class Repo:
         dbfile_exists = os.path.exists(dbfile)
         if create:
             assert not dbfile_exists, f"repo already exists: {dbfile}"
-            map_size = 10485760
-            with open(os.path.join(self.path, "config"), "w") as f:
-                json.dump({"map_size": map_size}, f)
         else:
             assert dbfile_exists, f"repo not found: {dbfile}"
-            with open(os.path.join(self.path, "config")) as f:
-                map_size = json.load(f)["map_size"]
-        self.env, self.dbs = dbenv(self.path, REPO_TYPES, map_size=map_size)
+        self.env, self.dbs = dbenv(self.path, REPO_TYPES, map_size=get_map_size(self.path))
         with self.tx(bool(create)):
             if not self.get("/init"):
                 commit = Commit(

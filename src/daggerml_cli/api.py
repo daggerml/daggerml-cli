@@ -1,4 +1,3 @@
-import json
 import logging
 import os
 import subprocess
@@ -6,7 +5,7 @@ from contextlib import contextmanager
 from copy import copy
 from dataclasses import fields, is_dataclass
 from shutil import rmtree
-from typing import TYPE_CHECKING, Union
+from typing import TYPE_CHECKING, Union, cast
 
 import jmespath
 from asciidag.graph import Graph as AsciiGraph
@@ -97,12 +96,6 @@ def create_repo(config, name):
     config._REPO = name
     with Repo(makedirs(config.REPO_PATH), user=config.USER, create=True):
         pass
-
-
-def resize_repo(config, name, newsize):
-    config._REPO = name
-    with open(os.path.join(config.REPO_PATH, "config"), "w") as f:
-        json.dump({"map_size": newsize}, f)
 
 
 def delete_repo(config, name):
@@ -303,25 +296,23 @@ def create_cache(config):
         pass
 
 
-def delete_cache(config, cache_key: Ref = None):
+def delete_cache(config, cache_key: Ref):
     with Cache(config.CACHE_PATH) as cache:
         return cache.delete(cache_key)
 
 
 def list_cache(config):
-    # walk all indexes and return all FnCache objects
     with Cache(config.CACHE_PATH) as cache:
         return list(cache)
 
 
-def info_cache(config, cache_key: Ref = None):
+def info_cache(config, cache_key: Ref):
     with Cache(config.CACHE_PATH) as cache:
-        val = json.loads(cache.get(cache_key))[-1][1][1]
-        return {"cache_key": cache_key, "dag_id": val}
+        return cache.describe(cache_key)
 
 
 def put_cache(config: "Config", dag: Ref):
-    with Cache(config.CACHE_PATH) as cache:
+    with Cache(cast(str, config.CACHE_PATH)) as cache:
         dump = dump_ref(config, dag, recursive=True)
         assert isinstance(dump, str), "dump_ref should return a JSON string"
         cache_key = describe_dag(config, dag)["cache_key"]

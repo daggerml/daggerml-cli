@@ -13,8 +13,7 @@ import lmdb
 from daggerml_cli.util import makedirs
 
 logger = logging.getLogger(__name__)
-MAP_SIZE_HEADROOM = 2  # x more than current size
-MAP_SIZE_MIN = 128 * 1024**2  # Minimum 128MB
+MAP_SIZE_MIN = 512 * 1024**2  # Minimum 512MB
 MAP_SIZE_MAX = 128 * 1024**3  # Maximum 128GB
 
 
@@ -48,46 +47,41 @@ def dbenv(path, db_types, **kw):
     return env, {k: env.open_db(f"db/{k}".encode()) for k in db_types}
 
 
+def get_map_size(path=None, env=None):
+    if env is not None:
+        curr_size = env.info()["map_size"]
+        logger.debug("Current LMDB map size from env: %r", curr_size)
+    else:
+        curr_size = [f"{path}/{f}" for f in os.listdir(path)]
+        curr_size = [f for f in curr_size if os.path.isfile(f)]
+        curr_size = sum(os.stat(f).st_size for f in curr_size)
+        logger.debug("Current LMDB map size from path %r: %r", path, curr_size)
+    if curr_size >= MAP_SIZE_MAX:
+        msg = f"LMDB map size is already at maximum: {curr_size}"
+        raise RuntimeError(msg)
+    map_size = min(int(math.ceil(curr_size + MAP_SIZE_MIN)), MAP_SIZE_MAX)
+    logger.info("Setting LMDB map_size to %r", map_size)
+    return map_size
+
+
 @dataclass
 class Cache:
     path: str
     env: Optional[lmdb.Environment] = field(init=False, default=None)
     create: InitVar[bool] = False
-    map_size: InitVar[Optional[int]] = None
 
-    def __post_init__(self, create=None, map_size=None):
+    def __post_init__(self, create=False):
         if create:
             assert not os.path.exists(self.path), f"cache exists: {self.path}"
             makedirs(self.path)
-        if map_size is None:
-            map_size = [f"{self.path}/{f}" for f in os.listdir(self.path)]
-            map_size = [f for f in map_size if os.path.isfile(f)]
-            map_size = sum(os.stat(f).st_size for f in map_size)
-            if map_size < MAP_SIZE_MIN:
-                logger.info("Db too small... setting size %r -> %r", map_size, MAP_SIZE_MIN)
-                map_size = MAP_SIZE_MIN
-        map_size = map_size / MAP_SIZE_HEADROOM
         for _ in range(3):
             try:
-                self.env = lmdb.open(self.path, max_dbs=1, map_size=self._get_size(map_size))
+                self.env = lmdb.open(self.path, max_dbs=1, map_size=get_map_size(self.path))
                 break
             except lmdb.Error as e:
                 logger.exception("LMDB error while opening environment: %s", e)
                 if _ == 2:
                     raise
-
-    def _get_size(self, curr_size=None):
-        if curr_size is None:
-            curr_size = self.env.info()["map_size"]
-        if curr_size >= MAP_SIZE_MAX:
-            msg = f"LMDB map size is already at maximum: {curr_size}"
-            raise RuntimeError(msg)
-        new_size = min(int(math.ceil(curr_size * MAP_SIZE_HEADROOM)), MAP_SIZE_MAX)
-        logger.info("Growing LMDB map_size from %r to %r", curr_size, new_size)
-        return new_size
-
-    def resize(self, curr_size=None):
-        self.env.set_mapsize(self._get_size(curr_size))
 
     @contextmanager
     def tx(self, write=False):
@@ -100,9 +94,9 @@ class Cache:
                 with self.tx(write=write) as tx:
                     return func(tx)
             except lmdb.MapFullError:
-                self.resize()
+                self.env.set_mapsize(get_map_size(env=self.env))
 
-    def get(self, key):
+    def get(self, key: str) -> Optional[str]:
         def inner(tx):
             data = tx.get(key.encode())
             if data is not None:
@@ -123,26 +117,28 @@ class Cache:
 
     def delete(self, key):
         def inner(tx):
-            tx.delete(key.encode())
+            return tx.delete(key.encode())
 
-        self._resize_call(inner, write=True)
-        return True
+        return self._resize_call(inner, write=True)
 
     def __iter__(self):
         def inner(tx):
             with tx.cursor() as cursor:
                 return sorted(
-                    [
-                        {
-                            "cache_key": key.decode(),
-                            "dag_id": json.loads(val.decode())[-1][1][1],
-                        }
-                        for key, val in cursor
-                    ],
+                    [cast(dict, self.describe(key.decode(), cast(bytes, val).decode())) for key, val in cursor],
                     key=lambda x: x["cache_key"],
                 )
 
         return iter(self._resize_call(inner))
+
+    def describe(self, key, val=None):
+        val = val or self.get(key)
+        if val is None:
+            return None
+        js = cast(list, json.loads(val))
+        if js[0] == "Error":
+            return {"cache_key": key, "error": True, "data": None, "dag_id": None}
+        return {"cache_key": key, "error": False, "data": js, "dag_id": js[-1][1][1]}
 
     def _close(self):
         if self.env is not None:
