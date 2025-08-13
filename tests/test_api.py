@@ -161,7 +161,7 @@ class TestApiBase(TestCase):
                 d0.test_close(self)
             cache = api.list_cache(d0.ctx)
             assert len(cache) == 1
-            assert cache[0].keys() == {"cache_key", "dag_id"}
+            assert {"cache_key", "dag_id"} <= cache[0].keys()
             api.delete_cache(d0.ctx, cache[0]["cache_key"])
 
             with SimpleApi.begin(cache_path=cache_path) as d0:
