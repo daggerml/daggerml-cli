@@ -84,16 +84,6 @@ class Cache:
                 if _ == 2:
                     raise
 
-    def _get_size(self, curr_size=None):
-        if curr_size is None:
-            curr_size = self.env.info()["map_size"]
-        if curr_size >= MAP_SIZE_MAX:
-            msg = f"LMDB map size is already at maximum: {curr_size}"
-            raise RuntimeError(msg)
-        new_size = min(int(math.ceil(curr_size * MAP_SIZE_HEADROOM)), MAP_SIZE_MAX)
-        logger.info("Growing LMDB map_size from %r to %r", curr_size, new_size)
-        return new_size
-
     @contextmanager
     def tx(self, write=False):
         with self.env.begin(write=write) as tx:
