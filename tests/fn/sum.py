@@ -22,4 +22,4 @@ if __name__ == "__main__":
         except Exception as e:
             n0 = Error.from_ex(e)
         result = d0.commit(n0)
-        print(result)
+        print(d0.dump_ref(result))

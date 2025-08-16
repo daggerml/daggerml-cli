@@ -800,12 +800,13 @@ class Repo:
             try:
                 result = BUILTIN_FNS[uri.path](*data)
             except Exception as e:
-                error = Error(e)
+                error = Error.from_ex(e)
             else:
                 result = self(Node(Literal(self.put_datum(result))))
                 nodes.append(result)
             fndag = self(FnDag(nodes, {}, result, error, argv_node))
         else:
+            assert self.cache_path, "cache path is required for function execution"
             with Cache(self.cache_path, create=False) as cache_db:
                 cached_val = cache_db.submit(fn, argv_datum.id, self.dump_ref(argv_datum))
             fndag = self.load_ref(cached_val) if cached_val else None
@@ -830,4 +831,4 @@ class Repo:
         commit = self.merge(self.get(self.head).commit, self(ctx.commit))
         self.set_head(self.head, commit)
         self.delete(index)
-        return self.dump_ref(ref)
+        return ref

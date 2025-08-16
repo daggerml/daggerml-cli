@@ -121,7 +121,7 @@ class Cache:
 
         return self._resize_call(inner, write=True)
 
-    def __iter__(self):
+    def list(self):
         def inner(tx):
             with tx.cursor() as cursor:
                 return sorted(
@@ -129,7 +129,10 @@ class Cache:
                     key=lambda x: x["cache_key"],
                 )
 
-        return iter(self._resize_call(inner))
+        return self._resize_call(inner)
+
+    def __iter__(self):
+        return iter(self.list())
 
     def describe(self, key, val=None):
         val = val or self.get(key)
