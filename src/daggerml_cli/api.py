@@ -303,7 +303,7 @@ def delete_cache(config, cache_key: Ref):
 
 def list_cache(config):
     with Cache(config.CACHE_PATH) as cache:
-        return list(cache)
+        return cache.list()
 
 
 def info_cache(config, cache_key: Ref):

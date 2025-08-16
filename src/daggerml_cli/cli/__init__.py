@@ -446,7 +446,8 @@ def cache_create(ctx):
 @clickex
 def cache_list(ctx):
     """List cached dags."""
-    click.echo(jsdumps(api.list_cache(ctx.obj)))
+    for item in api.list_cache(ctx.obj):
+        click.echo(jsdumps(item))
 
 
 @cache_group.command(name="info")
