@@ -806,7 +806,10 @@ class Repo:
                 nodes.append(result)
             fndag = self(FnDag(nodes, {}, result, error, argv_node))
         else:
-            assert self.cache_path, "cache path is required for function execution"
+            assert self.cache_path, (
+                "cache path is required for function execution. "
+                "Set the cache path via the DML_CACHE_PATH environment variable or in the config file."
+            )
             with Cache(self.cache_path, create=False) as cache_db:
                 cached_val = cache_db.submit(fn, argv_datum.id, self.dump_ref(argv_datum))
             fndag = self.load_ref(cached_val) if cached_val else None
