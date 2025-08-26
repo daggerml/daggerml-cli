@@ -628,9 +628,9 @@ class Repo:
             Commit(
                 [c1, c2],
                 merge_trees(self.get(c0).tree, self.get(c1).tree, self.get(c2).tree),
-                author or self.user,
-                self.user,
-                message or f"merge {c2.id} with {c1.id}",
+                author=author or self.user,
+                committer=self.user,
+                message=message or f"merge {c2.id} with {c1.id}",
                 created=created or now(),
             )
         )
