@@ -46,6 +46,7 @@ class TestApiBase(TestCase):
                 with d0.tx():
                     assert d0.get_node("n0") == n0
                     assert n0().doc == "This is my data."
+                    assert d0.unroll(n0) == data
                 d0.commit(n0)
                 d0.test_close(self)
             with SimpleApi.begin("d1", config_dir=config_dir, cache_path=config_dir) as d1:

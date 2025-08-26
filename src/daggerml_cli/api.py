@@ -616,7 +616,6 @@ def commit_log_graph(config, output="ascii"):
                 return
             out = [*heads, *[x for x in reversed(nodes.values()) if x not in heads]]
             return out
-            # return print(json.dumps([asdict(x) for x in out], indent=2, sort_keys=True))
 
 
 def revert_commit(config, commit):
