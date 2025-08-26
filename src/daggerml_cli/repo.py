@@ -259,7 +259,7 @@ class Tree:
     dags: dict[str, Ref]  # -> dag
 
 
-@repo_type(hash=[])
+@repo_type
 @dataclass
 class Dag:
     nodes: list[Ref]  # -> node
@@ -271,7 +271,7 @@ class Dag:
         return {v: k for k, v in self.names.items()}.get(ref)
 
 
-@repo_type(hash=[])
+@repo_type
 @dataclass
 class FnDag(Dag):
     argv: Optional[Ref] = None  # -> node(expr) (in this dag)
