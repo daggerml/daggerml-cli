@@ -248,6 +248,7 @@ class Commit:
     author: str
     committer: str
     message: str
+    dag_name: Optional[str] = None  # -> dag name in tree
     created: str = field(default_factory=now)
     modified: str = field(default_factory=now)
 
@@ -258,7 +259,7 @@ class Tree:
     dags: dict[str, Ref]  # -> dag
 
 
-@repo_type(hash=[])
+@repo_type
 @dataclass
 class Dag:
     nodes: list[Ref]  # -> node
@@ -270,7 +271,7 @@ class Dag:
         return {v: k for k, v in self.names.items()}.get(ref)
 
 
-@repo_type(hash=[])
+@repo_type
 @dataclass
 class FnDag(Dag):
     argv: Optional[Ref] = None  # -> node(expr) (in this dag)
@@ -627,10 +628,10 @@ class Repo:
             Commit(
                 [c1, c2],
                 merge_trees(self.get(c0).tree, self.get(c1).tree, self.get(c2).tree),
-                author or self.user,
-                self.user,
-                message or f"merge {c2.id} with {c1.id}",
-                created or now(),
+                author=author or self.user,
+                committer=self.user,
+                message=message or f"merge {c2.id} with {c1.id}",
+                created=created or now(),
             )
         )
 
@@ -757,12 +758,13 @@ class Repo:
         ctx = Ctx.from_head(self.head)
         if dump is None:
             dag = self(Dag([], {}, None, None))
-            ctx.dags[name] = dag
         else:
+            loaded = self.load_ref(dump)
+            assert loaded is not None, "failed to load dump"
             with self.tx(True):
-                argv = self(Node(Argv(self.load_ref(dump))))
+                argv = self(Node(Argv(loaded)))
             dag = self(FnDag([argv], {}, None, None, argv))
-        commit = Commit([ctx.head.commit], self(ctx.tree), self.user, self.user, message)
+        commit = Commit([ctx.head.commit], self(ctx.tree), self.user, self.user, message, dag_name=name)
         index = self(Index(self(commit), dag))
         return index
 
@@ -773,10 +775,9 @@ class Repo:
             ctx.dag.nodes.append(node)
         if name:
             ctx.dag.names[name] = node
-        self(ctx.head.dag, ctx.dag)
         ctx.commit.tree = self(ctx.tree)
         ctx.commit.created = ctx.commit.modified = now()
-        self(index, Index(self(ctx.commit), ctx.head.dag))
+        self(index, Index(self(ctx.commit), self(ctx.dag)))
         return node
 
     def get_node_value(self, ref: Ref):
@@ -828,9 +829,11 @@ class Repo:
         assert (ctx.dag.result or ctx.dag.error) is None, "dag has been committed already"
         ctx.dag.result = result
         ctx.dag.error = error
+        ref = self(ctx.dag)
+        if ctx.commit.dag_name is not None:
+            ctx.tree.dags[ctx.commit.dag_name] = ref
         ctx.commit.tree = self(ctx.tree)
         ctx.commit.created = ctx.commit.modified = now()
-        ref = self(dag, ctx.dag)
         commit = self.merge(self.get(self.head).commit, self(ctx.commit))
         self.set_head(self.head, commit)
         self.delete(index)

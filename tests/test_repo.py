@@ -15,6 +15,7 @@ def tmp_repo(cache_path=None):
     tmpdirs = [tempfile.mkdtemp() for _ in range(2)]
     repo = Repo(tmpdirs[0], user="test", create=True, cache_path=cache_path or tmpdirs[1])
     if cache_path is None:
+        assert repo.cache_path is not None
         with Repo(repo.cache_path, create=True):
             pass
     try:
