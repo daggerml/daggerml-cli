@@ -22,14 +22,19 @@ class CacheError(Exception):
 
 
 def serialize_resource(x):
-    from daggerml_cli.repo import Resource
+    from daggerml_cli.repo import Executable, Resource
 
+    if isinstance(x, Executable):
+        return {
+            "__type__": "executable",
+            "uri": x.uri,
+            "data": x.data,
+            "adapter": x.adapter,
+        }
     if isinstance(x, Resource):
         return {
             "__type__": "resource",
             "uri": x.uri,
-            "data": x.data,
-            "adapter": x.adapter,
         }
 
 

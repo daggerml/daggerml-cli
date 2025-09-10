@@ -19,6 +19,7 @@ from daggerml_cli.repo import (
     Ctx,
     Dag,
     Error,
+    Executable,
     FnDag,
     Import,
     Index,
@@ -26,7 +27,6 @@ from daggerml_cli.repo import (
     Node,
     Ref,
     Repo,
-    Resource,
     unroll_datum,
 )
 from daggerml_cli.topology import node_info, topology
@@ -430,27 +430,39 @@ def op_start_fn(db, index, argv, name=None, doc=None):
 @invoke_op
 def op_put_literal(db, index, data, name=None, doc=None):
     # TODO: refactor so that Resource.data -> Ref(datum)
-    def fn(args):
+    def maybe_to_node(args):
         fn_ = None
         if isinstance(args, list):
-            args = [fn(x) for x in args]
-            if any(isinstance(x, Ref) for x in args):
-                fn_ = db.put_datum(Resource("daggerml:list"))
+            args = [maybe_to_node(x) for x in args]
+            if any(isinstance(x, Ref) for x in args):  # only insert if needed
+                fn_ = db.put_datum(Executable("daggerml:list"))
         elif isinstance(args, dict):
-            args = {k: fn(v) for k, v in args.items()}
-            if any(isinstance(x, Ref) for x in args.values()):
-                fn_ = db.put_datum(Resource("daggerml:dict"))
+            args = {k: maybe_to_node(v) for k, v in args.items()}
+            if any(isinstance(x, Ref) for x in args.values()):  # only insert if needed
+                fn_ = db.put_datum(Executable("daggerml:dict"))
                 args = flatten(args.items())
         elif isinstance(args, set):
-            args = {fn(x) for x in args}
-            if any(isinstance(x, Ref) for x in args):
-                fn_ = db.put_datum(Resource("daggerml:set"))
+            args = {maybe_to_node(x) for x in args}
+            if any(isinstance(x, Ref) for x in args):  # only insert if needed
+                fn_ = db.put_datum(Executable("daggerml:set"))
+        elif isinstance(args, Executable):
+            attrs = {}
+            for x in ["data", "prepop"]:
+                attrs[x] = {}
+                for k, v in (getattr(args, x) or {}).items():
+                    attrs[x][k] = maybe_to_node(v)
+                    if isinstance(attrs[x][k], Ref) and attrs[x][k].type == "node":
+                        attrs[x][k] = db.get(attrs[x][k]).value
+                    else:
+                        attrs[x][k] = db.put_datum(attrs[x][k])
+            args = Executable(args.uri, adapter=args.adapter, **attrs)  # so we don't mutate
+            return args
         if fn_ is not None:
             return op_start_fn(db, index, [fn_, *args])
         return args
 
     with db.tx(True):
-        data = fn(data)
+        data = maybe_to_node(data)
         if isinstance(data, Ref) and data.type == "node":
             return op_set_node(db, index, name, data) if name else data
         result = db.put_node(Literal(db.put_datum(data)), index=index, name=name, doc=doc)
@@ -551,7 +563,7 @@ def invoke_api(config, token, data):
             op, args, kwargs = data
             if op in BUILTIN_FNS:
                 with db.tx(True):
-                    fn = db.put_datum(Resource(f"daggerml:{op}"))
+                    fn = db.put_datum(Executable(f"daggerml:{op}"))
                     fn = op_put_literal(db, index, fn, name=f"daggerml:{op}")
                 return op_start_fn(db, index, [fn, *args], **kwargs)
             return invoke_op.fns.get(op, no_such_op(op))(db, index, *args, **kwargs)

@@ -12,9 +12,9 @@ import pytest
 from click.testing import CliRunner
 
 from daggerml_cli.cli import cli, from_json, jsdumps, to_json
-from daggerml_cli.repo import Resource
+from daggerml_cli.repo import Executable, Resource
 
-SUM = Resource("./tests/fn/sum.py", adapter="dml-python-fork-adapter")
+SUM = Executable("./tests/fn/sum.py", adapter="dml-python-fork-adapter")
 
 
 @dataclass

@@ -7,11 +7,11 @@ import pytest
 from daggerml_cli import api
 from daggerml_cli.config import Config
 from daggerml_cli.db import CacheError
-from daggerml_cli.repo import Error, FnDag, Node, Ref, Resource
+from daggerml_cli.repo import Error, Executable, FnDag, Node, Ref, Resource
 from tests.util import SimpleApi
 
-SUM = Resource("./tests/fn/sum.py", adapter="dml-python-fork-adapter")
-AER = Resource("./tests/fn/adapter_error.py", adapter="dml-python-fork-adapter")
+SUM = Executable("./tests/fn/sum.py", adapter="dml-python-fork-adapter")
+AER = Executable("./tests/fn/adapter_error.py", adapter="dml-python-fork-adapter")
 
 
 def env(**kwargs):
@@ -223,8 +223,19 @@ class TestApiBase(TestCase):
 
     def test_resource(self):
         with SimpleApi.begin() as d0:
-            resource = Resource("uri:here", data={"a": 1, "b": [2, 3], "c": Resource("qwer")})
-            d0.put_literal(resource)
+            resource = Executable(
+                "uri:here",
+                data={"a": 1, "b": [2, 3], "c": Resource("qwer")},
+                prepop={"a": {"b": 2}},
+            )
+            node = d0.put_literal(resource, name="x")
+            with d0.tx():
+                nodeval = node().datum
+            assert isinstance(nodeval, Executable)
+            assert nodeval.uri == resource.uri
+            assert nodeval.prepop != resource.prepop
+            assert nodeval.prepop.keys() == resource.prepop.keys()
+            assert d0.unroll(node) == resource
 
     def test_describe_dag(self):
         with self.tmpd() as cache_path:
@@ -260,7 +271,7 @@ class TestApiBase(TestCase):
                 )
                 self.assertCountEqual(
                     [x["data_type"] for x in desc["nodes"]],
-                    ["resource", "int", "int", "list"],
+                    ["executable", "int", "int", "list"],
                 )
                 assert len(desc["edges"]) == len(nodes) + 2  # +1 because dag->node edge
                 assert {e["source"] for e in desc["edges"] if e["type"] == "node"} == {x for x in nodes}
@@ -307,7 +318,7 @@ class TestApiBase(TestCase):
         )
         self.assertCountEqual(
             [x["data_type"] for x in desc["nodes"]],
-            ["resource", "int", "str", "error", "nonetype"],
+            ["executable", "int", "str", "error", "nonetype"],
         )
 
     def test_backtrack_node(self):

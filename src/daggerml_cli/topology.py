@@ -1,4 +1,6 @@
-from daggerml_cli.repo import Fn, Import
+from typing import cast
+
+from daggerml_cli.repo import Executable, Fn, Import
 from daggerml_cli.util import flatten
 
 
@@ -18,8 +20,10 @@ def node_info(ref, *, include_argv=True):
     }
     if include_argv and isinstance(node.data, Fn):
         info["argv"] = [node_info(x, include_argv=False) for x in node.data.argv]
+        info["prepop"] = cast(Executable, node.data.argv[0]().datum).prepop
     elif include_argv:
         info["argv"] = None
+        info["prepop"] = None
     return info
 
 
@@ -43,7 +47,7 @@ def topology(db, ref):
     return {
         "id": ref,
         "argv": dag.argv.to if hasattr(dag, "argv") else None,
-        "cache_key": dag.argv().value.id if hasattr(dag, "argv") else None,
+        "cache_key": getattr(dag, "cache_key", None),
         "nodes": [make_node(dag.nameof(x), x) for x in dag.nodes],
         "edges": edges,
         "result": dag.result.to if dag.result is not None else None,
