@@ -779,7 +779,8 @@ class Repo:
                 argv = self(Node(Argv(self.put_datum([self.load_ref(x) for x in loaded["expr"]]))))
                 for k, v in loaded["prepop"].items():
                     datum_ref = self.load_ref(v)
-                    assert isinstance(datum_ref, Ref) and datum_ref.type == "datum", f"invalid datum ref: {v}"
+                    if not isinstance(datum_ref, Ref) or datum_ref.type != "datum":
+                        raise ValueError(f"invalid datum ref in `begin`: {v}")
                     named_nodes[k] = self(Node(Literal(datum_ref)))
             dag = self(
                 FnDag(
@@ -831,7 +832,7 @@ class Repo:
             else:
                 result = self(Node(Literal(self.put_datum(result))))
                 nodes.append(result)
-            fndag = self(FnDag(nodes, {}, result, error, argv_node))
+            fndag = self(FnDag(nodes, {}, result, error, argv_node().value.id, argv_node))
         else:
             assert self.cache_path, (
                 "cache path is required for function execution. "
@@ -843,11 +844,12 @@ class Repo:
                     "prepop": {k: self.dump_ref(v) for k, v in fn.prepop.items()},
                 }
             )
+            cache_key = md5(argv_datum.encode()).hexdigest()
             with Cache(self.cache_path, create=False) as cache_db:
-                cached_val = cache_db.submit(unroll_datum(fn), md5(argv_datum.encode()).hexdigest(), argv_datum)
+                cached_val = cache_db.submit(unroll_datum(fn), cache_key, argv_datum)
             fndag = self.load_ref(cached_val) if cached_val else None
             if isinstance(fndag, Error):
-                fndag = self(FnDag([argv], {}, None, fndag, argv))
+                fndag = self(FnDag([argv], {}, None, fndag, cache_key, argv))
         if fndag is not None:
             node = self.put_node(Fn(fndag, None, argv), index=index, name=name, doc=doc)
             raise_ex(self.get(node).error)
