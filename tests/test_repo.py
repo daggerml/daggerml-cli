@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 import pytest
 
-from daggerml_cli.repo import Literal, Node, Ref, Repo, Resource, unroll_datum
+from daggerml_cli.repo import Executable, Literal, Node, Ref, Repo, Resource, unroll_datum
 
 
 @contextmanager
@@ -37,13 +37,23 @@ def tmp_repo(cache_path=None):
         ("simple_list", [1, "string", True, None]),
         ("simple_dict", {"a": 1, "b": 2, "c": 3}),
         ("simple_set", {1, 2, 3}),
-        ("resource", Resource("test://uri", adapter="test-adapter")),
+        ("resource", Resource("test://uri")),
+        (
+            "executable",
+            Executable(
+                "test://uri",
+                adapter="test-adapter",
+                data={"key": "value"},
+                prepop={"dep1": "dep2"},
+            ),
+        ),
         (
             "nested_structure",
             {
                 "list": [1, "string", True, None],
                 "dict": {"a": 1, "b": [2, 3], "c": {"d": 4}},
-                "resource": Resource("test://uri", adapter="test-adapter"),
+                "resource": Resource("test://uri"),
+                "executable": Executable("test://uri", adapter="test-adapter"),
                 "set": {1, 2, 3},
             },
         ),
@@ -94,7 +104,7 @@ def test_dump_and_load(name, test_value):
 )
 def test_start_fn_with_builtins(op, args, expected):
     """Test start_fn with built-in functions using patched methods."""
-    argv = [Resource(f"daggerml:{op}")] + (list(args) if isinstance(args, tuple) else [args])
+    argv = [Executable(f"daggerml:{op}")] + (list(args) if isinstance(args, tuple) else [args])
     with tmp_repo() as repo:
         with repo.tx(True):
             dag = repo.begin(message="test dag", name="test")
@@ -105,7 +115,7 @@ def test_start_fn_with_builtins(op, args, expected):
 
 def test_adapter_called_correctly():
     """Test start_fn with built-in functions using patched methods."""
-    argv = [Resource("foo://bar", data={"a": "b"}, adapter="ls"), 1, 2, 3]
+    argv = [Executable("foo://bar", data={"a": "b"}, adapter="ls"), 1, 2, 3]
     with tmp_repo() as repo:
         with repo.tx(True):
             dag = repo.begin(message="test dag", name="test")
