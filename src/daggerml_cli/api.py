@@ -20,6 +20,7 @@ from daggerml_cli.repo import (
     Dag,
     Error,
     Executable,
+    Fn,
     FnDag,
     Import,
     Index,
@@ -362,35 +363,56 @@ def describe_node(config: "Config", node: Ref):
 
 
 def backtrack_node(config: "Config", node: Ref, *_keys: Union[str, int]) -> Ref:
+    def fn(x, key):
+        if not isinstance(x, Ref) or x.type != "node" or not isinstance(x().data, Fn):
+            raise TypeError(f"invalid type {x!r} (type: {type(x().data)!s}) for backtrack_node")
+        argv = x().data.argv
+        fn, *args = (x().value().value for x in argv)
+        if fn.uri == "daggerml:list":
+            key = int(key)
+        elif fn.uri == "daggerml:dict":
+            i = args.index(key)
+            key = i + 1
+        elif fn.uri == "daggerml:get":
+            if key is not None:
+                raise Error(
+                    "cannot backtrack through 'get' with a non-null key",
+                    origin="dml",
+                    type="ValueError",
+                    stack=[
+                        {
+                            "filename": "api/invoke",
+                            "lineno": None,
+                            "function": "backtrack_node",
+                            "line": f"backtracking {fn.uri} with key: {key!r}",
+                        }
+                    ],
+                )
+            key = 0  # first arg is the collection
+        else:
+            raise Error(
+                "invalid collection type for backtrack_node",
+                origin="dml",
+                type="TypeError",
+                stack=[
+                    {
+                        "filename": "api/invoke",
+                        "lineno": None,
+                        "function": "backtrack_node",
+                        "line": fn.uri,
+                    }
+                ],
+            )
+        return argv[key + 1]
+
     with Repo.from_config(config) as db:
         with db.tx():
             keys = list(_keys)
+            if len(keys) == 0:
+                return fn(node, None)
             while len(keys) > 0:
                 key = keys.pop(0)
-                if not isinstance(node, Ref) or node.type != "node":
-                    raise TypeError(f"invalid type {node!r} for backtrack_node")
-                argv = node().data.argv
-                fn, *args = (x().value().value for x in argv)
-                if fn.uri == "daggerml:list":
-                    key = int(key)
-                elif fn.uri == "daggerml:dict":
-                    i = args.index(key)
-                    key = i + 1
-                else:
-                    raise Error(
-                        "invalid collection type for backtrack_node",
-                        origin="dml",
-                        type="TypeError",
-                        stack=[
-                            {
-                                "filename": "api/invoke",
-                                "lineno": None,
-                                "function": "backtrack_node",
-                                "line": fn.uri,
-                            }
-                        ],
-                    )
-                node = argv[key + 1]
+                node = fn(node, key)
             return node
 
 
