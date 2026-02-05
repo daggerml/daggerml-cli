@@ -1,25 +1,30 @@
 import json
-import os
 import sys
-from uuid import uuid4
+import tempfile
+from typing import cast
 
-from daggerml_cli.repo import Error
-from tests.util import SimpleApi
+from daggerml_cli._db import DmlDbEnv
+from daggerml_cli.ops.index import IndexOps
+from daggerml_cli.ops.node import NodeOps
+from daggerml_cli.types import NAMESPACES, Error
 
 if __name__ == "__main__":
-    js = json.loads(sys.stdin.read())
-    cache_key = js["cache_key"]
-    dump = js["dump"]
-    filter_args = os.getenv("DML_FN_FILTER_ARGS", "")
-    fnc_dir = os.getenv("DML_FN_CACHE_DIR", "")
-
-    with SimpleApi.begin("test", "test", cache_path=js["cache_path"], fn_cache_dir=fnc_dir, dump=dump) as d0:
-        _, *args = d0.unroll(d0.get_argv())
-        args = filter(lambda x: isinstance(x, int), args) if filter_args else args
-        uuid = d0.put_literal(uuid4().hex, name="uuid")
+    with tempfile.TemporaryDirectory(prefix="dml-fn-") as tmpdir:
+        db = DmlDbEnv.create(tmpdir, namespaces=sorted(NAMESPACES))
         try:
-            n0 = d0.put_literal([uuid, sum(args)], name="sum")
-        except Exception as e:
-            n0 = Error.from_ex(e)
-        result = d0.commit(n0)
-        print(d0.dump_ref(result))
+            index_ref = IndexOps(db).create(dump=sys.stdin.read())
+            ops = IndexOps(db)
+            node_ops = NodeOps(db)
+            argv = cast(list, node_ops.unroll(ops.get_argv(index_ref)))
+            _, *args = [cast(float, x) for x in argv]
+            try:
+                for i, arg in enumerate(args):
+                    if not isinstance(arg, (int, float)):
+                        raise TypeError(f"Argument at index {i} is {type(arg).__name__}, expected int or float")
+                result = ops.put_literal(index_ref, float(sum(args)))
+            except Exception as e:
+                result = Error.from_ex(e)
+            commit_ref = ops.commit(index_ref, result, message="sum function result")
+            print(json.dumps({"dump": ops.dump(commit_ref)}, separators=(",", ":")))
+        finally:
+            db.close()

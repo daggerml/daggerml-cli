@@ -1,0 +1,1 @@
+- Use `uv run --dev ...` to run python or `dml` commands.

@@ -7,7 +7,9 @@
 
 - [Install](#install)
 - [Usage](#usage)
+- [Datums](#datums)
 - [Test](#test)
+- [Memory Testing](#memory-testing)
 - [Build](#build)
 - [License](#license)
 
@@ -28,17 +30,37 @@ dml COMMAND SUBCOMMAND --help
 > [!TIP]
 > Shell completion is available for bash/zsh via [argcomplete](https://github.com/kislyuk/argcomplete).
 
+## Runtime Notes
+
+- On startup, check the machine endianness (`sys.byteorder`) to ensure it is little-endian.
+
+## Datums
+
+- See `docs/DATUMS.md` for supported datum types and restrictions.
+
 
 ## Test
 
 ```sh
-hatch run pytest .
+uv run --dev pytest .
 ```
+
+## Memory Testing
+
+Bootstrap prerequisites, then run the full test suite with AddressSanitizer + UndefinedBehaviorSanitizer, then Valgrind (Linux only):
+
+```sh
+./scripts/bootstrap.sh
+./scripts/memcheck.sh
+```
+
+Notes:
+- On macOS, `./scripts/bootstrap.sh` installs a pyenv Python (non-hardened) so ASan/UBSan can preload.
 
 ## Build
 
 ```sh
-hatch run dml-build pypi
+uv pip install -e .
 ```
 
 ## License

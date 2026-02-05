@@ -1,6 +1,6 @@
 [build-system]
-requires = ["hatchling", "hatch-vcs"]
-build-backend = "hatchling.build"
+requires = ["scikit-build-core>=0.11", "setuptools-scm>=8", "Cython>=3.0"]
+build-backend = "scikit_build_core.build"
 
 [project]
 name = "daggerml-cli"
@@ -10,39 +10,38 @@ authors = [
 ]
 description = "DaggerML's cli backend"
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 license = "MIT"
 keywords = []
 classifiers = [
-  "License :: OSI Approved :: MIT License",
   "Operating System :: OS Independent",
   "Development Status :: 4 - Beta",
   "Programming Language :: Python",
   "Programming Language :: Python :: 3",
-  "Programming Language :: Python :: 3.9",
   "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
-  "Programming Language :: Python :: Implementation :: PyPy",
 ]
-dependencies = [
-  "click",
-  "jmespath",
-  "lmdb",
-  "msgpack",
-  "tabulate",
-  "asciidag",
-]
+dependencies = []
 
-[project.optional-dependencies]
-test = [
-  "pytest",
-  "pytest-cov",
+[dependency-groups]
+table = [
+    "tabulate",
+    "asciidag",
+]
+dev = [
+    "hypothesis>=6.141.1",
+    "moto[all,server]>=5.1.20",
+    "pytest>=8.4.2",
+    "ruff>=0.14.10",
+]
+s3 = [
+    "boto3",
 ]
 
 [project.scripts]
-dml = "daggerml_cli.cli:cli"
+dml = "daggerml_cli._cli:cli"
 dml-python-fork-adapter = "daggerml_cli.python_fork_adapter:main"
 
 [project.urls]
@@ -50,6 +49,21 @@ Homepage = "https://daggerml.com"
 Documentation = "https://daggerml.com"
 Issues = "https://github.com/daggerml/daggerml-cli/issues"
 Source = "https://github.com/daggerml/daggerml-cli"
+
+[tool.scikit-build]
+wheel.packages = ["src/daggerml_cli"]
+metadata.version.provider = "scikit_build_core.metadata.setuptools_scm"
+sdist.include = ["src/daggerml_cli/__about__.py"]
+
+[tool.setuptools_scm]
+write_to = "src/daggerml_cli/__about__.py"
+tag_regex = "^v(?P<version>[0-9]+(?:\\.[0-9]+)*[a-zA-Z0-9\\.\\-]*)$"
+
+[[tool.scikit-build.generate]]
+path = "daggerml_cli/__about__.py"
+location = "install"
+template = "__version__ = \"${version}\"\n"
+
 
 [tool.pytest.ini_options]
 pythonpath = "tests/"
@@ -63,41 +77,12 @@ markers = [
   "serial",
 ]
 
-[tool.hatch.version]
-source = "vcs"
-
-[tool.hatch.version.raw-options]
-version_scheme = "only-version"   # use tag as version
-local_scheme = "no-local-version"  # pypi does not support local-schemes
-tag_regex = "^v(?P<version>[0-9]+(?:\\.[0-9]+)*[a-zA-Z0-9\\.\\-]*)$"  # pypi regex
-version_file = "src/daggerml_cli/__about__.py"  # write version info to this file
-relative_to = "{root:uri}"
-
-[tool.hatch.build.targets.wheel]
-packages = ["src/daggerml_cli"]
-artifacts = [
-  "src/daggerml_cli/__about__.py"  # add to hatch build because it's git ignored
-]
-
-[tool.hatch.envs.default]
-python = "3.10"
-dependencies = [
-  "twine",
-]
-features = ["test"]
-
-[tool.hatch.envs.test-all]
-template = "default"
-
-[[tool.hatch.envs.test-all.matrix]]
-python = ["3.9", "3.10", "3.11", "3.12", "3.13"]
-
 [tool.ruff]
-target-version = "py39"
+target-version = "py310"
 line-length = 120
 
 [tool.ruff.lint]
-select = ["E", "F", "B", "I", "PGH004"]
+select = ["E", "F", "B", "I", "PGH004", "W"]
 ignore = []
 unfixable = ["B"]
 
@@ -108,7 +93,7 @@ known-first-party = ["daggerml_cli"]
 ban-relative-imports = "all"
 
 [tool.ruff.lint.per-file-ignores]
-"__init__.py" = ["F401", "E402"]
+"src/daggerml_cli/__init__.py" = ["F401", "E402"]
 # Tests can use magic values, assertions, and relative imports
 "tests/**/*" = ["PLR2004", "S101", "TID252"]
 

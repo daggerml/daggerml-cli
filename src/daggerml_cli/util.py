@@ -1,24 +1,25 @@
-import logging
+"""Utility functions for the DML repository system.
+
+Public API:
+    unnest - Flatten a list of lists
+    some - Return first truthy value or default
+    assert_exactly_one - Assert exactly one non-None value
+    makedirs - Create directories with secure permissions
+    readfile - Read file contents
+    writefile - Write file contents
+    fullname - Get full qualified name of object
+    now - Get current UTC time as ISO string
+    as_list - Ensure value is a list
+    merge_counters - Merge counter dictionaries
+    tree_map - Apply function to tree structure
+"""
+
 import os
-import re
-import shutil
-import subprocess
 from datetime import datetime, timezone
-
-log = logging.getLogger(__name__)
-
-
-def assoc(xs, k, v):
-    xs = xs.copy()
-    xs[k] = v
-    return xs
+from typing import Any, Iterable
 
 
-def conj(xs, x):
-    return {*xs, x} if isinstance(xs, set) else [*xs, x]
-
-
-def flatten(nested: list[list]) -> list:
+def unnest(nested: Iterable[Iterable[Any]]) -> list:
     return [x for xs in nested for x in xs]
 
 
@@ -35,19 +36,6 @@ def assert_exactly_one(*objs, message=None):
         raise ValueError(
             message or f"Exactly one of the provided values must be non-None, but found {count} non-None values: {objs}"
         )
-
-
-def asserting(x, message=None):
-    if isinstance(message, str):
-        assert x, message
-    elif message:
-        try:
-            assert x
-        except AssertionError as e:
-            raise message from e
-    else:
-        assert x
-    return x
 
 
 def makedirs(path):
@@ -86,22 +74,8 @@ def now():
     return datetime.now(timezone.utc).isoformat()
 
 
-def sort_dict(x):
-    return {k: x[k] for k in sorted(x.keys())} if isinstance(x, dict) else x
-
-
-def sort_dict_recursively(x):
-    if isinstance(x, list):
-        return [sort_dict_recursively(y) for y in x]
-    if isinstance(x, dict):
-        return {k: sort_dict_recursively(x[k]) for k in sorted(x.keys())}
-    if isinstance(x, set):
-        return {sort_dict_recursively(v) for v in x}
-    return x
-
-
-def as_list(x):
-    return x if isinstance(x, (list, tuple)) else [x]
+def as_list(x) -> list:
+    return list(x) if isinstance(x, (list, tuple)) else [x]
 
 
 def merge_counters(x, *xs):
@@ -110,21 +84,8 @@ def merge_counters(x, *xs):
     y, rest = xs[0], xs[1:]
     result = {}
     for k in set(x.keys()).union(set(y.keys())):
-        result[k] = flatten([as_list(x.get(k, 0)), as_list(y.get(k, 0))])
+        result[k] = unnest([as_list(x.get(k, 0)), as_list(y.get(k, 0))])
     return merge_counters(result, *rest) if len(rest) else result
-
-
-def detect_executable(name, regex):
-    try:
-        path = shutil.which(name)
-        out = subprocess.run(
-            [path, "--version"],
-            text=True,
-            capture_output=True,
-        ).stdout.split("\n", 1)[0]
-        return path if re.search(regex, out) else None
-    except Exception:
-        pass
 
 
 def tree_map(predicate, fn, item):
