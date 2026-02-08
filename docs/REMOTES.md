@@ -354,96 +354,15 @@ This prevents races with in-flight pushes.
 
 ---
 
-## 10. Code to Write
+## 10. Implementation
 
 All remote functionality is implemented in a single module:
 
-- `remote.py` exposing a single public entrypoint: `RemoteOps`
+- `remote.py` exposing a single public entrypoint: `RemoteOps`
 
-Internally, `RemoteOps` implements S3 CAS/ref operations, manifest/ref encoding/decoding, and GC. No other public modules are required.
+Internally, `RemoteOps` implements S3 CAS/ref operations, manifest/ref encoding/decoding, and GC. No other public modules are required.
 
-### 10.1 `remote.py`
-
-#### 10.1.1 `class RemoteOps`
-
-`RemoteOps` is the entrypoint for all remote operations.
-
-Constructor:
-
-- `RemoteOps(db, *, bucket: str, prefix: str, s3_client=...)`
-  - stores `db` as `self._db`
-  - configures S3 bucket/prefix
-
-Local DB access (required pattern):
-
-- `with self._db.tx(readonly=...) as txn:`
-  - `txn.get(Ref("<namespace>:<id>")) -> Commit | None`
-  - `txn.dump_dict(root_ref: Ref) -> dict`
-  - `txn.load_dict(full_manifest: dict) -> None``
-
-Public API:
-
-- `def push(self, ref: Ref) -> str`
-  - calls `txn.dump_dict(ref)` to obtain a local \*\*local-manifest`
-  - uploads missing CAS objects derived from the local-manifest
-  - converts local-manifest to a slim `manifest`
-  - builds and uploads the commit manifest CAS object
-  - writes the remote ref JSON pointing to the manifest id
-  - returns the published remote ref URI/path
-
-- `def pull(self, ref_path: str) -> None`
-  - fetches remote ref JSON from `refs/<ref_path>`
-  - fetches the target manifest CAS object
-  - decodes manifest to obtain `root-ns`, `root-id`, and typed `closure`
-  - validates `root-ns == "commit"`
-  - fetches and verifies any missing closure objects by id
-  - loads fetched objects via `txn.load_dict(full_manifest)`
-  - writes `head:<remote-name>/<ref_path>` pointing to the loaded commit
-
-- `def list(self, prefix: Literal["tags", "commits", "cache"]) -> list[dict]`
-  - lists remote refs under `refs/<prefix>/`
-  - returns decoded ref records including `meta` (user-facing)
-
-- `def prune(self) -> int`
-  - lists remote refs under `refs/cache/`
-  - deletes those with `cache.expires_at < now`
-
-- `def gc(self, min_age_seconds: int = 24 * 3600) -> dict`
-  - runs remote GC:
-    1. `prune()`
-    2. marks live OIDs from all remaining refs + their manifests
-    3. sweeps remote CAS objects not in the live set and older than the safety window
-
-#### 10.1.2 Internal helpers (not public)
-
-These helpers exist to keep the public API methods (`push/pull/list/prune/gc`) small and testable. Each helper is single-purpose and is called from exactly one or two public entrypoints.
-
-- S3 key mapping (used by all remote reads/writes):
-  - `_cas_key(oid) -> str`: map an OID to the sharded CAS key (`cas/sha256/aa/bb/<oid>`).
-  - `_ref_key(ref_path) -> str`: map a logical ref path (e.g. `tags/foo/v1.json`) to the full S3 key under `refs/`.
-
-- Encoding/decoding (used by `push/pull/list/gc`):
-  - `_decode_ref(bytes) -> {target, created_at, meta, cache}`: parse and validate ref JSON bytes returned from S3.
-  - `_decode_manifest(bytes) -> {root-ns, root-id, closure}`: parse and validate manifest JSON bytes returned from CAS.
-  - `_closure_union(closure: dict[str, list[str]]) -> set[str]`: flatten typed closure to a single set of OIDs (for `pull` fetch planning and `gc` mark).
-
-- Local DB helpers (used by `push/pull` only):
-  - `_local_has(txn, ns, id) -> bool`: fast check that a local object exists (skip re-load / avoid redundant work).
-  - `_local_dump_dict(txn, root_ref: Ref) -> dict`: call `txn.dump_dict(...)` and normalize/validate the returned local-manifest shape.
-  - `_local_load_dict(txn, local_manifest: dict) -> None`: call `txn.load_dict(...)` (single place to validate local-manifest + error handling).
-  - `_local_put_head(txn, remote_name: str, ref_path: str, commit_id: str) -> None`: write `head:<remote-name>/<ref_path> -> commit:<root-id>` after a successful `pull`.
-
-- Remote S3 helpers (thin wrappers around the S3 client; used by `push/pull/list/prune/gc`):
-  - `_remote_has_cas(oid) -> bool`: existence check for a CAS object (HEAD) to avoid re-upload.
-  - `_remote_get_cas(oid) -> bytes`: fetch CAS bytes by OID (GET).
-  - `_remote_put_cas(oid, bytes) -> None`: upload CAS bytes by OID (PUT; should be idempotent).
-  - `_remote_get_ref(ref_path) -> bytes`: fetch ref JSON bytes (GET).
-  - `_remote_put_ref(ref_path, bytes) -> None`: create a ref (PUT; MUST fail if already exists).
-  - `_remote_delete_ref(ref_path) -> None`: delete a ref (DELETE) used by `prune` (and optionally admin workflows).
-
----
-
-### 10.2 Notes on IDs
+### 10.1 Notes on IDs
 
 - The OID used for remote addressing is the sha256 of the canonical messagepack bytes.
 - The local DB may store additional indexes, but remote CAS keys are always OIDs.

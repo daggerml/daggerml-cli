@@ -9,7 +9,7 @@ Public API:
 """
 
 from dataclasses import dataclass
-from typing import Iterator, Optional
+from typing import Iterator, Optional, Self
 
 from daggerml_cli._db import Ref
 from daggerml_cli.ops.base_ops import BaseOps
@@ -304,7 +304,7 @@ class CommitOps(BaseOps):
         except Exception as e:
             raise DmlRepoError(f"Failed to get DAG '{name}' from commit: {e}") from e
 
-    def delete_dag(self, name: str, head: Ref, user: str) -> Ref:
+    def delete_dag(self, name: str, head: Ref, user: str) -> Self:
         """Remove DAG from head's tree and create new commit.
 
         Creates a new commit with the specified DAG removed from the tree.

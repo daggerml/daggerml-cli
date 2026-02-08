@@ -1,6 +1,6 @@
 # Ops (Core Repository Operations)
 
-Status: design spec for the `src/daggerml_cli/ops/` public API as of 2026-01-25.
+This document specifies the public API for the `src/daggerml_cli/ops/` module.
 
 ## Scope
 
@@ -24,7 +24,7 @@ Any interface used outside its defining module/file is part of the public surfac
 
 Consequences for `src/daggerml_cli/ops/`:
 
-- `daggerml_cli.ops.base_ops.BaseOps`, `daggerml_cli.ops.base_ops.TxnContext`, and `daggerml_cli.ops.base_ops.with_resize` are public because they are imported by other modules.
+- `daggerml_cli.ops.base_ops.BaseOps`, `daggerml_cli.ops.base_ops.TxnContext`, and `daggerml_cli.ops.base_ops.with_retry` are public because they are imported by other modules.
 - All `*Ops` classes returned by `DmlOps` subsystem constructors are public.
 - Protocol surfaces include environment variables, JSON formats, and subprocess adapter I/O.
 
@@ -67,7 +67,7 @@ Any behavior not specified by `Requires`/`Behavior`/`Errors`/`Returns`/`Invarian
 
 ## Repo Entry Point: `daggerml_cli.ops.DmlOps`
 
-Location: `src/daggerml_cli/ops/__init__.py:27`.
+Location: `src/daggerml_cli/ops/__init__.py:28`.
 
 `DmlOps` is the canonical repo API name at this time.
 
@@ -148,16 +148,17 @@ Invariants:
 
 ## Base Transaction Layer
 
-### `daggerml_cli.ops.base_ops.with_resize`
+### `daggerml_cli.ops.base_ops.with_retry`
 
-Location: `src/daggerml_cli/ops/base_ops.py:45`.
+Location: `src/daggerml_cli/ops/base_ops.py:53`.
 
-Signature: `with_resize(fn) -> callable`.
+Signature: `with_retry(fn) -> callable`.
 
 Behavior:
 
 - Wraps `fn(self, *args, **kwargs)`.
 - If `daggerml_cli._db.DmlDbMapFullError` is raised, doubles the LMDB map size and retries.
+- If `daggerml_cli._db.DmlDbEnvReopenedError` is raised, retries the operation (environment was repaired).
 
 Side effects:
 
@@ -169,7 +170,7 @@ Notes:
 
 ### `daggerml_cli.ops.base_ops.TxnContext`
 
-Location: `src/daggerml_cli/ops/base_ops.py:72`.
+Location: `src/daggerml_cli/ops/base_ops.py:98`.
 
 `TxnContext` is the transaction-bound API used by ops implementations. It is public because it is referenced outside `base_ops.py`.
 
@@ -260,7 +261,7 @@ Format (canonical keys):
 
 ### `daggerml_cli.ops.base_ops.BaseOps`
 
-Location: `src/daggerml_cli/ops/base_ops.py:75`.
+Location: `src/daggerml_cli/ops/base_ops.py:501`.
 
 `BaseOps` is the base class used by all subsystem ops classes.
 
@@ -315,11 +316,11 @@ Public methods:
   - Behavior: returns `Tree.dags.get(name)` for the commit.
   - Errors: `DmlRepoError` on missing objects or wrong types.
 
-- `CommitOps.delete_dag(name: str, head: Ref, user: str) -> None`
+- `CommitOps.delete_dag(name: str, head: Ref, user: str) -> Self`
   - Behavior:
-    - Creates a new commit that removes `name` from the head commit’s tree.
+    - Creates a new commit that removes `name` from the head commit's tree.
     - Updates the provided `head` ref to point at the new commit.
-  - Returns: `None`.
+  - Returns: `self` (for method chaining).
   - Errors: `DmlRepoError` if DAG not found or DB failures.
 
 ### `daggerml_cli.ops.head.HeadOps`
@@ -406,10 +407,11 @@ Public methods:
   - Returns: `True` if an entry existed and was deleted; else `False`.
 
 - `CacheOps.list(limit: Optional[int] = None) -> Iterator[tuple[Ref, Ref]]`
-  - Yields: `(argspec_ref, dag_ref)` pairs.
-    - `argspec_ref`: `Ref("argspec:<id>")` identifying the cached call signature.
-    - `dag_ref`: `Ref("dag:<id>")` identifying the cached result DAG.
+  - Yields: `(cache_ref, entry)` pairs where:
+    - `cache_ref`: `Ref("cache:<argspec_id>")` identifying the cache entry key.
+    - `entry`: `Cache` object containing the cached result DAG ref.
   - Ordering: unspecified (iteration order is whatever the underlying DB provides).
+  - Note: To get argspec_ref from cache_ref, parse the ID portion; to get dag_ref, use `entry.dag`.
 
 - `CacheOps.clear() -> int`
   - Returns: number of deleted cache entries.
@@ -453,7 +455,7 @@ Public methods:
   - Behavior:
     - If `dump` is provided: `txn.load(dump)` to produce an `argspec` ref.
     - Creates a new `Dag` and `Commit`, then stores an `Index(commit=commit_ref)` at a random `index:<uuid>` ref.
-  - Decorator: `@with_resize`.
+  - Decorator: `@with_retry`.
 
 - `IndexOps.delete(index_ref: Ref) -> None`
   - Requires: `index_ref.ns() == "index"`.
@@ -471,7 +473,7 @@ Public methods:
     - Converts `value` into a `Datum` graph.
     - If `value` contains node refs inside lists/dicts, it may construct function nodes using the builtins `daggerml:list` and `daggerml:dict`.
     - Returns a node ref when inserting into the DAG; may return an existing node ref when `value` is already a node ref.
-  - Decorator: `@with_resize`.
+  - Decorator: `@with_retry`.
 
 - `IndexOps.start_fn(index_ref: Ref, argv: list[Ref], kwargv: Optional[dict[str, Ref]] = None, name: Optional[str] = None, cache: bool = True) -> Optional[Ref]`
   - Behavior:
@@ -522,7 +524,7 @@ When a function node’s `Resource` has a non-`None` `adapter` field, `IndexOps`
 
 ### `daggerml_cli.ops.remote.RemoteOps`
 
-Location: `src/daggerml_cli/ops/remote.py:74`.
+Location: `src/daggerml_cli/ops/remote.py:75`.
 
 Construction:
 

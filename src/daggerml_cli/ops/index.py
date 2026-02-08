@@ -17,7 +17,7 @@ from uuid import uuid4
 
 from daggerml_cli._db import Ref, Resource
 from daggerml_cli.builtins import BUILTIN_FNS
-from daggerml_cli.ops.base_ops import BaseOps, with_resize
+from daggerml_cli.ops.base_ops import BaseOps, with_retry
 from daggerml_cli.ops.cache import CacheOps
 from daggerml_cli.ops.dag import DagOps
 from daggerml_cli.ops.node import NodeOps
@@ -75,7 +75,7 @@ class IndexOps(BaseOps):
         with self._tx(readonly=False) as txn:
             txn.delete(self._validate_index_ref(index_ref))
 
-    @with_resize
+    @with_retry
     def create(self, head: Optional[Ref] = None, dump: Optional[str] = None) -> Ref:
         """Create a new index object.
 
@@ -104,21 +104,21 @@ class IndexOps(BaseOps):
             index = self._create(head=head, **kw, txn=txn)
         return index
 
-    @with_resize
+    @with_retry
     def get_kwargv(self, index_ref: Ref) -> Ref:
         """Return the argv node for an index (raises if missing)."""
         with self._tx(readonly=True) as txn:
             ctx = txn.get_ctx(self._validate_index_ref(index_ref))
         return DagOps(_db=self._db).get_kwargv(ctx.commit.dag)
 
-    @with_resize
+    @with_retry
     def get_argv(self, index_ref: Ref) -> Ref:
         """Return the argv node for an index (raises if missing)."""
         with self._tx(readonly=True) as txn:
             ctx = txn.get_ctx(self._validate_index_ref(index_ref))
         return DagOps(_db=self._db).get_argv(ctx.commit.dag)
 
-    @with_resize
+    @with_retry
     def put_import(self, index_ref: Ref, dag: Ref, node: Optional[Ref] = None, name: Optional[str] = None) -> Ref:
         """Import a node from another DAG into the current index DAG."""
         self._validate_index_ref(index_ref)
@@ -135,12 +135,12 @@ class IndexOps(BaseOps):
             node_obj = ImportNode(dag, imported_node)
             return self._put_node(node_obj, name=name, txn=txn, index_ref=index_ref)
 
-    @with_resize
+    @with_retry
     def put_literal(self, index_ref: Ref, value: Any, name: Optional[str] = None) -> Ref:
         with self._tx(readonly=False) as txn:
             return self._put_literal(value, name=name, txn=txn, index_ref=index_ref)
 
-    @with_resize
+    @with_retry
     def commit(
         self,
         *args,

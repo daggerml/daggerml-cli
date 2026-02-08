@@ -6,7 +6,7 @@ import pytest
 from hypothesis import given
 
 from daggerml_cli._db import DmlDbEnv
-from daggerml_cli.ops.base_ops import BaseOps
+from daggerml_cli.ops.base_ops import BaseOps, with_retry
 from daggerml_cli.types import NAMESPACES, Datum
 from tests.test__db import _gen_ref, dml_object
 from tests.test_types import DmlRepoError, _dml_obj_strategy
@@ -98,3 +98,30 @@ class TestBaseOps:
         with pytest.raises(DmlRepoError, match="Object not found:"):
             with temp_bo._tx(readonly=True) as ctx:
                 ctx.get(_gen_ref("head"))
+
+    def test_with_retry_retries_whole_transaction_on_map_full(self):
+        """Map-full should resize and retry the whole operation, not a single put."""
+
+        class ResizeHarness(BaseOps):
+            def __post_init__(self):
+                super().__post_init__()
+                self.attempts = 0
+
+            @with_retry
+            def write_pair(self):
+                self.attempts += 1
+                with self._tx(readonly=False) as ctx:
+                    first = ctx.put(Datum(data="first"))
+                    second = ctx.put(Datum(data="x" * 700_000))
+                    return first, second
+
+        with TemporaryDirectory() as temp_dir:
+            db = DmlDbEnv.create(temp_dir, namespaces=sorted(NAMESPACES), map_size=256 * 1024)
+            ops = ResizeHarness(db)
+            first_ref, second_ref = ops.write_pair()
+            assert ops.attempts >= 2
+            with ops._tx(readonly=True) as ctx:
+                first_obj = ctx.get(first_ref)
+                second_obj = ctx.get(second_ref)
+                assert first_obj.data == "first"
+                assert len(second_obj.data) == 700_000

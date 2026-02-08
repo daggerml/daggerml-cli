@@ -135,6 +135,7 @@ cdef extern from "dml_db.h":
     int DML_DB_ERR_BUSY
     int DML_DB_ERR_LMDB
     int DML_DB_ERR_INTERNAL
+    int DML_DB_ERR_ENV_REOPENED
 
     ctypedef struct DmlDbHandle:
         pass
@@ -162,7 +163,7 @@ cdef extern from "dml_db.h":
     int dml_db_mapsize(DmlDbHandle **p_handle, size_t *out_mapsize) nogil
     int dml_db_resize(DmlDbHandle **p_handle, size_t mapsize) nogil
 
-    int dml_db_txn_begin(DmlDbHandle **p_handle, DmlDbTxn *parent, const int readonly, DmlDbTxn **out_txn);
+    int dml_db_txn_begin(DmlDbHandle **p_handle, const int readonly, DmlDbTxn **out_txn);
     int dml_db_txn_fin(DmlDbHandle **p_handle, DmlDbTxn *txn, const int commit) nogil
 
     int dml_db_put(
@@ -667,6 +668,18 @@ class DmlDbInternalError(DmlDbError):
     """
     pass
 
+class DmlDbEnvReopenedError(DmlDbError):
+    """
+    Database environment was reopened; transaction must be retried.
+
+    Notes
+    -----
+    Raised when the environment was repaired (e.g., after fork or EINVAL),
+    invalidating all existing transactions. Caller should retry the entire
+    transaction block.
+    """
+    pass
+
 cdef inline object raise_if_error(int rc, str context):
     cls = RuntimeError
     if rc == 0:
@@ -728,6 +741,9 @@ cdef inline object raise_if_error(int rc, str context):
     elif rc == DML_DB_ERR_INTERNAL:
         cls = DmlDbInternalError
         prefix = "internal database error"
+    elif rc == DML_DB_ERR_ENV_REOPENED:
+        cls = DmlDbEnvReopenedError
+        prefix = "database environment was reopened; retry transaction"
     else:
         prefix = f"unknown database error: {rc}"
     raise cls(f"{prefix}: {context}")
@@ -1124,10 +1140,10 @@ cdef class DmlDbEnv:
             txn_obj._env = self            # strong ref keeps env alive
             txn_obj._txn = NULL
             txn_obj._closed = 0
-            rc = dml_db_txn_begin(&self._handle, NULL, 1 if readonly else 0, &txn_obj._txn)
+            rc = dml_db_txn_begin(&self._handle, 1 if readonly else 0, &txn_obj._txn)
         if rc != 0:
             txn_obj.abort()
-            raise RuntimeError(f"dml_db_txn_begin failed: {rc}")
+            raise_if_error(rc, "dml_db_txn_begin")
         self._active_txns += 1
         try:
             yield txn_obj

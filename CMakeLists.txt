@@ -81,10 +81,17 @@ add_library(_db MODULE
   ${_db_c}
 )
 set(DB_EXPORTS "${CMAKE_CURRENT_BINARY_DIR}/db.exports")
-file(WRITE "${DB_EXPORTS}" "_PyInit__db\n")
-target_link_options(_db PRIVATE
-  "-Wl,-exported_symbols_list,${DB_EXPORTS}"
-)
+if(APPLE)
+  file(WRITE "${DB_EXPORTS}" "_PyInit__db\n")
+  target_link_options(_db PRIVATE
+    "-Wl,-exported_symbols_list,${DB_EXPORTS}"
+  )
+else()
+  file(WRITE "${DB_EXPORTS}" "{_PyInit__db;};")
+  target_link_options(_db PRIVATE
+    "-Wl,--version-script=${DB_EXPORTS}"
+  )
+endif()
 target_include_directories(_db PRIVATE c/third_party/lmdb/libraries/liblmdb)
 target_include_directories(_db PRIVATE c/third_party/msgpack/include)
 target_include_directories(_db PRIVATE c/include)

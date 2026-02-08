@@ -37,7 +37,8 @@ enum {
     DML_DB_ERR_MAP_FULL = -16,
     DML_DB_ERR_BUSY = -17,
     DML_DB_ERR_LMDB = -18,
-    DML_DB_ERR_INTERNAL = -19
+    DML_DB_ERR_INTERNAL = -19,
+    DML_DB_ERR_ENV_REOPENED = -20
 };
 
 // Open a lmdb database (and optionally create if flag is set and does not exist)
@@ -54,7 +55,7 @@ int dml_db_close(DmlDbHandle **p_handle);
 int dml_db_mapsize(DmlDbHandle **p_handle, size_t *out_mapsize);
 int dml_db_resize(DmlDbHandle **p_handle, size_t mapsize);
 
-int dml_db_txn_begin(DmlDbHandle **p_handle, DmlDbTxn *parent, const int readonly, DmlDbTxn **out_txn);
+int dml_db_txn_begin(DmlDbHandle **p_handle, const int readonly, DmlDbTxn **out_txn);
 int dml_db_txn_fin(DmlDbHandle **p_handle, DmlDbTxn *txn, const int commit);
 
 int dml_db_put(

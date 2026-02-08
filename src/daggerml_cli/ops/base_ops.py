@@ -14,7 +14,15 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any, Iterator, List, Optional, Self
 
-from daggerml_cli._db import DmlDbEnv, DmlDbEnvTxn, DmlDbKeyNotFoundError, DmlDbMapFullError, Ref, Resource
+from daggerml_cli._db import (
+    DmlDbEnv,
+    DmlDbEnvReopenedError,
+    DmlDbEnvTxn,
+    DmlDbKeyNotFoundError,
+    DmlDbMapFullError,
+    Ref,
+    Resource,
+)
 from daggerml_cli.types import NAMESPACES, Commit, Dag, Datum, Deletable, DmlRepoError, Error, Head, Tree
 
 
@@ -42,8 +50,12 @@ class CtxHelper:
     dag: Dag = None
 
 
-def with_resize(fn):
-    """Decorator to resize the db if the function fails with a database map full error.
+def with_retry(fn):
+    """Decorator to retry transactions on recoverable database errors.
+
+    Handles two types of recoverable errors:
+    1. DmlDbMapFullError: Database is full - automatically resize and retry
+    2. DmlDbEnvReopenedError: Environment was repaired (e.g., after fork/EINVAL) - retry transaction
 
     Parameters
     ----------
@@ -57,14 +69,27 @@ def with_resize(fn):
     """
 
     def wrapper(self, *args, **kwargs):
+        retries = 0
+        max_retries = 8
         while True:
             try:
                 return fn(self, *args, **kwargs)
             except DmlDbMapFullError:
-                map_size = self._db.get_map_size()
+                map_size = self._db.get_size()
                 new_map_size = map_size * 2
                 logging.warning("Resizing database from %d to %d bytes", map_size, new_map_size)
-                args[0]._db.resize(new_map_size)
+                self._db.resize(new_map_size)
+                retries += 1
+                if retries >= max_retries:
+                    raise
+            except DmlDbEnvReopenedError as e:
+                # Environment was repaired (all transactions invalidated), retry the operation
+                retries += 1
+                if retries >= max_retries:
+                    raise
+                logging.info(
+                    "Database environment reopened, retrying transaction (attempt %d/%d): %s", retries, max_retries, e
+                )
 
     return wrapper
 
@@ -522,6 +547,12 @@ class BaseOps:
             with self._db.tx(readonly=readonly) as txn:
                 self._logger.debug("Nested transactions are not supported. Readonly flag will be ignored.")
                 yield TxnContext(db=self._db, txn=txn, logger=self._logger)
+        except DmlDbMapFullError:
+            # Allow upstream retry managers (e.g. with_retry) to replay the full txn.
+            raise
+        except DmlDbEnvReopenedError:
+            # Allow upstream retry managers (e.g. with_retry) to replay the full txn.
+            raise
         except Error:
             raise
         except Exception as e:

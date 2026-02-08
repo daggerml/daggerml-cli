@@ -1,7 +1,5 @@
 ---
 slug: cli
-last_updated: 2026-01-25
-status: active
 ---
 
 # CLI (`dml`)
@@ -435,14 +433,3 @@ The following functions are imported by `src/daggerml_cli/_cli/__init__.py` and/
 - `execute_remote_list(ops: Any, args: Any) -> list[dict]`
 - `execute_remote_prune(ops: Any, args: Any) -> int`
 - `execute_remote_gc(ops: Any, args: Any) -> dict[str, int]`
-
-## Acceptance Gates (mechanically checkable)
-
-1. Tests: `pytest -q tests/cli`
-2. Help output: `dml --help` includes all operations: `commit`, `head`, `index`, `cache`, `dag`, `node`, `remote`, `gc`.
-3. Output streams:
-   - Success: stdout parses as JSON; stderr is empty unless `-v` is used.
-   - Runtime error: stderr parses as JSON object with keys `error` and `type` (and `command` when available).
-4. Remote laziness:
-   - Importing and running a non-remote command MUST NOT import `boto3`.
-   - Executing any `dml remote ...` command without `boto3` installed MUST fail with `DmlRepoError` message containing `"Remote commands require boto3"`.
