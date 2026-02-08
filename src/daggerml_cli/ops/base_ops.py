@@ -12,7 +12,12 @@ import json
 import logging
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Any, Iterator, List, Optional, Self
+from typing import Any, Iterator, List, Optional
+
+try:
+    from typing import Self
+except ImportError:
+    from typing_extensions import Self
 
 from daggerml_cli._db import (
     DmlDbEnv,

@@ -9,7 +9,12 @@ Public API:
 """
 
 from dataclasses import dataclass
-from typing import Iterator, Optional, Self
+from typing import Iterator, Optional
+
+try:
+    from typing import Self
+except ImportError:
+    from typing_extensions import Self
 
 from daggerml_cli._db import Ref
 from daggerml_cli.ops.base_ops import BaseOps

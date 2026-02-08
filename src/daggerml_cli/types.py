@@ -14,8 +14,13 @@ Public API:
 import traceback
 from dataclasses import dataclass, field
 from getpass import getuser
-from typing import TYPE_CHECKING, Any, Optional, Self, Union
+from typing import TYPE_CHECKING, Any, Optional, Union
 from uuid import uuid4
+
+try:
+    from typing import Self
+except ImportError:
+    from typing_extensions import Self
 
 from daggerml_cli._db import Ref, Resource
 from daggerml_cli.util import now

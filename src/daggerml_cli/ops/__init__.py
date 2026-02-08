@@ -8,7 +8,12 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import TYPE_CHECKING, Any, ContextManager, Optional, Self
+from typing import TYPE_CHECKING, Any, ContextManager, Optional
+
+try:
+    from typing import Self
+except ImportError:
+    from typing_extensions import Self
 
 from daggerml_cli._db import DmlDbEnv, Ref
 from daggerml_cli.types import DEFAULT_HEAD, NAMESPACES
