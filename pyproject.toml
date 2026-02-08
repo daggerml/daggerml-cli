@@ -24,21 +24,23 @@ classifiers = [
   "Programming Language :: Python :: 3.13",
   "Programming Language :: Python :: 3.14",
 ]
-dependencies = []
+dependencies = [
+    "typing-extensions>=4.0.0; python_version < '3.11'",
+]
 
-[dependency-groups]
+[project.optional-dependencies]
 table = [
     "tabulate",
     "asciidag",
+]
+s3 = [
+    "boto3",
 ]
 dev = [
     "hypothesis>=6.141.1",
     "moto[all,server]>=5.1.20",
     "pytest>=8.4.2",
     "ruff>=0.14.10",
-]
-s3 = [
-    "boto3",
 ]
 
 [project.scripts]

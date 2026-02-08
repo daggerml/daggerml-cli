@@ -56,10 +56,10 @@ When we vendor third-party C/C++ libraries, keep the footprint minimal and inclu
 
 - Add or update unit tests for any new features or bug fixes.
 - Use [pytest](https://pytest.org/) for running tests.
-- The testing requirements are included in the `test` feature for the library.
+- The testing requirements are included in the `dev` optional dependency group.
   - Run tests with [uv](https://uv.run/):
     ```sh
-    uv run --dev pytest .
+    uv run --extra dev pytest .
     ```
   - If you're using vscode, you can create a venv with the `dev` dependencies and run tests with the command palette:
     ```
@@ -67,8 +67,8 @@ When we vendor third-party C/C++ libraries, keep the footprint minimal and inclu
     ```
   - Or install the `dev` dependencies with uv and run tests:
     ```
-    uv sync --dev
-    uv run --dev pytest .
+    uv sync --extra dev
+    uv run --extra dev pytest .
     ```
 - Run all tests locally before submitting a pull request.
 - Ensure your code passes all tests and does not decrease code coverage.

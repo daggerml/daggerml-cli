@@ -42,7 +42,7 @@ dml COMMAND SUBCOMMAND --help
 ## Test
 
 ```sh
-uv run --dev pytest .
+uv run --extra dev pytest .
 ```
 
 ## Memory Testing

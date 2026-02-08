@@ -76,7 +76,7 @@ fi
 
 echo "=== ASan/UBSan ==="
 # capture uv sync/install logs
-SKBUILD_CMAKE_ARGS="-DCMAKE_BUILD_TYPE=RelWithDebInfo;-DDML_ENABLE_ASAN=ON;-DDML_ENABLE_UBSAN=ON" uv sync --dev >"${LOG_DIR}/uv_sync.log" 2>&1
+SKBUILD_CMAKE_ARGS="-DCMAKE_BUILD_TYPE=RelWithDebInfo;-DDML_ENABLE_ASAN=ON;-DDML_ENABLE_UBSAN=ON" uv sync --extra dev >"${LOG_DIR}/uv_sync.log" 2>&1
 SKBUILD_CMAKE_ARGS="-DCMAKE_BUILD_TYPE=RelWithDebInfo;-DDML_ENABLE_ASAN=ON;-DDML_ENABLE_UBSAN=ON" uv pip install -e . >"${LOG_DIR}/uv_install.log" 2>&1
 
 ASAN_STATUS=0
@@ -107,14 +107,14 @@ if [[ "${OS}" == "Darwin" ]]; then
     UBSAN_OPTIONS="${UBSAN_OPTIONS}" \
     "${VENV_PYTHON}" -X faulthandler -m pytest -v . "${ASAN_PYTEST_DESELECT[@]}" 2>&1 | tee "${LOG_DIR}/asan_pytest.log" || ASAN_STATUS=$?
 else
-  # Linux: run pytest under uv run --dev and capture output
-  SKBUILD_CMAKE_ARGS="-DCMAKE_BUILD_TYPE=RelWithDebInfo;-DDML_ENABLE_ASAN=ON;-DDML_ENABLE_UBSAN=ON" env ASAN_OPTIONS="${ASAN_OPTIONS}" UBSAN_OPTIONS="${UBSAN_OPTIONS}" uv run --dev pytest -v . 2>&1 | tee "${LOG_DIR}/asan_pytest.log" || ASAN_STATUS=$?
+  # Linux: run pytest under uv run --extra dev and capture output
+  SKBUILD_CMAKE_ARGS="-DCMAKE_BUILD_TYPE=RelWithDebInfo;-DDML_ENABLE_ASAN=ON;-DDML_ENABLE_UBSAN=ON" env ASAN_OPTIONS="${ASAN_OPTIONS}" UBSAN_OPTIONS="${UBSAN_OPTIONS}" uv run --extra dev pytest -v . 2>&1 | tee "${LOG_DIR}/asan_pytest.log" || ASAN_STATUS=$?
 fi
 
 
 echo "=== Valgrind ==="
 rm -rf _skbuild
-SKBUILD_CMAKE_ARGS="-DCMAKE_BUILD_TYPE=RelWithDebInfo" uv sync --dev >"${LOG_DIR}/valgrind_sync.log" 2>&1
+SKBUILD_CMAKE_ARGS="-DCMAKE_BUILD_TYPE=RelWithDebInfo" uv sync --extra dev >"${LOG_DIR}/valgrind_sync.log" 2>&1
 SKBUILD_CMAKE_ARGS="-DCMAKE_BUILD_TYPE=RelWithDebInfo" uv pip install -e . >"${LOG_DIR}/valgrind_install.log" 2>&1
 VALGRIND_STATUS=0
 if [[ "${OS}" == "Linux" ]]; then
@@ -123,7 +123,7 @@ if [[ "${OS}" == "Linux" ]]; then
     --show-leak-kinds=all \
     --track-origins=yes \
     --error-exitcode=1 \
-    env uv run --dev pytest -v . 2>&1 | tee "${LOG_DIR}/valgrind.log" || VALGRIND_STATUS=$?
+    env uv run --extra dev pytest -v . 2>&1 | tee "${LOG_DIR}/valgrind.log" || VALGRIND_STATUS=$?
 else
   echo "Valgrind is not supported on macOS; skipping." | tee "${LOG_DIR}/valgrind.log"
 fi
